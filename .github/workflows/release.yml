@@ -51,7 +51,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       bump_type: ${{ steps.version.outputs.bump_type }}
-      changelog: ${{ steps.update-version.outputs.changelog }}
 
     steps:
       - name: Checkout repository
@@ -136,15 +135,6 @@ jobs:
           # Update CHANGELOG.md: replace "Unreleased" with version and date
           sed -i "s/^## Unreleased$/## ${NEW_VERSION} (${DATE})/" CHANGELOG.md
 
-          # Extract changelog for this version
-          awk -v version="^## ${NEW_VERSION}.*" '
-            $0 ~ version {flag=1; next}
-            /^## / && flag {flag=0}
-            flag {print}
-          ' CHANGELOG.md | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' >"CHANGELOG-${NEW_VERSION}.md"
-
-          echo "changelog=CHANGELOG-${NEW_VERSION}.md" >> "${GITHUB_OUTPUT}"
-
           git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/
           git commit -m "${COMMIT}" || echo "No changes to commit"
           git push --force origin ${BRANCH} || echo "No changes to push"
@@ -178,11 +168,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ needs.bump-version.outputs.version }}
-          CHANGELOG_FILE: ${{ needs.bump-version.outputs.changelog }}
         run: |
+          awk -v version="^## ${NEW_VERSION}.*" '
+            $0 ~ version {flag=1; next}
+            /^## / && flag {flag=0}
+            flag
+          ' CHANGELOG.md >"CHANGELOG-${NEW_VERSION}.md"
+
           gh release create "v${NEW_VERSION}" \
             --title "v${NEW_VERSION}" \
-            --notes-file "${CHANGELOG_FILE}"
+            --notes-file "CHANGELOG-${NEW_VERSION}.md"
 
       - name: Update major version tag
         env:
