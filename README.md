@@ -44,7 +44,7 @@ jobs:
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
-      - uses: mcanouil/quarto-extensions-updater@v1
+      - uses: mcanouil/quarto-extensions-updater@v0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -52,7 +52,7 @@ jobs:
 ### Advanced Configuration
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     workspace-path: '.'
@@ -171,7 +171,7 @@ Updates the following Quarto extension(s):
 ```yaml
 - name: Check for updates
   id: check
-  uses: mcanouil/quarto-extensions-updater@v1
+  uses: mcanouil/quarto-extensions-updater@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     create-pr: false
@@ -185,7 +185,7 @@ Updates the following Quarto extension(s):
 ### Custom Registry
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     registry-url: 'https://example.com/custom-registry.json'
