@@ -1,0 +1,58 @@
+name: "Quarto Extensions Updater"
+description: "Automatically update Quarto extensions similar to Dependabot"
+author: "Mickaël Canouil"
+
+branding:
+  icon: "package"
+  color: "blue"
+
+inputs:
+  github-token:
+    description: "GitHub token for creating pull requests"
+    required: true
+    default: ${{ github.token }}
+
+  workspace-path:
+    description: "Path to the workspace containing _extensions directory"
+    required: false
+    default: "."
+
+  registry-url:
+    description: "URL to the Quarto extensions registry JSON file"
+    required: false
+    default: "https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json"
+
+  create-pr:
+    description: "Whether to create a pull request for updates"
+    required: false
+    default: "true"
+
+  branch-prefix:
+    description: "Prefix for the update branch name"
+    required: false
+    default: "chore/quarto-extensions/"
+
+  base-branch:
+    description: "Base branch to create pull requests against"
+    required: false
+    default: "main"
+
+outputs:
+  updates-available:
+    description: "Whether updates are available (true/false)"
+
+  update-count:
+    description: "Number of updates available"
+
+  updates:
+    description: "JSON array of updates (name, currentVersion, latestVersion)"
+
+  pr-number:
+    description: "Pull request number (if created)"
+
+  pr-url:
+    description: "Pull request URL (if created)"
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
