@@ -30,7 +30,7 @@ inputs:
   branch-prefix:
     description: "Prefix for the update branch name"
     required: false
-    default: "chore/quarto-extensions/"
+    default: "chore/quarto-extensions"
 
   base-branch:
     description: "Base branch to create pull requests against"

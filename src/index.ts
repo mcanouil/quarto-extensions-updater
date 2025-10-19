@@ -12,6 +12,7 @@ async function run(): Promise<void> {
 		const registryUrl = core.getInput("registry-url") || undefined;
 		const createPR = core.getBooleanInput("create-pr") !== false;
 		const baseBranch = core.getInput("base-branch") || "main";
+		const branchPrefix = core.getInput("branch-prefix") || "chore/quarto-extensions";
 
 		const octokit = github.getOctokit(githubToken);
 		const context = github.context;
@@ -67,7 +68,7 @@ async function run(): Promise<void> {
 		core.endGroup();
 
 		core.startGroup("🌿 Creating branch and commit");
-		const branchName = createBranchName(updates);
+		const branchName = createBranchName(updates, branchPrefix);
 		const commitMessage = createCommitMessage(updates);
 
 		core.info(`Branch: ${branchName}`);

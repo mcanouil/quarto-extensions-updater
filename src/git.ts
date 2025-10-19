@@ -99,18 +99,20 @@ export function applyUpdates(updates: ExtensionUpdate[]): string[] {
 /**
  * Creates a branch name for the update PR
  * @param updates Array of updates
+ * @param branchPrefix Prefix for the branch name (will be separated with /)
  * @returns Branch name
  */
-export function createBranchName(updates: ExtensionUpdate[]): string {
+export function createBranchName(updates: ExtensionUpdate[], branchPrefix = "chore/quarto-extensions"): string {
 	const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
+	const prefix = branchPrefix.length === 0 ? "chore/quarto-extensions" : branchPrefix;
 
 	if (updates.length === 1) {
 		const update = updates[0];
 		const safeName = update.nameWithOwner.replace(/\//g, "-");
-		return `quarto-extensions/update-${safeName}-${update.latestVersion}`;
+		return `${prefix}/update-${safeName}-${update.latestVersion}`;
 	}
 
-	return `quarto-extensions/update-extensions-${timestamp}`;
+	return `${prefix}/update-extensions-${timestamp}`;
 }
 
 /**

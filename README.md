@@ -28,7 +28,7 @@ name: Update Quarto Extensions
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight UTC
+    - cron: "0 0 * * *"  # Daily at midnight UTC
   workflow_dispatch:
 
 permissions:
@@ -55,11 +55,11 @@ jobs:
 - uses: mcanouil/quarto-extensions-updater@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
-    workspace-path: '.'
-    registry-url: 'https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json'
+    workspace-path: "."
+    registry-url: "https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json"
     create-pr: true
-    branch-prefix: 'chore/quarto-extensions/
-    base-branch: 'main'
+    branch-prefix: "chore/quarto-extensions"
+    base-branch: "main"
 ```
 
 ## Inputs
@@ -70,7 +70,7 @@ jobs:
 | `workspace-path` | Path to the workspace containing `_extensions` directory | No       | `.`                                                                     |
 | `registry-url`   | URL to the Quarto extensions registry JSON file          | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
 | `create-pr`      | Whether to create a pull request for updates             | No       | `true`                                                                  |
-| `branch-prefix`  | Prefix for the update branch name                        | No       | `chore/quarto-extensions/`                                              |
+| `branch-prefix`  | Prefix for the update branch name                        | No       | `chore/quarto-extensions`                                               |
 | `base-branch`    | Base branch to create pull requests against              | No       | `main`                                                                  |
 
 ## Outputs
@@ -188,7 +188,7 @@ Updates the following Quarto extension(s):
 - uses: mcanouil/quarto-extensions-updater@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
-    registry-url: 'https://example.com/custom-registry.json'
+    registry-url: "https://example.com/custom-registry.json"
 ```
 
 ### Different Schedule
@@ -196,9 +196,9 @@ Updates the following Quarto extension(s):
 ```yaml
 on:
   schedule:
-    - cron: '0 0 * * 0'  # Weekly on Sunday
+    - cron: "0 0 * * 0"  # Weekly on Sunday
     # or
-    - cron: '0 0 1 * *'  # Monthly on 1st day
+    - cron: "0 0 1 * *"  # Monthly on 1st day
 ```
 
 ## Troubleshooting
