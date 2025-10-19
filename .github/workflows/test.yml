@@ -1,0 +1,114 @@
+name: Test Action
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-typescript:
+    name: TypeScript Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check format
+        run: npm run format-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Compare the expected and actual dist/ directories
+        id: diff
+        run: |
+          git add dist/
+          if ! git diff --staged --quiet --exit-code dist/; then
+            echo "❌ Detected uncommitted changes after build"
+            echo ""
+            echo "The dist/ directory has changes that need to be committed."
+            echo "Please run 'npm run build' locally and commit the changes."
+            echo ""
+            echo "Changes detected:"
+            git diff --staged --stat dist/
+            echo ""
+            echo "Detailed diff:"
+            git diff --staged dist/
+            exit 1
+          fi
+          echo "✅ dist/ directory is up to date"
+
+      - name: Upload dist for inspection
+        if: failure() && steps.diff.conclusion == 'failure'
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: dist
+          path: dist/
+
+  test-action:
+    name: Test Action
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Install outdated extension WITHOUT source field
+        run: |
+          quarto add mcanouil/quarto-iconify@1.0.0 --no-prompt
+
+      - name: Test action - should find NO updates (no source field)
+        id: test-no-source
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          create-pr: false
+
+      - name: Verify NO updates detected without source
+        run: |
+          if [ "${{ steps.test-no-source.outputs.updates-available }}" == "true" ]; then
+            echo "Error: Updates detected for extension without source field!"
+            exit 1
+          fi
+          echo "✅ Correctly skipped extension without source field"
+
+      - name: Add source field to extension
+        run: |
+          echo "source: mcanouil/quarto-iconify@1.0.0" >> _extensions/mcanouil/iconify/_extension.yml
+
+      - name: Test action - should find updates (with source field)
+        id: test-with-source
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          create-pr: false
+
+      - name: Verify updates detected with source
+        run: |
+          if [ "${{ steps.test-with-source.outputs.updates-available }}" != "true" ]; then
+            echo "Error: No updates detected for extension with source field!"
+            exit 1
+          fi
+          echo "✅ Successfully detected updates for mcanouil/quarto-iconify!"
+          echo "Update count: ${{ steps.test-with-source.outputs.update-count }}"

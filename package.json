@@ -1,0 +1,51 @@
+{
+	"name": "quarto-extensions-updater",
+	"version": "0.0.0",
+	"description": "GitHub Action to automatically update Quarto extensions similar to Dependabot",
+	"main": "dist/index.js",
+	"scripts": {
+		"build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
+		"format": "prettier --write '**/*.ts'",
+		"format-check": "prettier --check '**/*.ts'",
+		"lint": "eslint src/**/*.ts",
+		"package": "npm run build",
+		"test": "jest",
+		"all": "npm run format && npm run lint && npm run package"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mcanouil/quarto-extensions-updater.git"
+	},
+	"keywords": [
+		"github-action",
+		"quarto",
+		"extensions",
+		"dependabot",
+		"updates"
+	],
+	"author": "Mickaël Canouil",
+	"license": "MIT",
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"dependencies": {
+		"@actions/core": "^1.11.1",
+		"@actions/github": "^6.0.0",
+		"js-yaml": "^4.1.0",
+		"semver": "^7.6.3"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.38.0",
+		"@types/jest": "^30.0.0",
+		"@types/js-yaml": "^4.0.9",
+		"@types/node": "^24.8.1",
+		"@types/semver": "^7.5.8",
+		"@vercel/ncc": "^0.38.3",
+		"eslint": "^9.38.0",
+		"jest": "^30.2.0",
+		"prettier": "^3.4.2",
+		"ts-jest": "^29.2.5",
+		"typescript": "^5.7.2",
+		"typescript-eslint": "^8.17.0"
+	}
+}

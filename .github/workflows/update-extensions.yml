@@ -1,0 +1,57 @@
+name: Update Quarto Extensions
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: "0 0 * * *"
+
+  workflow_dispatch:
+    inputs:
+      create-pr:
+        description: "Create pull request for updates"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-extensions:
+    name: Check and Update Extensions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build action
+        run: npm run build
+
+      - name: Run Quarto Extensions Updater
+        id: updater
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workspace-path: ${{ github.workspace }}
+          create-pr: ${{ github.event.inputs.create-pr || 'true' }}
+          base-branch: ${{ github.event.repository.default_branch }}
+
+      - name: Output results
+        if: steps.updater.outputs.updates-available == 'true'
+        run: |
+          echo "Updates available: ${{ steps.updater.outputs.update-count }}"
+          echo "Updates: ${{ steps.updater.outputs.updates }}"
+          echo "PR URL: ${{ steps.updater.outputs.pr-url }}"
