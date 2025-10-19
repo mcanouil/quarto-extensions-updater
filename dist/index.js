@@ -37036,16 +37036,18 @@ function applyUpdates(updates) {
 /**
  * Creates a branch name for the update PR
  * @param updates Array of updates
+ * @param branchPrefix Prefix for the branch name (will be separated with /)
  * @returns Branch name
  */
-function createBranchName(updates) {
+function createBranchName(updates, branchPrefix = "chore/quarto-extensions") {
     const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const prefix = branchPrefix.length === 0 ? "chore/quarto-extensions" : branchPrefix;
     if (updates.length === 1) {
         const update = updates[0];
         const safeName = update.nameWithOwner.replace(/\//g, "-");
-        return `quarto-extensions/update-${safeName}-${update.latestVersion}`;
+        return `${prefix}/update-${safeName}-${update.latestVersion}`;
     }
-    return `quarto-extensions/update-extensions-${timestamp}`;
+    return `${prefix}/update-extensions-${timestamp}`;
 }
 /**
  * Creates a commit message for the updates
@@ -37135,6 +37137,7 @@ async function run() {
         const registryUrl = core.getInput("registry-url") || undefined;
         const createPR = core.getBooleanInput("create-pr") !== false;
         const baseBranch = core.getInput("base-branch") || "main";
+        const branchPrefix = core.getInput("branch-prefix") || "chore/quarto-extensions";
         const octokit = github.getOctokit(githubToken);
         const context = github.context;
         core.info("🚀 Starting Quarto Extensions Updater...");
@@ -37173,7 +37176,7 @@ async function run() {
         core.info(`Modified ${modifiedFiles.length} file(s)`);
         core.endGroup();
         core.startGroup("🌿 Creating branch and commit");
-        const branchName = (0, git_1.createBranchName)(updates);
+        const branchName = (0, git_1.createBranchName)(updates, branchPrefix);
         const commitMessage = (0, git_1.createCommitMessage)(updates);
         core.info(`Branch: ${branchName}`);
         core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
