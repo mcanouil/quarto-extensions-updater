@@ -38,15 +38,16 @@ async function fetchReleaseNotes(
 /**
  * Generates a Pull Request title
  * @param updates Array of extension updates
+ * @param prefix Prefix for the PR title (default: "chore(deps):")
  * @returns PR title
  */
-export function generatePRTitle(updates: ExtensionUpdate[]): string {
+export function generatePRTitle(updates: ExtensionUpdate[], prefix = "chore(deps):"): string {
 	if (updates.length === 1) {
 		const update = updates[0];
-		return `chore(deps): update ${update.nameWithOwner} extension to ${update.latestVersion}`;
+		return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}`;
 	}
 
-	return `chore(deps): update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
+	return `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
 }
 
 /**

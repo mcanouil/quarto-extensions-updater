@@ -37,6 +37,21 @@ inputs:
     required: false
     default: "main"
 
+  pr-title-prefix:
+    description: "Prefix for PR titles (e.g., 'chore(deps):' or 'build:')"
+    required: false
+    default: "chore(deps):"
+
+  commit-message-prefix:
+    description: "Prefix for commit messages (e.g., 'chore(deps):' or 'build:')"
+    required: false
+    default: "chore(deps):"
+
+  pr-labels:
+    description: "Comma-separated list of labels to add to PRs (e.g., 'dependencies,quarto-extensions,automated')"
+    required: false
+    default: "dependencies,quarto-extensions"
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"
