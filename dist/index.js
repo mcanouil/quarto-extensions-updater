@@ -37179,12 +37179,34 @@ async function run() {
         const createdPRs = [];
         for (const update of updates) {
             core.startGroup(`📝 Processing ${update.nameWithOwner}`);
+            const branchName = (0, git_1.createBranchName)([update], branchPrefix);
+            const prTitle = (0, pr_1.generatePRTitle)([update], prTitlePrefix);
+            try {
+                const existingPRs = await octokit.rest.pulls.list({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    head: `${context.repo.owner}:${branchName}`,
+                    state: "open",
+                });
+                if (existingPRs.data.length > 0) {
+                    const existingPR = existingPRs.data[0];
+                    if (existingPR.title === prTitle) {
+                        core.info(`ℹ️ PR #${existingPR.number} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`);
+                        core.info(`   URL: ${existingPR.html_url}`);
+                        createdPRs.push({ number: existingPR.number, url: existingPR.html_url });
+                        core.endGroup();
+                        continue;
+                    }
+                }
+            }
+            catch (error) {
+                core.debug(`Error checking for existing PR: ${error}`);
+            }
             const modifiedFiles = (0, git_1.applyUpdates)([update]);
             if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
                 throw new Error(`Failed to validate modified files for ${update.nameWithOwner}`);
             }
             core.info(`Modified ${modifiedFiles.length} file(s)`);
-            const branchName = (0, git_1.createBranchName)([update], branchPrefix);
             const commitMessage = (0, git_1.createCommitMessage)([update], commitMessagePrefix);
             core.info(`Branch: ${branchName}`);
             core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
@@ -37259,7 +37281,6 @@ async function run() {
                 sha: commit.sha,
             });
             core.info(`✅ Created commit: ${commit.sha}`);
-            const prTitle = (0, pr_1.generatePRTitle)([update], prTitlePrefix);
             const prBody = await (0, pr_1.generatePRBody)([update], octokit);
             try {
                 const existingPRs = await octokit.rest.pulls.list({
