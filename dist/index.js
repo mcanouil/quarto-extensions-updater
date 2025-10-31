@@ -37142,7 +37142,10 @@ async function run() {
         const prTitlePrefix = core.getInput("pr-title-prefix") || "chore(deps):";
         const commitMessagePrefix = core.getInput("commit-message-prefix") || "chore(deps):";
         const prLabelsInput = core.getInput("pr-labels") || "dependencies,quarto-extensions";
-        const prLabels = prLabelsInput.split(",").map((label) => label.trim()).filter((label) => label.length > 0);
+        const prLabels = prLabelsInput
+            .split(",")
+            .map((label) => label.trim())
+            .filter((label) => label.length > 0);
         const octokit = github.getOctokit(githubToken);
         const context = github.context;
         core.info("🚀 Starting Quarto Extensions Updater...");
