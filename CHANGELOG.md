@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.5 (2025-10-31)
 
 - refactor(github): extract GitHub API operations into dedicated `src/github.ts` module.
 - refactor(github): add `checkExistingPR()` helper function for checking existing PRs.
