@@ -37138,9 +37138,7 @@ exports.GIT_CONFLICT_STATUS = 422;
 const FILE_MODE_REGULAR = "100644";
 /** Type guard to check if an error is a GitHub API error with status code */
 function isGitHubError(error) {
-    return (error instanceof Error &&
-        "status" in error &&
-        typeof error.status === "number");
+    return (error instanceof Error && "status" in error && typeof error.status === "number");
 }
 /**
  * Checks if a PR already exists for a specific branch and title
