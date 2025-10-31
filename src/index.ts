@@ -69,6 +69,33 @@ async function run(): Promise<void> {
 		for (const update of updates) {
 			core.startGroup(`📝 Processing ${update.nameWithOwner}`);
 
+			const branchName = createBranchName([update], branchPrefix);
+			const prTitle = generatePRTitle([update], prTitlePrefix);
+
+			try {
+				const existingPRs = await octokit.rest.pulls.list({
+					owner: context.repo.owner,
+					repo: context.repo.repo,
+					head: `${context.repo.owner}:${branchName}`,
+					state: "open",
+				});
+
+				if (existingPRs.data.length > 0) {
+					const existingPR = existingPRs.data[0];
+					if (existingPR.title === prTitle) {
+						core.info(
+							`ℹ️ PR #${existingPR.number} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`,
+						);
+						core.info(`   URL: ${existingPR.html_url}`);
+						createdPRs.push({ number: existingPR.number, url: existingPR.html_url });
+						core.endGroup();
+						continue;
+					}
+				}
+			} catch (error) {
+				core.debug(`Error checking for existing PR: ${error}`);
+			}
+
 			const modifiedFiles = applyUpdates([update]);
 
 			if (!validateModifiedFiles(modifiedFiles)) {
@@ -77,7 +104,6 @@ async function run(): Promise<void> {
 
 			core.info(`Modified ${modifiedFiles.length} file(s)`);
 
-			const branchName = createBranchName([update], branchPrefix);
 			const commitMessage = createCommitMessage([update], commitMessagePrefix);
 
 			core.info(`Branch: ${branchName}`);
@@ -164,7 +190,6 @@ async function run(): Promise<void> {
 
 			core.info(`✅ Created commit: ${commit.sha}`);
 
-			const prTitle = generatePRTitle([update], prTitlePrefix);
 			const prBody = await generatePRBody([update], octokit);
 
 			try {
