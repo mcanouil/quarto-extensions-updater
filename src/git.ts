@@ -118,19 +118,20 @@ export function createBranchName(updates: ExtensionUpdate[], branchPrefix = "cho
 /**
  * Creates a commit message for the updates
  * @param updates Array of updates
+ * @param prefix Prefix for the commit message (default: "chore(deps):")
  * @returns Commit message
  */
-export function createCommitMessage(updates: ExtensionUpdate[]): string {
+export function createCommitMessage(updates: ExtensionUpdate[], prefix = "chore(deps):"): string {
 	if (updates.length === 1) {
 		const update = updates[0];
-		return `chore(deps): update ${update.nameWithOwner} extension to ${update.latestVersion}
+		return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}
 
 Updates ${update.nameWithOwner} from ${update.currentVersion} to ${update.latestVersion}.
 
 Release notes: ${update.releaseUrl}`;
 	}
 
-	const title = `chore(deps): update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
+	const title = `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
 	const body = updates.map((u) => `- ${u.nameWithOwner}: ${u.currentVersion} → ${u.latestVersion}`).join("\n");
 
 	return `${title}\n\n${body}`;

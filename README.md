@@ -13,9 +13,11 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 📦 Updates extensions using Quarto CLI (`quarto add`).
 - 🔄 Maintains `source` field in extension manifests for tracking.
 - 📝 Creates detailed pull requests with release notes.
+- 🔀 **One PR per extension** - each extension gets its own PR that updates when new versions are available.
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
 - ⚡ Runs on a schedule or manually.
+- ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
 ## Usage
 
@@ -60,18 +62,24 @@ jobs:
     create-pr: true
     branch-prefix: "chore/quarto-extensions"
     base-branch: "main"
+    pr-title-prefix: "chore(deps):"
+    commit-message-prefix: "chore(deps):"
+    pr-labels: "dependencies,quarto-extensions"
 ```
 
 ## Inputs
 
-| Input            | Description                                              | Required | Default                                                                 |
-| ---------------- | -------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `github-token`   | GitHub token for creating pull requests                  | Yes      | `${{ github.token }}`                                                   |
-| `workspace-path` | Path to the workspace containing `_extensions` directory | No       | `.`                                                                     |
-| `registry-url`   | URL to the Quarto extensions registry JSON file          | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
-| `create-pr`      | Whether to create a pull request for updates             | No       | `true`                                                                  |
-| `branch-prefix`  | Prefix for the update branch name                        | No       | `chore/quarto-extensions`                                               |
-| `base-branch`    | Base branch to create pull requests against              | No       | `main`                                                                  |
+| Input                   | Description                                              | Required | Default                                                                 |
+| ----------------------- | -------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `github-token`          | GitHub token for creating pull requests                  | Yes      | `${{ github.token }}`                                                   |
+| `workspace-path`        | Path to the workspace containing `_extensions` directory | No       | `.`                                                                     |
+| `registry-url`          | URL to the Quarto extensions registry JSON file          | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
+| `create-pr`             | Whether to create a pull request for updates             | No       | `true`                                                                  |
+| `branch-prefix`         | Prefix for the update branch name                        | No       | `chore/quarto-extensions`                                               |
+| `base-branch`           | Base branch to create pull requests against              | No       | `main`                                                                  |
+| `pr-title-prefix`       | Prefix for PR titles                                     | No       | `chore(deps):`                                                          |
+| `commit-message-prefix` | Prefix for commit messages                               | No       | `chore(deps):`                                                          |
+| `pr-labels`             | Comma-separated list of labels to add to PRs             | No       | `dependencies,quarto-extensions`                                        |
 
 ## Outputs
 
@@ -88,9 +96,13 @@ jobs:
 1. **Fetch Registry**: Downloads the Quarto extensions registry from GitHub.
 2. **Scan Extensions**: Finds all installed extensions in `_extensions/`.
 3. **Check Versions**: Compares installed versions with registry using semantic versioning.
-4. **Apply Updates**: Uses Quarto CLI (`quarto add owner/repo@version --no-prompt`) to update extensions.
-5. **Track Updates**: Maintains `source` field in extension manifests for future update tracking.
-6. **Create PR**: Generates a detailed pull request with release notes.
+4. **Process Each Extension**: Each extension is processed individually to create separate PRs.
+5. **Apply Updates**: Uses Quarto CLI (`quarto add owner/repo@version --no-prompt`) to update extensions.
+6. **Track Updates**: Maintains `source` field in extension manifests for future update tracking.
+7. **Create/Update PR**:
+   - Creates a new PR if none exists for this extension
+   - Updates the existing PR if one already exists (same branch name)
+   - Ensures **one PR per extension** at most
 
 ## Requirements
 
@@ -201,6 +213,26 @@ on:
     - cron: "0 0 1 * *"  # Monthly on 1st day
 ```
 
+### Custom Branch Naming and PR Format
+
+Use conventional commits style with custom labels:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    branch-prefix: "deps/quarto"
+    pr-title-prefix: "build(deps):"
+    commit-message-prefix: "build(deps):"
+    pr-labels: "dependencies,quarto,automated,low-priority"
+```
+
+This will create PRs with:
+
+- Branch: `deps/quarto/update-owner-name`
+- Title: `build(deps): update owner/name extension to 1.2.3`
+- Labels: `dependencies`, `quarto`, `automated`, `low-priority`
+
 ## Troubleshooting
 
 ### No Extensions Found
@@ -209,7 +241,7 @@ Ensure your extensions are in `_extensions/owner/name/` structure with `_extensi
 
 ### No Updates Detected
 
-- Verify extensions are in the registry: [http://m.canouil.dev/quarto-extensions/](http://m.canouil.dev/quarto-extensions/).
+- Verify extensions are in the registry: <https://m.canouil.dev/quarto-extensions/>.
 - Check version fields exist in manifests.
 - Ensure versions follow semantic versioning (X.Y.Z).
 
