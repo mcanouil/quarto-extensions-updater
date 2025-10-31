@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.4 (2025-10-31)
 
 - feat(pr): skip PR creation when PR already exists for the same extension version.
 
