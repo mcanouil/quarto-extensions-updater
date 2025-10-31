@@ -160,3 +160,72 @@ export async function createOrUpdatePR(
 	core.info(`✅ Created PR: ${pr.html_url}`);
 	return { number: pr.number, url: pr.html_url };
 }
+
+/**
+ * Creates a Git commit with the specified files
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param branchName Branch name to update
+ * @param baseSha Base commit SHA
+ * @param message Commit message
+ * @param files Array of files with path and content
+ * @returns Commit SHA
+ */
+export async function createCommit(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	branchName: string,
+	baseSha: string,
+	message: string,
+	files: { path: string; content: Buffer }[],
+): Promise<string> {
+	const { data: baseTree } = await octokit.rest.git.getTree({
+		owner,
+		repo,
+		tree_sha: baseSha,
+	});
+
+	const tree = await Promise.all(
+		files.map(async (file) => {
+			const { data: blob } = await octokit.rest.git.createBlob({
+				owner,
+				repo,
+				content: file.content.toString("base64"),
+				encoding: "base64",
+			});
+
+			return {
+				path: file.path,
+				mode: "100644" as const,
+				type: "blob" as const,
+				sha: blob.sha,
+			};
+		}),
+	);
+
+	const { data: newTree } = await octokit.rest.git.createTree({
+		owner,
+		repo,
+		base_tree: baseTree.sha,
+		tree,
+	});
+
+	const { data: commit } = await octokit.rest.git.createCommit({
+		owner,
+		repo,
+		message,
+		tree: newTree.sha,
+		parents: [baseSha],
+	});
+
+	await octokit.rest.git.updateRef({
+		owner,
+		repo,
+		ref: `heads/${branchName}`,
+		sha: commit.sha,
+	});
+
+	return commit.sha;
+}

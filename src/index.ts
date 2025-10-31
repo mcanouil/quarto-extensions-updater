@@ -1,19 +1,18 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import * as fs from "fs";
+import * as path from "path";
 import { fetchExtensionsRegistry } from "./registry";
 import { checkForUpdates } from "./updates";
 import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
-import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR } from "./github";
+import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
 
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
 const DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
 const DEFAULT_COMMIT_MESSAGE_PREFIX = "chore(deps):";
 const DEFAULT_PR_LABELS = "dependencies,quarto-extensions";
-const FILE_MODE = "100644" as const;
-const BLOB_TYPE = "blob" as const;
 
 async function run(): Promise<void> {
 	try {
@@ -75,6 +74,13 @@ async function run(): Promise<void> {
 			return;
 		}
 
+		const { data: refData } = await octokit.rest.git.getRef({
+			owner,
+			repo,
+			ref: `heads/${baseBranch}`,
+		});
+		const baseSha = refData.object.sha;
+
 		const createdPRs: { number: number; url: string }[] = [];
 
 		for (const update of updates) {
@@ -84,12 +90,12 @@ async function run(): Promise<void> {
 			const prTitle = generatePRTitle([update], prTitlePrefix);
 
 			const existingPR = await checkExistingPR(octokit, owner, repo, branchName, prTitle);
-			if (existingPR.exists) {
+			if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
 				core.info(
 					`ℹ️ PR #${existingPR.prNumber} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`,
 				);
 				core.info(`   URL: ${existingPR.prUrl}`);
-				createdPRs.push({ number: existingPR.prNumber!, url: existingPR.prUrl! });
+				createdPRs.push({ number: existingPR.prNumber, url: existingPR.prUrl });
 				core.endGroup();
 				continue;
 			}
@@ -107,64 +113,17 @@ async function run(): Promise<void> {
 			core.info(`Branch: ${branchName}`);
 			core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
 
-			const { data: refData } = await octokit.rest.git.getRef({
-				owner,
-				repo,
-				ref: `heads/${baseBranch}`,
-			});
-
-			const baseSha = refData.object.sha;
-
 			await createOrUpdateBranch(octokit, owner, repo, branchName, baseSha);
 
-			const { data: baseTree } = await octokit.rest.git.getTree({
-				owner,
-				repo,
-				tree_sha: baseSha,
-			});
+			const workspacePrefix = `${workspacePath}${path.sep}`;
+			const files = modifiedFiles.map((filePath) => ({
+				path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+				content: fs.readFileSync(filePath),
+			}));
 
-			const tree = await Promise.all(
-				modifiedFiles.map(async (filePath) => {
-					const content = fs.readFileSync(filePath);
-					const { data: blob } = await octokit.rest.git.createBlob({
-						owner,
-						repo,
-						content: content.toString("base64"),
-						encoding: "base64",
-					});
+			const commitSha = await createCommit(octokit, owner, repo, branchName, baseSha, commitMessage, files);
 
-					return {
-						path: filePath.replace(`${workspacePath}/`, ""),
-						mode: FILE_MODE,
-						type: BLOB_TYPE,
-						sha: blob.sha,
-					};
-				}),
-			);
-
-			const { data: newTree } = await octokit.rest.git.createTree({
-				owner,
-				repo,
-				base_tree: baseTree.sha,
-				tree,
-			});
-
-			const { data: commit } = await octokit.rest.git.createCommit({
-				owner,
-				repo,
-				message: commitMessage,
-				tree: newTree.sha,
-				parents: [baseSha],
-			});
-
-			await octokit.rest.git.updateRef({
-				owner,
-				repo,
-				ref: `heads/${branchName}`,
-				sha: commit.sha,
-			});
-
-			core.info(`✅ Created commit: ${commit.sha}`);
+			core.info(`✅ Created commit: ${commitSha}`);
 
 			const prBody = await generatePRBody([update], octokit);
 

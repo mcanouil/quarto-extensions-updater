@@ -37129,6 +37129,7 @@ exports.GIT_CONFLICT_STATUS = void 0;
 exports.checkExistingPR = checkExistingPR;
 exports.createOrUpdateBranch = createOrUpdateBranch;
 exports.createOrUpdatePR = createOrUpdatePR;
+exports.createCommit = createCommit;
 const core = __importStar(__nccwpck_require__(7484));
 exports.GIT_CONFLICT_STATUS = 422;
 /**
@@ -37253,6 +37254,58 @@ async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, pr
     core.info(`✅ Created PR: ${pr.html_url}`);
     return { number: pr.number, url: pr.html_url };
 }
+/**
+ * Creates a Git commit with the specified files
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param branchName Branch name to update
+ * @param baseSha Base commit SHA
+ * @param message Commit message
+ * @param files Array of files with path and content
+ * @returns Commit SHA
+ */
+async function createCommit(octokit, owner, repo, branchName, baseSha, message, files) {
+    const { data: baseTree } = await octokit.rest.git.getTree({
+        owner,
+        repo,
+        tree_sha: baseSha,
+    });
+    const tree = await Promise.all(files.map(async (file) => {
+        const { data: blob } = await octokit.rest.git.createBlob({
+            owner,
+            repo,
+            content: file.content.toString("base64"),
+            encoding: "base64",
+        });
+        return {
+            path: file.path,
+            mode: "100644",
+            type: "blob",
+            sha: blob.sha,
+        };
+    }));
+    const { data: newTree } = await octokit.rest.git.createTree({
+        owner,
+        repo,
+        base_tree: baseTree.sha,
+        tree,
+    });
+    const { data: commit } = await octokit.rest.git.createCommit({
+        owner,
+        repo,
+        message,
+        tree: newTree.sha,
+        parents: [baseSha],
+    });
+    await octokit.rest.git.updateRef({
+        owner,
+        repo,
+        ref: `heads/${branchName}`,
+        sha: commit.sha,
+    });
+    return commit.sha;
+}
 
 
 /***/ }),
@@ -37299,6 +37352,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
 const registry_1 = __nccwpck_require__(2976);
 const updates_1 = __nccwpck_require__(8361);
 const git_1 = __nccwpck_require__(1243);
@@ -37309,8 +37363,6 @@ const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
 const DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
 const DEFAULT_COMMIT_MESSAGE_PREFIX = "chore(deps):";
 const DEFAULT_PR_LABELS = "dependencies,quarto-extensions";
-const FILE_MODE = "100644";
-const BLOB_TYPE = "blob";
 async function run() {
     try {
         const githubToken = core.getInput("github-token", { required: true });
@@ -37357,13 +37409,19 @@ async function run() {
             core.info("ℹ️ PR creation disabled, exiting...");
             return;
         }
+        const { data: refData } = await octokit.rest.git.getRef({
+            owner,
+            repo,
+            ref: `heads/${baseBranch}`,
+        });
+        const baseSha = refData.object.sha;
         const createdPRs = [];
         for (const update of updates) {
             core.startGroup(`📝 Processing ${update.nameWithOwner}`);
             const branchName = (0, git_1.createBranchName)([update], branchPrefix);
             const prTitle = (0, pr_1.generatePRTitle)([update], prTitlePrefix);
             const existingPR = await (0, github_1.checkExistingPR)(octokit, owner, repo, branchName, prTitle);
-            if (existingPR.exists) {
+            if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
                 core.info(`ℹ️ PR #${existingPR.prNumber} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`);
                 core.info(`   URL: ${existingPR.prUrl}`);
                 createdPRs.push({ number: existingPR.prNumber, url: existingPR.prUrl });
@@ -37378,53 +37436,14 @@ async function run() {
             const commitMessage = (0, git_1.createCommitMessage)([update], commitMessagePrefix);
             core.info(`Branch: ${branchName}`);
             core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
-            const { data: refData } = await octokit.rest.git.getRef({
-                owner,
-                repo,
-                ref: `heads/${baseBranch}`,
-            });
-            const baseSha = refData.object.sha;
             await (0, github_1.createOrUpdateBranch)(octokit, owner, repo, branchName, baseSha);
-            const { data: baseTree } = await octokit.rest.git.getTree({
-                owner,
-                repo,
-                tree_sha: baseSha,
-            });
-            const tree = await Promise.all(modifiedFiles.map(async (filePath) => {
-                const content = fs.readFileSync(filePath);
-                const { data: blob } = await octokit.rest.git.createBlob({
-                    owner,
-                    repo,
-                    content: content.toString("base64"),
-                    encoding: "base64",
-                });
-                return {
-                    path: filePath.replace(`${workspacePath}/`, ""),
-                    mode: FILE_MODE,
-                    type: BLOB_TYPE,
-                    sha: blob.sha,
-                };
+            const workspacePrefix = `${workspacePath}${path.sep}`;
+            const files = modifiedFiles.map((filePath) => ({
+                path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+                content: fs.readFileSync(filePath),
             }));
-            const { data: newTree } = await octokit.rest.git.createTree({
-                owner,
-                repo,
-                base_tree: baseTree.sha,
-                tree,
-            });
-            const { data: commit } = await octokit.rest.git.createCommit({
-                owner,
-                repo,
-                message: commitMessage,
-                tree: newTree.sha,
-                parents: [baseSha],
-            });
-            await octokit.rest.git.updateRef({
-                owner,
-                repo,
-                ref: `heads/${branchName}`,
-                sha: commit.sha,
-            });
-            core.info(`✅ Created commit: ${commit.sha}`);
+            const commitSha = await (0, github_1.createCommit)(octokit, owner, repo, branchName, baseSha, commitMessage, files);
+            core.info(`✅ Created commit: ${commitSha}`);
             const prBody = await (0, pr_1.generatePRBody)([update], octokit);
             try {
                 const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);

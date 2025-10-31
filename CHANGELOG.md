@@ -6,12 +6,17 @@
 - refactor(github): add `checkExistingPR()` helper function for checking existing PRs.
 - refactor(github): add `createOrUpdateBranch()` helper function for branch management.
 - refactor(github): add `createOrUpdatePR()` helper function for PR creation/updates.
+- refactor(github): add `createCommit()` helper function for Git commit operations.
 - refactor(index): extract constants for default values (base branch, prefixes, labels).
 - refactor(index): move `fs` import to module level instead of dynamic imports.
 - refactor(index): extract `owner` and `repo` once to reduce repeated property access.
 - refactor(index): simplify PR creation/update logic using new helper functions.
+- refactor(index): simplify Git commit creation using `createCommit()` helper.
+- refactor(index): improve path normalisation logic using `path.sep` and `slice()`.
+- refactor(index): improve type safety by checking optional properties before use.
 - perf(index): eliminate duplicate PR checking logic.
 - perf(index): remove dynamic `import("fs")` inside map loop for better performance.
+- perf(index): fetch base branch SHA once before loop instead of repeating for each update.
 
 ## 0.0.4 (2025-10-31)
 
