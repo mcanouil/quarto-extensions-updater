@@ -15,9 +15,7 @@ interface GitHubError extends Error {
 /** Type guard to check if an error is a GitHub API error with status code */
 function isGitHubError(error: unknown): error is GitHubError {
 	return (
-		error instanceof Error &&
-		"status" in error &&
-		typeof (error as Error & { status?: unknown }).status === "number"
+		error instanceof Error && "status" in error && typeof (error as Error & { status?: unknown }).status === "number"
 	);
 }
 
