@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- refactor(github): extract GitHub API operations into dedicated `src/github.ts` module.
+- refactor(github): add `checkExistingPR()` helper function for checking existing PRs.
+- refactor(github): add `createOrUpdateBranch()` helper function for branch management.
+- refactor(github): add `createOrUpdatePR()` helper function for PR creation/updates.
+- refactor(github): add `createCommit()` helper function for Git commit operations.
+- refactor(github): add `OctokitClient` type alias for improved type safety and reusability.
+- refactor(github): add `GitHubError` interface and `isGitHubError()` type guard for better error handling.
+- refactor(github): extract and document `FILE_MODE_REGULAR` constant for Git file modes.
+- refactor(github): update all function signatures to use `OctokitClient` type alias.
+- refactor(github): replace inline error type checking with `isGitHubError()` type guard.
+- refactor(extensions): add `ExtensionManifestYAML` interface for typed manifest parsing.
+- refactor(extensions): extract and document `MANIFEST_FILENAMES` constant.
+- refactor(extensions): update `readExtensionManifest()` to use typed `ExtensionManifestYAML` interface.
+- refactor(index): extract constants for default values (base branch, prefixes, labels).
+- refactor(index): move `fs` import to module level instead of dynamic imports.
+- refactor(index): extract `owner` and `repo` once to reduce repeated property access.
+- refactor(index): simplify PR creation/update logic using new helper functions.
+- refactor(index): simplify Git commit creation using `createCommit()` helper.
+- refactor(index): improve path normalisation logic using `path.sep` and `slice()`.
+- refactor(index): improve type safety by checking optional properties before use.
+- fix(index): add input parameter validation for workspace path, registry URL, and branch prefix.
+- fix(github): improve error handling in `checkExistingPR()` to distinguish expected vs unexpected errors.
+- fix(pr): add validation for repository name format before splitting.
+- perf(index): eliminate duplicate PR checking logic.
+- perf(index): remove dynamic `import("fs")` inside map loop for better performance.
+- perf(index): fetch base branch SHA once before loop instead of repeating for each update.
+
 ## 0.0.4 (2025-10-31)
 
 - feat(pr): skip PR creation when PR already exists for the same extension version.

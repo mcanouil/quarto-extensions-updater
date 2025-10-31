@@ -1,9 +1,18 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import * as fs from "fs";
+import * as path from "path";
 import { fetchExtensionsRegistry } from "./registry";
 import { checkForUpdates } from "./updates";
 import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
+import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
+
+const DEFAULT_BASE_BRANCH = "main";
+const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
+const DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
+const DEFAULT_COMMIT_MESSAGE_PREFIX = "chore(deps):";
+const DEFAULT_PR_LABELS = "dependencies,quarto-extensions";
 
 async function run(): Promise<void> {
 	try {
@@ -11,22 +20,35 @@ async function run(): Promise<void> {
 		const workspacePath = core.getInput("workspace-path") || process.cwd();
 		const registryUrl = core.getInput("registry-url") || undefined;
 		const createPR = core.getBooleanInput("create-pr") !== false;
-		const baseBranch = core.getInput("base-branch") || "main";
-		const branchPrefix = core.getInput("branch-prefix") || "chore/quarto-extensions";
-		const prTitlePrefix = core.getInput("pr-title-prefix") || "chore(deps):";
-		const commitMessagePrefix = core.getInput("commit-message-prefix") || "chore(deps):";
-		const prLabelsInput = core.getInput("pr-labels") || "dependencies,quarto-extensions";
+		const baseBranch = core.getInput("base-branch") || DEFAULT_BASE_BRANCH;
+		const branchPrefix = core.getInput("branch-prefix") || DEFAULT_BRANCH_PREFIX;
+		const prTitlePrefix = core.getInput("pr-title-prefix") || DEFAULT_PR_TITLE_PREFIX;
+		const commitMessagePrefix = core.getInput("commit-message-prefix") || DEFAULT_COMMIT_MESSAGE_PREFIX;
+		const prLabelsInput = core.getInput("pr-labels") || DEFAULT_PR_LABELS;
 		const prLabels = prLabelsInput
 			.split(",")
 			.map((label) => label.trim())
 			.filter((label) => label.length > 0);
 
+		if (!fs.existsSync(workspacePath)) {
+			throw new Error(`Workspace path does not exist: ${workspacePath}`);
+		}
+
+		if (registryUrl && !registryUrl.startsWith("https://")) {
+			throw new Error(`Registry URL must use HTTPS: ${registryUrl}`);
+		}
+
+		if (branchPrefix.includes(" ")) {
+			throw new Error(`Branch prefix cannot contain spaces: ${branchPrefix}`);
+		}
+
 		const octokit = github.getOctokit(githubToken);
 		const context = github.context;
+		const { owner, repo } = context.repo;
 
 		core.info("🚀 Starting Quarto Extensions Updater...");
 		core.info(`Workspace path: ${workspacePath}`);
-		core.info(`Repository: ${context.repo.owner}/${context.repo.repo}`);
+		core.info(`Repository: ${owner}/${repo}`);
 		core.info(`Base branch: ${baseBranch}`);
 
 		core.startGroup("📥 Fetching extensions registry");
@@ -64,6 +86,13 @@ async function run(): Promise<void> {
 			return;
 		}
 
+		const { data: refData } = await octokit.rest.git.getRef({
+			owner,
+			repo,
+			ref: `heads/${baseBranch}`,
+		});
+		const baseSha = refData.object.sha;
+
 		const createdPRs: { number: number; url: string }[] = [];
 
 		for (const update of updates) {
@@ -72,28 +101,15 @@ async function run(): Promise<void> {
 			const branchName = createBranchName([update], branchPrefix);
 			const prTitle = generatePRTitle([update], prTitlePrefix);
 
-			try {
-				const existingPRs = await octokit.rest.pulls.list({
-					owner: context.repo.owner,
-					repo: context.repo.repo,
-					head: `${context.repo.owner}:${branchName}`,
-					state: "open",
-				});
-
-				if (existingPRs.data.length > 0) {
-					const existingPR = existingPRs.data[0];
-					if (existingPR.title === prTitle) {
-						core.info(
-							`ℹ️ PR #${existingPR.number} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`,
-						);
-						core.info(`   URL: ${existingPR.html_url}`);
-						createdPRs.push({ number: existingPR.number, url: existingPR.html_url });
-						core.endGroup();
-						continue;
-					}
-				}
-			} catch (error) {
-				core.debug(`Error checking for existing PR: ${error}`);
+			const existingPR = await checkExistingPR(octokit, owner, repo, branchName, prTitle);
+			if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
+				core.info(
+					`ℹ️ PR #${existingPR.prNumber} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`,
+				);
+				core.info(`   URL: ${existingPR.prUrl}`);
+				createdPRs.push({ number: existingPR.prNumber, url: existingPR.prUrl });
+				core.endGroup();
+				continue;
 			}
 
 			const modifiedFiles = applyUpdates([update]);
@@ -109,138 +125,23 @@ async function run(): Promise<void> {
 			core.info(`Branch: ${branchName}`);
 			core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
 
-			const { data: refData } = await octokit.rest.git.getRef({
-				owner: context.repo.owner,
-				repo: context.repo.repo,
-				ref: `heads/${baseBranch}`,
-			});
+			await createOrUpdateBranch(octokit, owner, repo, branchName, baseSha);
 
-			const baseSha = refData.object.sha;
+			const workspacePrefix = `${workspacePath}${path.sep}`;
+			const files = modifiedFiles.map((filePath) => ({
+				path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+				content: fs.readFileSync(filePath),
+			}));
 
-			try {
-				await octokit.rest.git.createRef({
-					owner: context.repo.owner,
-					repo: context.repo.repo,
-					ref: `refs/heads/${branchName}`,
-					sha: baseSha,
-				});
-				core.info(`✅ Created branch: ${branchName}`);
-			} catch (error: unknown) {
-				if (error instanceof Error && "status" in error && error.status === 422) {
-					core.info(`Branch ${branchName} already exists, updating it...`);
-					await octokit.rest.git.updateRef({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						ref: `heads/${branchName}`,
-						sha: baseSha,
-						force: true,
-					});
-				} else {
-					throw error;
-				}
-			}
+			const commitSha = await createCommit(octokit, owner, repo, branchName, baseSha, commitMessage, files);
 
-			const { data: baseTree } = await octokit.rest.git.getTree({
-				owner: context.repo.owner,
-				repo: context.repo.repo,
-				tree_sha: baseSha,
-			});
-
-			const tree = await Promise.all(
-				modifiedFiles.map(async (filePath) => {
-					const fs = await import("fs");
-					const content = fs.readFileSync(filePath);
-					const { data: blob } = await octokit.rest.git.createBlob({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						content: content.toString("base64"),
-						encoding: "base64",
-					});
-
-					return {
-						path: filePath.replace(`${workspacePath}/`, ""),
-						mode: "100644" as const,
-						type: "blob" as const,
-						sha: blob.sha,
-					};
-				}),
-			);
-
-			const { data: newTree } = await octokit.rest.git.createTree({
-				owner: context.repo.owner,
-				repo: context.repo.repo,
-				base_tree: baseTree.sha,
-				tree,
-			});
-
-			const { data: commit } = await octokit.rest.git.createCommit({
-				owner: context.repo.owner,
-				repo: context.repo.repo,
-				message: commitMessage,
-				tree: newTree.sha,
-				parents: [baseSha],
-			});
-
-			await octokit.rest.git.updateRef({
-				owner: context.repo.owner,
-				repo: context.repo.repo,
-				ref: `heads/${branchName}`,
-				sha: commit.sha,
-			});
-
-			core.info(`✅ Created commit: ${commit.sha}`);
+			core.info(`✅ Created commit: ${commitSha}`);
 
 			const prBody = await generatePRBody([update], octokit);
 
 			try {
-				const existingPRs = await octokit.rest.pulls.list({
-					owner: context.repo.owner,
-					repo: context.repo.repo,
-					head: `${context.repo.owner}:${branchName}`,
-					state: "open",
-				});
-
-				if (existingPRs.data.length > 0) {
-					const existingPR = existingPRs.data[0];
-					core.info(`Updating existing PR #${existingPR.number}`);
-
-					const { data: updatedPR } = await octokit.rest.pulls.update({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						pull_number: existingPR.number,
-						title: prTitle,
-						body: prBody,
-					});
-
-					await octokit.rest.issues.setLabels({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						issue_number: existingPR.number,
-						labels: prLabels,
-					});
-
-					core.info(`✅ Updated PR: ${updatedPR.html_url}`);
-					createdPRs.push({ number: updatedPR.number, url: updatedPR.html_url });
-				} else {
-					const { data: pr } = await octokit.rest.pulls.create({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						title: prTitle,
-						body: prBody,
-						head: branchName,
-						base: baseBranch,
-					});
-
-					await octokit.rest.issues.setLabels({
-						owner: context.repo.owner,
-						repo: context.repo.repo,
-						issue_number: pr.number,
-						labels: prLabels,
-					});
-
-					core.info(`✅ Created PR: ${pr.html_url}`);
-					createdPRs.push({ number: pr.number, url: pr.html_url });
-				}
+				const pr = await createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
+				createdPRs.push(pr);
 			} catch (error) {
 				core.error(`Failed to create/update PR for ${update.nameWithOwner}: ${error}`);
 				throw error;

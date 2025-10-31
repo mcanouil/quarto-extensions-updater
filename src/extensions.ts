@@ -4,6 +4,19 @@ import * as yaml from "js-yaml";
 import * as core from "@actions/core";
 import { ExtensionData } from "./types";
 
+/** Valid Quarto extension manifest filenames */
+const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"] as const;
+
+/** Quarto extension manifest YAML structure */
+interface ExtensionManifestYAML {
+	title?: string;
+	author?: string;
+	version?: string;
+	contributes?: Record<string, unknown>;
+	source?: string;
+	repository?: string;
+}
+
 /**
  * Finds all Quarto extension manifests in the workspace
  * @param workspacePath The root path to search for extensions
@@ -18,7 +31,6 @@ export function findExtensionManifests(workspacePath: string): string[] {
 	}
 
 	const manifests: string[] = [];
-	const manifestFilenames = ["_extension.yml", "_extension.yaml"];
 
 	try {
 		const owners = fs.readdirSync(extensionsDir, { withFileTypes: true });
@@ -34,7 +46,7 @@ export function findExtensionManifests(workspacePath: string): string[] {
 
 				const extPath = path.join(ownerPath, extEntry.name);
 
-				for (const filename of manifestFilenames) {
+				for (const filename of MANIFEST_FILENAMES) {
 					const manifestPath = path.join(extPath, filename);
 					if (fs.existsSync(manifestPath)) {
 						manifests.push(manifestPath);
@@ -65,7 +77,7 @@ export function readExtensionManifest(manifestPath: string): ExtensionData | nul
 		}
 
 		const fileContent = fs.readFileSync(manifestPath, "utf8");
-		const data = yaml.load(fileContent) as Record<string, unknown>;
+		const data = yaml.load(fileContent) as ExtensionManifestYAML;
 
 		const extensionData: ExtensionData = {
 			title: typeof data.title === "string" ? data.title : undefined,

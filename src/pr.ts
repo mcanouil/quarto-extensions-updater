@@ -100,7 +100,12 @@ export async function generatePRBody(
 			sections.push("");
 		}
 
-		const [owner, repo] = update.repositoryName.split("/");
+		const parts = update.repositoryName.split("/");
+		if (parts.length !== 2) {
+			core.warning(`Invalid repository name format: ${update.repositoryName}`);
+			continue;
+		}
+		const [owner, repo] = parts;
 		const releaseBody = await fetchReleaseNotes(octokit, owner, repo, update.latestVersion);
 
 		sections.push("<details>");
