@@ -44,7 +44,15 @@ export async function checkExistingPR(
 			}
 		}
 	} catch (error) {
-		core.debug(`Error checking for existing PR: ${error}`);
+		if (error instanceof Error && "status" in error) {
+			const statusError = error as Error & { status: number };
+			if (statusError.status === 404) {
+				core.debug(`No existing PRs found for branch: ${branchName}`);
+				return { exists: false };
+			}
+		}
+		core.warning(`Unexpected error checking for existing PR on branch ${branchName}: ${error}`);
+		throw error;
 	}
 
 	return { exists: false };

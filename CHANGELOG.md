@@ -14,6 +14,9 @@
 - refactor(index): simplify Git commit creation using `createCommit()` helper.
 - refactor(index): improve path normalisation logic using `path.sep` and `slice()`.
 - refactor(index): improve type safety by checking optional properties before use.
+- fix(index): add input parameter validation for workspace path, registry URL, and branch prefix.
+- fix(github): improve error handling in `checkExistingPR()` to distinguish expected vs unexpected errors.
+- fix(pr): add validation for repository name format before splitting.
 - perf(index): eliminate duplicate PR checking logic.
 - perf(index): remove dynamic `import("fs")` inside map loop for better performance.
 - perf(index): fetch base branch SHA once before loop instead of repeating for each update.

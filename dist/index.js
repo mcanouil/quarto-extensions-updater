@@ -37161,7 +37161,15 @@ async function checkExistingPR(octokit, owner, repo, branchName, expectedTitle) 
         }
     }
     catch (error) {
-        core.debug(`Error checking for existing PR: ${error}`);
+        if (error instanceof Error && "status" in error) {
+            const statusError = error;
+            if (statusError.status === 404) {
+                core.debug(`No existing PRs found for branch: ${branchName}`);
+                return { exists: false };
+            }
+        }
+        core.warning(`Unexpected error checking for existing PR on branch ${branchName}: ${error}`);
+        throw error;
     }
     return { exists: false };
 }
@@ -37378,6 +37386,15 @@ async function run() {
             .split(",")
             .map((label) => label.trim())
             .filter((label) => label.length > 0);
+        if (!fs.existsSync(workspacePath)) {
+            throw new Error(`Workspace path does not exist: ${workspacePath}`);
+        }
+        if (registryUrl && !registryUrl.startsWith("https://")) {
+            throw new Error(`Registry URL must use HTTPS: ${registryUrl}`);
+        }
+        if (branchPrefix.includes(" ")) {
+            throw new Error(`Branch prefix cannot contain spaces: ${branchPrefix}`);
+        }
         const octokit = github.getOctokit(githubToken);
         const context = github.context;
         const { owner, repo } = context.repo;
@@ -37599,7 +37616,12 @@ async function generatePRBody(updates, octokit) {
             sections.push("### Release Notes");
             sections.push("");
         }
-        const [owner, repo] = update.repositoryName.split("/");
+        const parts = update.repositoryName.split("/");
+        if (parts.length !== 2) {
+            core.warning(`Invalid repository name format: ${update.repositoryName}`);
+            continue;
+        }
+        const [owner, repo] = parts;
         const releaseBody = await fetchReleaseNotes(octokit, owner, repo, update.latestVersion);
         sections.push("<details>");
         sections.push(`<summary>Release ${update.latestVersion}</summary>`);

@@ -30,6 +30,18 @@ async function run(): Promise<void> {
 			.map((label) => label.trim())
 			.filter((label) => label.length > 0);
 
+		if (!fs.existsSync(workspacePath)) {
+			throw new Error(`Workspace path does not exist: ${workspacePath}`);
+		}
+
+		if (registryUrl && !registryUrl.startsWith("https://")) {
+			throw new Error(`Registry URL must use HTTPS: ${registryUrl}`);
+		}
+
+		if (branchPrefix.includes(" ")) {
+			throw new Error(`Branch prefix cannot contain spaces: ${branchPrefix}`);
+		}
+
 		const octokit = github.getOctokit(githubToken);
 		const context = github.context;
 		const { owner, repo } = context.repo;
