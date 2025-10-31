@@ -36792,6 +36792,8 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const yaml = __importStar(__nccwpck_require__(4281));
 const core = __importStar(__nccwpck_require__(7484));
+/** Valid Quarto extension manifest filenames */
+const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
 /**
  * Finds all Quarto extension manifests in the workspace
  * @param workspacePath The root path to search for extensions
@@ -36804,7 +36806,6 @@ function findExtensionManifests(workspacePath) {
         return [];
     }
     const manifests = [];
-    const manifestFilenames = ["_extension.yml", "_extension.yaml"];
     try {
         const owners = fs.readdirSync(extensionsDir, { withFileTypes: true });
         for (const ownerEntry of owners) {
@@ -36816,7 +36817,7 @@ function findExtensionManifests(workspacePath) {
                 if (!extEntry.isDirectory())
                     continue;
                 const extPath = path.join(ownerPath, extEntry.name);
-                for (const filename of manifestFilenames) {
+                for (const filename of MANIFEST_FILENAMES) {
                     const manifestPath = path.join(extPath, filename);
                     if (fs.existsSync(manifestPath)) {
                         manifests.push(manifestPath);
@@ -37131,7 +37132,16 @@ exports.createOrUpdateBranch = createOrUpdateBranch;
 exports.createOrUpdatePR = createOrUpdatePR;
 exports.createCommit = createCommit;
 const core = __importStar(__nccwpck_require__(7484));
+/** HTTP 422 Unprocessable Entity - Used by GitHub API to indicate a ref already exists */
 exports.GIT_CONFLICT_STATUS = 422;
+/** Git file mode for regular non-executable file */
+const FILE_MODE_REGULAR = "100644";
+/** Type guard to check if an error is a GitHub API error with status code */
+function isGitHubError(error) {
+    return (error instanceof Error &&
+        "status" in error &&
+        typeof error.status === "number");
+}
 /**
  * Checks if a PR already exists for a specific branch and title
  * @param octokit GitHub API client
@@ -37161,9 +37171,8 @@ async function checkExistingPR(octokit, owner, repo, branchName, expectedTitle) 
         }
     }
     catch (error) {
-        if (error instanceof Error && "status" in error) {
-            const statusError = error;
-            if (statusError.status === 404) {
+        if (isGitHubError(error)) {
+            if (error.status === 404) {
                 core.debug(`No existing PRs found for branch: ${branchName}`);
                 return { exists: false };
             }
@@ -37192,7 +37201,7 @@ async function createOrUpdateBranch(octokit, owner, repo, branchName, baseSha) {
         core.info(`✅ Created branch: ${branchName}`);
     }
     catch (error) {
-        if (error instanceof Error && "status" in error && error.status === exports.GIT_CONFLICT_STATUS) {
+        if (isGitHubError(error) && error.status === exports.GIT_CONFLICT_STATUS) {
             core.info(`Branch ${branchName} already exists, updating it...`);
             await octokit.rest.git.updateRef({
                 owner,
@@ -37288,7 +37297,7 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
         });
         return {
             path: file.path,
-            mode: "100644",
+            mode: FILE_MODE_REGULAR,
             type: "blob",
             sha: blob.sha,
         };

@@ -1,7 +1,28 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
+/** HTTP 422 Unprocessable Entity - Used by GitHub API to indicate a ref already exists */
 export const GIT_CONFLICT_STATUS = 422;
+
+/** Git file mode for regular non-executable file */
+const FILE_MODE_REGULAR = "100644" as const;
+
+/** GitHub API error with status code */
+interface GitHubError extends Error {
+	status: number;
+}
+
+/** Type guard to check if an error is a GitHub API error with status code */
+function isGitHubError(error: unknown): error is GitHubError {
+	return (
+		error instanceof Error &&
+		"status" in error &&
+		typeof (error as Error & { status?: unknown }).status === "number"
+	);
+}
+
+/** Type alias for GitHub Octokit client */
+export type OctokitClient = ReturnType<typeof github.getOctokit>;
 
 export interface ExistingPRResult {
 	exists: boolean;
@@ -19,7 +40,7 @@ export interface ExistingPRResult {
  * @returns ExistingPRResult with PR details if found
  */
 export async function checkExistingPR(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	branchName: string,
@@ -44,9 +65,8 @@ export async function checkExistingPR(
 			}
 		}
 	} catch (error) {
-		if (error instanceof Error && "status" in error) {
-			const statusError = error as Error & { status: number };
-			if (statusError.status === 404) {
+		if (isGitHubError(error)) {
+			if (error.status === 404) {
 				core.debug(`No existing PRs found for branch: ${branchName}`);
 				return { exists: false };
 			}
@@ -67,7 +87,7 @@ export async function checkExistingPR(
  * @param baseSha SHA to point the branch to
  */
 export async function createOrUpdateBranch(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	branchName: string,
@@ -82,7 +102,7 @@ export async function createOrUpdateBranch(
 		});
 		core.info(`✅ Created branch: ${branchName}`);
 	} catch (error: unknown) {
-		if (error instanceof Error && "status" in error && error.status === GIT_CONFLICT_STATUS) {
+		if (isGitHubError(error) && error.status === GIT_CONFLICT_STATUS) {
 			core.info(`Branch ${branchName} already exists, updating it...`);
 			await octokit.rest.git.updateRef({
 				owner,
@@ -110,7 +130,7 @@ export async function createOrUpdateBranch(
  * @returns PR number and URL
  */
 export async function createOrUpdatePR(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	branchName: string,
@@ -181,7 +201,7 @@ export async function createOrUpdatePR(
  * @returns Commit SHA
  */
 export async function createCommit(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	branchName: string,
@@ -206,7 +226,7 @@ export async function createCommit(
 
 			return {
 				path: file.path,
-				mode: "100644" as const,
+				mode: FILE_MODE_REGULAR,
 				type: "blob" as const,
 				sha: blob.sha,
 			};

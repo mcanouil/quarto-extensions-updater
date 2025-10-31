@@ -7,6 +7,14 @@
 - refactor(github): add `createOrUpdateBranch()` helper function for branch management.
 - refactor(github): add `createOrUpdatePR()` helper function for PR creation/updates.
 - refactor(github): add `createCommit()` helper function for Git commit operations.
+- refactor(github): add `OctokitClient` type alias for improved type safety and reusability.
+- refactor(github): add `GitHubError` interface and `isGitHubError()` type guard for better error handling.
+- refactor(github): extract and document `FILE_MODE_REGULAR` constant for Git file modes.
+- refactor(github): update all function signatures to use `OctokitClient` type alias.
+- refactor(github): replace inline error type checking with `isGitHubError()` type guard.
+- refactor(extensions): add `ExtensionManifestYAML` interface for typed manifest parsing.
+- refactor(extensions): extract and document `MANIFEST_FILENAMES` constant.
+- refactor(extensions): update `readExtensionManifest()` to use typed `ExtensionManifestYAML` interface.
 - refactor(index): extract constants for default values (base branch, prefixes, labels).
 - refactor(index): move `fs` import to module level instead of dynamic imports.
 - refactor(index): extract `owner` and `repo` once to reduce repeated property access.
