@@ -1,20 +1,12 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import * as semver from "semver";
-import type {
-	ExtensionUpdate,
-	AutoMergeConfig,
-	UpdateType,
-	MergeMethod,
-} from "./types";
+import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "./types";
 
 /**
  * Determines the type of version update based on semver
  */
-export function getUpdateType(
-	currentVersion: string,
-	latestVersion: string,
-): UpdateType {
+export function getUpdateType(currentVersion: string, latestVersion: string): UpdateType {
 	const diff = semver.diff(currentVersion, latestVersion);
 
 	if (!diff) {
@@ -39,18 +31,12 @@ export function getUpdateType(
 /**
  * Determines if an update should be auto-merged based on the configured strategy
  */
-export function shouldAutoMerge(
-	update: ExtensionUpdate,
-	config: AutoMergeConfig,
-): boolean {
+export function shouldAutoMerge(update: ExtensionUpdate, config: AutoMergeConfig): boolean {
 	if (!config.enabled) {
 		return false;
 	}
 
-	const updateType = getUpdateType(
-		update.currentVersion,
-		update.latestVersion,
-	);
+	const updateType = getUpdateType(update.currentVersion, update.latestVersion);
 
 	switch (config.strategy) {
 		case "patch":
@@ -75,9 +61,7 @@ export async function enableAutoMerge(
 	mergeMethod: MergeMethod,
 ): Promise<void> {
 	try {
-		core.info(
-			`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`,
-		);
+		core.info(`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`);
 
 		// Use GraphQL API to enable auto-merge
 		// The REST API doesn't support auto-merge directly
