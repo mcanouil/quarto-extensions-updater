@@ -56,6 +56,8 @@ async function run(): Promise<void> {
 				.filter((ext) => ext.length > 0),
 		};
 
+		const groupUpdates = core.getBooleanInput("group-updates") === true;
+
 		if (!fs.existsSync(workspacePath)) {
 			throw new Error(`Workspace path does not exist: ${workspacePath}`);
 		}
@@ -121,32 +123,42 @@ async function run(): Promise<void> {
 
 		const createdPRs: { number: number; url: string }[] = [];
 
-		for (const update of updates) {
-			core.startGroup(`📝 Processing ${update.nameWithOwner}`);
+		// Determine whether to create one PR for all updates or one PR per extension
+		const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
 
-			const branchName = createBranchName([update], branchPrefix);
-			const prTitle = generatePRTitle([update], prTitlePrefix);
+		for (const updateGroup of updateGroups) {
+			const groupDescription =
+				updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
+			core.startGroup(`📝 Processing ${groupDescription}`);
+
+			const branchName = createBranchName(updateGroup, branchPrefix);
+			const prTitle = generatePRTitle(updateGroup, prTitlePrefix);
 
 			const existingPR = await checkExistingPR(octokit, owner, repo, branchName, prTitle);
 			if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
-				core.info(
-					`ℹ️ PR #${existingPR.prNumber} already exists for ${update.nameWithOwner}@${update.latestVersion}, skipping...`,
-				);
+				if (updateGroup.length === 1) {
+					core.info(
+						`ℹ️ PR #${existingPR.prNumber} already exists for ${updateGroup[0].nameWithOwner}@${updateGroup[0].latestVersion}, skipping...`,
+					);
+				} else {
+					core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
+				}
 				core.info(`   URL: ${existingPR.prUrl}`);
 				createdPRs.push({ number: existingPR.prNumber, url: existingPR.prUrl });
 				core.endGroup();
 				continue;
 			}
 
-			const modifiedFiles = applyUpdates([update]);
+			const modifiedFiles = applyUpdates(updateGroup);
 
 			if (!validateModifiedFiles(modifiedFiles)) {
-				throw new Error(`Failed to validate modified files for ${update.nameWithOwner}`);
+				const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+				throw new Error(`Failed to validate modified files for ${errorDesc}`);
 			}
 
 			core.info(`Modified ${modifiedFiles.length} file(s)`);
 
-			const commitMessage = createCommitMessage([update], commitMessagePrefix);
+			const commitMessage = createCommitMessage(updateGroup, commitMessagePrefix);
 
 			core.info(`Branch: ${branchName}`);
 			core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
@@ -163,15 +175,15 @@ async function run(): Promise<void> {
 
 			core.info(`✅ Created commit: ${commitSha}`);
 
-			const prBody = await generatePRBody([update], octokit);
+			const prBody = await generatePRBody(updateGroup, octokit);
 
 			try {
 				const pr = await createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
 				createdPRs.push(pr);
 
-				// Handle auto-merge if enabled
-				if (shouldAutoMerge(update, autoMergeConfig)) {
-					core.info(`🤖 Auto-merge enabled for ${update.nameWithOwner}`);
+				// Handle auto-merge if enabled (only for single extension updates or when all updates qualify)
+				if (updateGroup.length === 1 && shouldAutoMerge(updateGroup[0], autoMergeConfig)) {
+					core.info(`🤖 Auto-merge enabled for ${updateGroup[0].nameWithOwner}`);
 
 					// Check if auto-merge is already enabled
 					const alreadyEnabled = await isAutoMergeEnabled(octokit, owner, repo, pr.number);
@@ -181,11 +193,28 @@ async function run(): Promise<void> {
 					} else {
 						await enableAutoMerge(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
 					}
-				} else if (autoMergeConfig.enabled) {
-					core.info(`ℹ️ Auto-merge not applicable for ${update.nameWithOwner} (strategy: ${autoMergeConfig.strategy})`);
+				} else if (updateGroup.length > 1 && autoMergeConfig.enabled) {
+					// For grouped updates, check if all updates qualify for auto-merge
+					const allQualify = updateGroup.every((u) => shouldAutoMerge(u, autoMergeConfig));
+					if (allQualify) {
+						core.info(`🤖 Auto-merge enabled for grouped updates (all ${updateGroup.length} updates qualify)`);
+						const alreadyEnabled = await isAutoMergeEnabled(octokit, owner, repo, pr.number);
+						if (!alreadyEnabled) {
+							await enableAutoMerge(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
+						}
+					} else {
+						core.info(
+							`ℹ️ Auto-merge not applicable for grouped updates (not all updates qualify for strategy: ${autoMergeConfig.strategy})`,
+						);
+					}
+				} else if (updateGroup.length === 1 && autoMergeConfig.enabled) {
+					core.info(
+						`ℹ️ Auto-merge not applicable for ${updateGroup[0].nameWithOwner} (strategy: ${autoMergeConfig.strategy})`,
+					);
 				}
 			} catch (error) {
-				core.error(`Failed to create/update PR for ${update.nameWithOwner}: ${error}`);
+				const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+				core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
 				throw error;
 			}
 

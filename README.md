@@ -13,11 +13,12 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 📦 Updates extensions using Quarto CLI (`quarto add`).
 - 🔄 Maintains `source` field in extension manifests for tracking.
 - 📝 Creates detailed pull requests with release notes.
-- 🔀 **One PR per extension** - each extension gets its own PR that updates when new versions are available.
+- 🔀 **One PR per extension** - each extension gets its own PR that updates when new versions are available (or group all updates into a single PR).
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
 - 🚀 **Auto-merge support** - automatically merge PRs based on configurable rules (e.g., patch updates only).
 - 🎯 **Selective updates** - include or exclude specific extensions from updates.
+- 📦 **Grouped updates** - option to combine all extension updates into a single PR.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -90,6 +91,7 @@ jobs:
 | `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                               | No       | `squash`                                                                |
 | `include-extensions`    | Comma-separated list of extensions to include (e.g., `owner/name1,owner/name2`)   | No       | `` (all)                                                                |
 | `exclude-extensions`    | Comma-separated list of extensions to exclude (e.g., `owner/name1,owner/name2`)   | No       | `` (none)                                                               |
+| `group-updates`         | Group all extension updates into a single PR instead of one PR per extension       | No       | `false`                                                                 |
 
 ## Outputs
 
@@ -265,6 +267,39 @@ jobs:
 - The PR will only merge automatically after all required status checks pass.
 - If auto-merge fails (e.g., due to permission issues), the PR will still be created but won't auto-merge.
 - The action logs a warning if auto-merge fails but continues normal operation.
+
+## Grouped Updates
+
+By default, the action creates one PR per extension for granular control. However, you can group all updates into a single PR if you prefer fewer PRs.
+
+### Enable Grouped Updates
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    group-updates: true
+```
+
+When `group-updates` is enabled:
+
+- All extension updates are combined into a single PR.
+- The PR title reflects the total number of extensions being updated.
+- The PR body lists all updates grouped by type (major, minor, patch).
+- Auto-merge will only be enabled if **all** extensions in the group qualify based on your auto-merge strategy.
+
+### Use Cases for Grouped Updates
+
+- **Fewer PRs**: Reduce notification noise by combining all updates into one PR.
+- **Batch Updates**: Apply all extension updates at once for easier testing.
+- **Simplified Review**: Review all changes in a single pull request.
+
+### Use Cases for Individual PRs (Default)
+
+- **Granular Control**: Review and merge each extension update independently.
+- **Targeted Testing**: Test each extension update separately to identify issues.
+- **Selective Auto-merge**: Automatically merge safe updates (e.g., patches) whilst reviewing others manually.
+- **Better Change Tracking**: See exactly which extension caused issues if problems arise.
 
 ## Selective Extension Updates
 
