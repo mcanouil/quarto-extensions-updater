@@ -87,6 +87,11 @@ inputs:
     required: false
     default: "all"
 
+  dry-run:
+    description: "Run in dry-run mode: check for updates and report what would be done without creating PRs or making changes"
+    required: false
+    default: "false"
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"

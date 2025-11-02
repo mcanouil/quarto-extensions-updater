@@ -20,6 +20,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🎯 **Selective updates** - include or exclude specific extensions from updates.
 - 📦 **Grouped updates** - option to combine all extension updates into a single PR.
 - 🛡️ **Update strategy** - control which types of updates to apply (all, minor, patch).
+- 🧪 **Dry-run mode** - preview updates and test configuration without making changes.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -94,6 +95,7 @@ jobs:
 | `exclude-extensions`    | Comma-separated list of extensions to exclude (e.g., `owner/name1,owner/name2`)   | No       | `` (none)                                                               |
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension       | No       | `false`                                                                 |
 | `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch` | No       | `all`                                                                   |
+| `dry-run`               | Run in dry-run mode: check for updates and report what would be done without making changes | No       | `false`                                                                 |
 
 ## Outputs
 
@@ -408,7 +410,68 @@ In this example, only `mcanouil/iconify` and `quarto-ext/lightbox` will be updat
 - **Unstable Extensions**: Exclude extensions that are under active development or have known issues.
 - **Critical Extensions**: Create separate workflows for critical vs. non-critical extensions with different schedules.
 
+## Dry-Run Mode
+
+Test your configuration and see what updates would be applied without actually creating PRs or making changes.
+
+### Enable Dry-Run Mode
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    dry-run: true
+```
+
+### What Dry-Run Does
+
+When `dry-run` is enabled:
+
+- Checks for available updates normally.
+- Reports all configuration settings (update strategy, filters, grouping, auto-merge).
+- Shows exactly which PRs would be created.
+- Indicates which updates would be auto-merged.
+- **No PRs are created**.
+- **No changes are made to your repository**.
+
+### Example Output
+
+```text
+🔍 Running in dry-run mode - no PRs will be created
+
+📋 Dry-run summary:
+   Mode: Individual PRs (one per extension)
+   Update strategy: minor
+   Exclude filter: owner/unstable-ext
+   Auto-merge: enabled (patch updates, squash method)
+
+✓ Would create 3 PRs (one per extension)
+   - mcanouil/iconify: 1.0.0 → 1.0.1 (would auto-merge)
+   - quarto-ext/lightbox: 1.5.0 → 1.6.0
+   - quarto-ext/fancy-text: 2.0.0 → 2.1.0
+
+💡 Remove 'dry-run: true' to apply these updates
+```
+
+### Use Cases
+
+- **Test Configuration**: Verify your update strategy, filters, and grouping settings work as expected.
+- **Preview Updates**: See what updates are available before applying them.
+- **CI/CD Testing**: Test your workflow configuration without making changes.
+- **Regular Monitoring**: Run daily in dry-run mode to monitor available updates, then manually decide when to apply them.
+
 ## Examples
+
+### Test Configuration with Dry-Run
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"
+    exclude-extensions: "owner/unstable-ext"
+    dry-run: true
+```
 
 ### Check for Updates Without Creating PR
 

@@ -58,6 +58,7 @@ async function run(): Promise<void> {
 
 		const groupUpdates = core.getBooleanInput("group-updates") === true;
 		const updateStrategy = (core.getInput("update-strategy") || "all") as UpdateStrategy;
+		const dryRun = core.getBooleanInput("dry-run") === true;
 
 		if (!fs.existsSync(workspacePath)) {
 			throw new Error(`Workspace path does not exist: ${workspacePath}`);
@@ -109,6 +110,116 @@ async function run(): Promise<void> {
 				})),
 			),
 		);
+
+		// Handle dry-run mode
+		if (dryRun) {
+			core.startGroup("🔍 Dry-Run Mode - No Changes Will Be Made");
+
+			core.summary.addHeading("Dry-Run Summary", 2);
+			core.summary.addRaw("No PRs will be created. This is a preview of what would happen.", true);
+			core.summary.addBreak();
+
+			// Configuration section
+			core.summary.addHeading("Configuration", 3);
+			const configTable = [
+				[
+					{ data: "Setting", header: true },
+					{ data: "Value", header: true },
+				],
+				[
+					{ data: "Mode", header: false },
+					{ data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)", header: false },
+				],
+				[
+					{ data: "Update Strategy", header: false },
+					{ data: updateStrategy, header: false },
+				],
+			];
+
+			if (filterConfig.include.length > 0) {
+				configTable.push([
+					{ data: "Include Filter", header: false },
+					{ data: filterConfig.include.join(", "), header: false },
+				]);
+			}
+			if (filterConfig.exclude.length > 0) {
+				configTable.push([
+					{ data: "Exclude Filter", header: false },
+					{ data: filterConfig.exclude.join(", "), header: false },
+				]);
+			}
+			if (autoMergeConfig.enabled) {
+				configTable.push([
+					{ data: "Auto-Merge", header: false },
+					{
+						data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+						header: false,
+					},
+				]);
+			} else {
+				configTable.push([
+					{ data: "Auto-Merge", header: false },
+					{ data: "Disabled", header: false },
+				]);
+			}
+
+			core.summary.addTable(configTable);
+			core.summary.addBreak();
+
+			// Planned actions section
+			core.summary.addHeading("Planned Actions", 3);
+			if (groupUpdates) {
+				core.summary.addRaw(
+					`Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}`,
+					true,
+				);
+			} else {
+				core.summary.addRaw(
+					`Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)`,
+					true,
+				);
+			}
+			core.summary.addBreak();
+
+			// Updates table
+			const updatesTable = [
+				[
+					{ data: "Extension", header: true },
+					{ data: "Current", header: true },
+					{ data: "Latest", header: true },
+					{ data: "Auto-Merge", header: true },
+				],
+			];
+
+			for (const update of updates) {
+				const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
+				updatesTable.push([
+					{ data: update.nameWithOwner, header: false },
+					{ data: update.currentVersion, header: false },
+					{ data: update.latestVersion, header: false },
+					{ data: wouldAutoMerge ? "✓ Yes" : "✗ No", header: false },
+				]);
+			}
+
+			core.summary.addTable(updatesTable);
+			core.summary.addBreak();
+
+			// Instructions
+			core.summary.addHeading("Next Steps", 3);
+			core.summary.addRaw(
+				"To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.",
+				true,
+			);
+
+			await core.summary.write();
+
+			core.info("📋 Dry-run summary written to job summary");
+			core.info(`✓ Found ${updates.length} update${updates.length > 1 ? "s" : ""} that would be applied`);
+			core.info("💡 Check the job summary for detailed information");
+
+			core.endGroup();
+			return;
+		}
 
 		if (!createPR) {
 			core.info("ℹ️ PR creation disabled, exiting...");
@@ -226,6 +337,112 @@ async function run(): Promise<void> {
 			core.setOutput("pr-number", createdPRs[0].number.toString());
 			core.setOutput("pr-url", createdPRs[0].url);
 			core.info(`📊 Summary: Created/updated ${createdPRs.length} PR(s)`);
+
+			// Generate job summary
+			core.startGroup("📋 Generating Job Summary");
+
+			core.summary.addHeading("Extension Updates Summary", 2);
+			core.summary.addRaw(
+				`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`,
+				true,
+			);
+			core.summary.addBreak();
+
+			// Configuration section
+			core.summary.addHeading("Configuration", 3);
+			const configTable = [
+				[
+					{ data: "Setting", header: true },
+					{ data: "Value", header: true },
+				],
+				[
+					{ data: "Mode", header: false },
+					{ data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)", header: false },
+				],
+				[
+					{ data: "Update Strategy", header: false },
+					{ data: updateStrategy, header: false },
+				],
+			];
+
+			if (filterConfig.include.length > 0) {
+				configTable.push([
+					{ data: "Include Filter", header: false },
+					{ data: filterConfig.include.join(", "), header: false },
+				]);
+			}
+			if (filterConfig.exclude.length > 0) {
+				configTable.push([
+					{ data: "Exclude Filter", header: false },
+					{ data: filterConfig.exclude.join(", "), header: false },
+				]);
+			}
+			if (autoMergeConfig.enabled) {
+				configTable.push([
+					{ data: "Auto-Merge", header: false },
+					{
+						data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+						header: false,
+					},
+				]);
+			} else {
+				configTable.push([
+					{ data: "Auto-Merge", header: false },
+					{ data: "Disabled", header: false },
+				]);
+			}
+
+			core.summary.addTable(configTable);
+			core.summary.addBreak();
+
+			// Updates section
+			core.summary.addHeading("Applied Updates", 3);
+
+			// Create a map of updates to their PRs
+			const updateToPR = new Map<string, { number: number; url: string }>();
+			if (groupUpdates && createdPRs.length > 0) {
+				// All updates go to the same PR
+				const pr = createdPRs[0];
+				for (const update of updates) {
+					updateToPR.set(update.nameWithOwner, pr);
+				}
+			} else {
+				// Match individual updates to their PRs (assumes same order)
+				for (let i = 0; i < Math.min(updates.length, createdPRs.length); i++) {
+					updateToPR.set(updates[i].nameWithOwner, createdPRs[i]);
+				}
+			}
+
+			const updatesTable = [
+				[
+					{ data: "Extension", header: true },
+					{ data: "Current", header: true },
+					{ data: "Latest", header: true },
+					{ data: "Pull Request", header: true },
+					{ data: "Auto-Merge", header: true },
+				],
+			];
+
+			for (const update of updates) {
+				const pr = updateToPR.get(update.nameWithOwner);
+				const prLink = pr ? `[#${pr.number}](${pr.url})` : "N/A";
+				const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
+
+				updatesTable.push([
+					{ data: update.nameWithOwner, header: false },
+					{ data: update.currentVersion, header: false },
+					{ data: update.latestVersion, header: false },
+					{ data: prLink, header: false },
+					{ data: autoMergeStatus, header: false },
+				]);
+			}
+
+			core.summary.addTable(updatesTable);
+			core.summary.addBreak();
+
+			await core.summary.write();
+
+			core.endGroup();
 		}
 
 		core.info("🎉 Successfully completed!");
