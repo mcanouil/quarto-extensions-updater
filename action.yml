@@ -77,6 +77,11 @@ inputs:
     required: false
     default: ""
 
+  group-updates:
+    description: "Group all extension updates into a single PR instead of creating one PR per extension"
+    required: false
+    default: "false"
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"

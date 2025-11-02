@@ -2,40 +2,17 @@
 
 ## Unreleased
 
-- feat(filtering): add selective extension update support with include/exclude lists.
-- feat(filtering): add `include-extensions` input parameter for specifying which extensions to update.
-- feat(filtering): add `exclude-extensions` input parameter for specifying which extensions to skip.
-- feat(filtering): implement filtering logic in `checkForUpdates()` to respect include/exclude lists.
-- feat(filtering): exclude filter takes precedence when an extension appears in both lists.
-- feat(filtering): add `ExtensionFilterConfig` interface to type definitions.
-- docs(readme): add "Selective Extension Updates" section with usage examples.
-- docs(readme): add filtering input parameters to inputs table.
-- docs(readme): add selective updates feature to features list.
-- docs(readme): document use cases for include/exclude filters (pinning, gradual rollout, unstable extensions).
-- docs(changelog): document new selective extension update feature.
-- test(filtering): add comprehensive test coverage for filtering logic (7 new tests covering all scenarios).
-- refactor(types): add `ExtensionFilterConfig` interface with `include` and `exclude` arrays.
-- refactor(updates): update `checkForUpdates()` signature to accept optional `filterConfig` parameter.
-- refactor(index): parse `include-extensions` and `exclude-extensions` inputs and pass to `checkForUpdates()`.
-- feat(auto-merge): add auto-merge support for PRs based on configurable strategies.
-- feat(auto-merge): add `auto-merge` input parameter to enable/disable auto-merge (default: `false`).
-- feat(auto-merge): add `auto-merge-strategy` input parameter with options: `patch`, `minor`, `all` (default: `patch`).
-- feat(auto-merge): add `auto-merge-method` input parameter with options: `merge`, `squash`, `rebase` (default: `squash`).
-- feat(auto-merge): implement `shouldAutoMerge()` function to determine if PR should be auto-merged based on update type.
-- feat(auto-merge): implement `enableAutoMerge()` function using GitHub GraphQL API.
-- feat(auto-merge): implement `isAutoMergeEnabled()` function to check if auto-merge is already enabled.
-- feat(auto-merge): implement `getUpdateType()` function to classify updates as major, minor, or patch.
-- docs(readme): add auto-merge feature to features list.
-- docs(readme): add dedicated "Auto-Merge" section with configuration examples and required permissions.
-- docs(readme): add auto-merge input parameters to inputs table.
-- docs(readme): document required workflow permissions for auto-merge (`pull-requests: write`).
-- docs(readme): add examples for auto-merge with patch and minor strategies.
-- docs(changelog): document new auto-merge feature.
-- refactor(types): add `AutoMergeStrategy`, `MergeMethod`, `AutoMergeConfig`, and `UpdateType` types.
-- refactor(automerge): create dedicated `src/automerge.ts` module for auto-merge functionality.
-- refactor(index): integrate auto-merge logic into PR creation workflow.
-- test(automerge): add comprehensive test coverage for auto-merge functionality (26 tests, 95.34% coverage).
-- fix(automerge): add error handling for invalid semver versions in `getUpdateType()`.
+- feat: add `group-updates` input parameter to combine all extension updates into a single PR (default: `false`).
+- feat: implement update grouping logic with smart auto-merge (only enabled when all updates qualify).
+- feat: add `include-extensions` and `exclude-extensions` input parameters for filtering which extensions to update.
+- feat: implement filtering logic with exclude taking precedence over include.
+- feat: add `auto-merge`, `auto-merge-strategy` (`patch`/`minor`/`all`), and `auto-merge-method` (`merge`/`squash`/`rebase`) input parameters.
+- feat: implement auto-merge functionality using GitHub GraphQL API with strategies based on semver update type.
+- refactor: update PR creation workflow to handle both single and multiple extension updates.
+- refactor: create dedicated `src/automerge.ts` module with `shouldAutoMerge()`, `enableAutoMerge()`, `isAutoMergeEnabled()`, and `getUpdateType()` functions.
+- test: add comprehensive test coverage for filtering logic (7 new tests).
+- test: add comprehensive test coverage for auto-merge functionality (26 tests, 95.34% coverage).
+- fix: add error handling for invalid semver versions.
 
 ## 0.0.5 (2025-10-31)
 
