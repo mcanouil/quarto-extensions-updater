@@ -37957,7 +37957,7 @@ async function run() {
             ];
             for (const update of updates) {
                 const pr = updateToPR.get(update.nameWithOwner);
-                const prLink = pr ? `[#${pr.number}](${pr.url})` : "N/A";
+                const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
                 const autoMergeStatus = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
                 updatesTable.push([
                     { data: update.nameWithOwner, header: false },
