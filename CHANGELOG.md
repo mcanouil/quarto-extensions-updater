@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- feat: add `dry-run` input parameter to preview updates without creating PRs or making changes.
+- feat: implement dry-run mode with detailed reporting of configuration, planned actions, and auto-merge status.
 - feat: add `update-strategy` input parameter to control which types of updates to apply: `all` (default), `minor` (minor and patch only), `patch` (patch only).
 - feat: implement update strategy filtering logic in `checkForUpdates()` with `shouldApplyUpdate()` helper function.
 - test: add comprehensive test coverage for update strategy filtering (4 new tests).
@@ -11,6 +13,7 @@
 - feat: implement filtering logic with exclude taking precedence over include.
 - feat: add `auto-merge`, `auto-merge-strategy` (`patch`/`minor`/`all`), and `auto-merge-method` (`merge`/`squash`/`rebase`) input parameters.
 - feat: implement auto-merge functionality using GitHub GraphQL API with strategies based on semver update type.
+- feat: add GitHub Actions Job Summary for both dry-run and normal modes showing configuration, applied updates, PR links, and auto-merge status.
 - refactor: update PR creation workflow to handle both single and multiple extension updates.
 - refactor: create dedicated `src/automerge.ts` module with `shouldAutoMerge()`, `enableAutoMerge()`, `isAutoMergeEnabled()`, and `getUpdateType()` functions.
 - test: add comprehensive test coverage for filtering logic (7 new tests).
