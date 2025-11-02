@@ -305,6 +305,138 @@ describe("checkForUpdates", () => {
 			expect(updates).toHaveLength(0);
 		});
 	});
+
+	describe("update strategy", () => {
+		const mockRegistryForStrategy: ExtensionRegistry = {
+			"owner/patch-update": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Patch update",
+				latestRelease: "1.0.1",
+				latestReleaseUrl: "https://github.com/owner/patch-update/releases/tag/v1.0.1",
+				licenseInfo: "MIT License",
+				name: "patch-update",
+				nameWithOwner: "owner/patch-update",
+				owner: "owner",
+				repositoryTopics: ["quarto"],
+				stargazerCount: 10,
+				title: "Patch Update",
+				url: "https://github.com/owner/patch-update",
+				author: "Owner",
+				template: false,
+				templateContent: null,
+			},
+			"owner/minor-update": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Minor update",
+				latestRelease: "1.1.0",
+				latestReleaseUrl: "https://github.com/owner/minor-update/releases/tag/v1.1.0",
+				licenseInfo: "MIT License",
+				name: "minor-update",
+				nameWithOwner: "owner/minor-update",
+				owner: "owner",
+				repositoryTopics: ["quarto"],
+				stargazerCount: 10,
+				title: "Minor Update",
+				url: "https://github.com/owner/minor-update",
+				author: "Owner",
+				template: false,
+				templateContent: null,
+			},
+			"owner/major-update": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Major update",
+				latestRelease: "2.0.0",
+				latestReleaseUrl: "https://github.com/owner/major-update/releases/tag/v2.0.0",
+				licenseInfo: "MIT License",
+				name: "major-update",
+				nameWithOwner: "owner/major-update",
+				owner: "owner",
+				repositoryTopics: ["quarto"],
+				stargazerCount: 10,
+				title: "Major Update",
+				url: "https://github.com/owner/major-update",
+				author: "Owner",
+				template: false,
+				templateContent: null,
+			},
+		};
+
+		beforeEach(() => {
+			const mockManifests = [
+				"/workspace/_extensions/owner/patch-update/_extension.yml",
+				"/workspace/_extensions/owner/minor-update/_extension.yml",
+				"/workspace/_extensions/owner/major-update/_extension.yml",
+			];
+
+			(extensions.findExtensionManifests as jest.Mock).mockReturnValue(mockManifests);
+			(extensions.readExtensionManifest as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("patch-update")) {
+					return {
+						version: "1.0.0",
+						source: "owner/patch-update@1.0.0",
+						repository: "https://github.com/owner/patch-update",
+					};
+				} else if (path.includes("minor-update")) {
+					return {
+						version: "1.0.0",
+						source: "owner/minor-update@1.0.0",
+						repository: "https://github.com/owner/minor-update",
+					};
+				} else if (path.includes("major-update")) {
+					return {
+						version: "1.0.0",
+						source: "owner/major-update@1.0.0",
+						repository: "https://github.com/owner/major-update",
+					};
+				}
+				return null;
+			});
+			(extensions.extractExtensionInfo as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("patch-update")) {
+					return { owner: "owner", name: "patch-update" };
+				} else if (path.includes("minor-update")) {
+					return { owner: "owner", name: "minor-update" };
+				} else if (path.includes("major-update")) {
+					return { owner: "owner", name: "major-update" };
+				}
+				return null;
+			});
+		});
+
+		it("should return all updates when strategy is 'all'", () => {
+			const updates = checkForUpdates("/workspace", mockRegistryForStrategy, undefined, "all");
+
+			expect(updates).toHaveLength(3);
+			expect(updates.map((u) => u.nameWithOwner)).toContain("owner/patch-update");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("owner/minor-update");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("owner/major-update");
+		});
+
+		it("should return only patch and minor updates when strategy is 'minor'", () => {
+			const updates = checkForUpdates("/workspace", mockRegistryForStrategy, undefined, "minor");
+
+			expect(updates).toHaveLength(2);
+			expect(updates.map((u) => u.nameWithOwner)).toContain("owner/patch-update");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("owner/minor-update");
+			expect(updates.map((u) => u.nameWithOwner)).not.toContain("owner/major-update");
+		});
+
+		it("should return only patch updates when strategy is 'patch'", () => {
+			const updates = checkForUpdates("/workspace", mockRegistryForStrategy, undefined, "patch");
+
+			expect(updates).toHaveLength(1);
+			expect(updates[0].nameWithOwner).toBe("owner/patch-update");
+		});
+
+		it("should default to 'all' strategy when not specified", () => {
+			const updates = checkForUpdates("/workspace", mockRegistryForStrategy);
+
+			expect(updates).toHaveLength(3);
+		});
+	});
 });
 
 describe("groupUpdatesByType", () => {

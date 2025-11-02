@@ -1,19 +1,53 @@
 import * as core from "@actions/core";
 import * as semver from "semver";
-import { ExtensionUpdate, ExtensionRegistry, ExtensionDetails, ExtensionFilterConfig } from "./types";
+import { ExtensionUpdate, ExtensionRegistry, ExtensionDetails, ExtensionFilterConfig, UpdateStrategy } from "./types";
 import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
+
+/**
+ * Determines if an update should be applied based on the update strategy
+ * @param currentVersion The current version
+ * @param latestVersion The latest version
+ * @param strategy The update strategy
+ * @returns True if the update should be applied
+ */
+function shouldApplyUpdate(currentVersion: string, latestVersion: string, strategy: UpdateStrategy): boolean {
+	if (strategy === "all") {
+		return true;
+	}
+
+	const current = normaliseVersion(currentVersion);
+	const latest = normaliseVersion(latestVersion);
+
+	if (!semver.valid(current) || !semver.valid(latest)) {
+		return false;
+	}
+
+	const diff = semver.diff(current, latest);
+
+	if (strategy === "patch") {
+		return diff === "patch" || diff === "prepatch";
+	}
+
+	if (strategy === "minor") {
+		return diff === "minor" || diff === "preminor" || diff === "patch" || diff === "prepatch";
+	}
+
+	return false;
+}
 
 /**
  * Checks for available updates for installed Quarto extensions
  * @param workspacePath The workspace path to check
  * @param registry The extensions registry
  * @param filterConfig Optional configuration for filtering extensions
+ * @param updateStrategy Optional strategy to control which types of updates to apply (default: "all")
  * @returns Array of available updates
  */
 export function checkForUpdates(
 	workspacePath: string,
 	registry: ExtensionRegistry,
 	filterConfig?: ExtensionFilterConfig,
+	updateStrategy: UpdateStrategy = "all",
 ): ExtensionUpdate[] {
 	const updates: ExtensionUpdate[] = [];
 	const manifestPaths = findExtensionManifests(workspacePath);
@@ -78,6 +112,15 @@ export function checkForUpdates(
 		}
 
 		if (semver.lt(currentVersion, normalizedLatest)) {
+			// Check if this update should be applied based on the update strategy
+			if (!shouldApplyUpdate(extensionData.version, latestVersion, updateStrategy)) {
+				const diff = semver.diff(currentVersion, normalizedLatest);
+				core.info(
+					`Skipping ${nameWithOwner}: ${diff} update (${extensionData.version} → ${latestVersion}) not allowed by update strategy (${updateStrategy})`,
+				);
+				continue;
+			}
+
 			core.info(`Update available for ${nameWithOwner}: ${extensionData.version} → ${latestVersion}`);
 
 			updates.push({

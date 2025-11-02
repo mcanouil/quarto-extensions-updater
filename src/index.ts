@@ -8,7 +8,7 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { AutoMergeConfig, AutoMergeStrategy, MergeMethod, ExtensionFilterConfig } from "./types";
+import type { AutoMergeConfig, AutoMergeStrategy, MergeMethod, ExtensionFilterConfig, UpdateStrategy } from "./types";
 
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
@@ -57,6 +57,7 @@ async function run(): Promise<void> {
 		};
 
 		const groupUpdates = core.getBooleanInput("group-updates") === true;
+		const updateStrategy = (core.getInput("update-strategy") || "all") as UpdateStrategy;
 
 		if (!fs.existsSync(workspacePath)) {
 			throw new Error(`Workspace path does not exist: ${workspacePath}`);
@@ -84,7 +85,7 @@ async function run(): Promise<void> {
 		core.endGroup();
 
 		core.startGroup("🔍 Checking for updates");
-		const updates = checkForUpdates(workspacePath, registry, filterConfig);
+		const updates = checkForUpdates(workspacePath, registry, filterConfig, updateStrategy);
 		core.endGroup();
 
 		if (updates.length === 0) {

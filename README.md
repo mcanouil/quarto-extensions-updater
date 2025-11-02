@@ -19,6 +19,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🚀 **Auto-merge support** - automatically merge PRs based on configurable rules (e.g., patch updates only).
 - 🎯 **Selective updates** - include or exclude specific extensions from updates.
 - 📦 **Grouped updates** - option to combine all extension updates into a single PR.
+- 🛡️ **Update strategy** - control which types of updates to apply (all, minor, patch).
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -92,6 +93,7 @@ jobs:
 | `include-extensions`    | Comma-separated list of extensions to include (e.g., `owner/name1,owner/name2`)   | No       | `` (all)                                                                |
 | `exclude-extensions`    | Comma-separated list of extensions to exclude (e.g., `owner/name1,owner/name2`)   | No       | `` (none)                                                               |
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension       | No       | `false`                                                                 |
+| `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch` | No       | `all`                                                                   |
 
 ## Outputs
 
@@ -300,6 +302,60 @@ When `group-updates` is enabled:
 - **Targeted Testing**: Test each extension update separately to identify issues.
 - **Selective Auto-merge**: Automatically merge safe updates (e.g., patches) whilst reviewing others manually.
 - **Better Change Tracking**: See exactly which extension caused issues if problems arise.
+
+## Update Strategy
+
+Control which types of updates are applied based on semantic versioning.
+
+### Available Strategies
+
+- **`all`** (default): Apply all updates regardless of type (major, minor, patch).
+- **`minor`**: Only apply minor and patch updates, skip major breaking changes.
+- **`patch`**: Only apply patch updates, skip minor and major changes.
+
+### Examples
+
+**Only apply safe patch updates:**
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "patch"
+```
+
+**Avoid breaking changes (no major updates):**
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"
+```
+
+### Use Cases
+
+- **Conservative Updates**: Use `patch` to only apply bug fixes and avoid any new features or breaking changes.
+- **Balanced Approach**: Use `minor` to get new features whilst avoiding breaking changes.
+- **Stay Current**: Use `all` (default) to get all updates including major versions.
+
+### Combining with Auto-Merge
+
+Update strategy works independently from auto-merge strategy:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"      # Only check for minor and patch updates
+    auto-merge: true
+    auto-merge-strategy: "patch"  # Auto-merge only patch updates
+```
+
+In this example:
+- Only minor and patch updates are detected (major updates are skipped entirely).
+- Of those updates, only patch updates are auto-merged.
+- Minor updates create PRs that require manual review.
 
 ## Selective Extension Updates
 

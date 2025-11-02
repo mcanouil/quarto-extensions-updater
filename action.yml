@@ -82,6 +82,11 @@ inputs:
     required: false
     default: "false"
 
+  update-strategy:
+    description: "Control which types of updates to apply: 'all' (all updates), 'minor' (minor and patch only), 'patch' (patch only)"
+    required: false
+    default: "all"
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"
