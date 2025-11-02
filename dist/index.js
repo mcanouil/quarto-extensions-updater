@@ -37663,7 +37663,10 @@ async function run() {
             if (autoMergeConfig.enabled) {
                 configTable.push([
                     { data: "Auto-Merge", header: false },
-                    { data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`, header: false },
+                    {
+                        data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+                        header: false,
+                    },
                 ]);
             }
             else {
@@ -37842,7 +37845,10 @@ async function run() {
             if (autoMergeConfig.enabled) {
                 configTable.push([
                     { data: "Auto-Merge", header: false },
-                    { data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`, header: false },
+                    {
+                        data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+                        header: false,
+                    },
                 ]);
             }
             else {

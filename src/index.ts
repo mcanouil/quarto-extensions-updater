@@ -151,7 +151,10 @@ async function run(): Promise<void> {
 			if (autoMergeConfig.enabled) {
 				configTable.push([
 					{ data: "Auto-Merge", header: false },
-					{ data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`, header: false },
+					{
+						data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+						header: false,
+					},
 				]);
 			} else {
 				configTable.push([
@@ -203,7 +206,10 @@ async function run(): Promise<void> {
 
 			// Instructions
 			core.summary.addHeading("Next Steps", 3);
-			core.summary.addRaw("To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.", true);
+			core.summary.addRaw(
+				"To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.",
+				true,
+			);
 
 			await core.summary.write();
 
@@ -336,7 +342,10 @@ async function run(): Promise<void> {
 			core.startGroup("📋 Generating Job Summary");
 
 			core.summary.addHeading("Extension Updates Summary", 2);
-			core.summary.addRaw(`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`, true);
+			core.summary.addRaw(
+				`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`,
+				true,
+			);
 			core.summary.addBreak();
 
 			// Configuration section
@@ -371,7 +380,10 @@ async function run(): Promise<void> {
 			if (autoMergeConfig.enabled) {
 				configTable.push([
 					{ data: "Auto-Merge", header: false },
-					{ data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`, header: false },
+					{
+						data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+						header: false,
+					},
 				]);
 			} else {
 				configTable.push([
