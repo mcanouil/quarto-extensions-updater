@@ -36745,6 +36745,174 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 9270:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getUpdateType = getUpdateType;
+exports.shouldAutoMerge = shouldAutoMerge;
+exports.enableAutoMerge = enableAutoMerge;
+exports.isAutoMergeEnabled = isAutoMergeEnabled;
+const core = __importStar(__nccwpck_require__(7484));
+const semver = __importStar(__nccwpck_require__(2088));
+/**
+ * Determines the type of version update based on semver
+ */
+function getUpdateType(currentVersion, latestVersion) {
+    const diff = semver.diff(currentVersion, latestVersion);
+    if (!diff) {
+        return "unknown";
+    }
+    if (diff === "major" || diff === "premajor") {
+        return "major";
+    }
+    if (diff === "minor" || diff === "preminor") {
+        return "minor";
+    }
+    if (diff === "patch" || diff === "prepatch") {
+        return "patch";
+    }
+    return "unknown";
+}
+/**
+ * Determines if an update should be auto-merged based on the configured strategy
+ */
+function shouldAutoMerge(update, config) {
+    if (!config.enabled) {
+        return false;
+    }
+    const updateType = getUpdateType(update.currentVersion, update.latestVersion);
+    switch (config.strategy) {
+        case "patch":
+            return updateType === "patch";
+        case "minor":
+            return updateType === "patch" || updateType === "minor";
+        case "all":
+            return true;
+        default:
+            return false;
+    }
+}
+/**
+ * Enables auto-merge on a pull request
+ */
+async function enableAutoMerge(octokit, owner, repo, prNumber, mergeMethod) {
+    try {
+        core.info(`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`);
+        // Use GraphQL API to enable auto-merge
+        // The REST API doesn't support auto-merge directly
+        const mutation = `
+			mutation EnableAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+				enablePullRequestAutoMerge(input: {
+					pullRequestId: $pullRequestId
+					mergeMethod: $mergeMethod
+				}) {
+					pullRequest {
+						id
+						number
+						autoMergeRequest {
+							enabledAt
+							enabledBy {
+								login
+							}
+						}
+					}
+				}
+			}
+		`;
+        // First, get the PR node ID
+        const prData = await octokit.rest.pulls.get({
+            owner,
+            repo,
+            pull_number: prNumber,
+        });
+        const pullRequestId = prData.data.node_id;
+        // Convert merge method to GraphQL enum format
+        const mergeMethodEnum = mergeMethod.toUpperCase();
+        // Enable auto-merge using GraphQL
+        await octokit.graphql(mutation, {
+            pullRequestId,
+            mergeMethod: mergeMethodEnum,
+        });
+        core.info(`Successfully enabled auto-merge for PR #${prNumber}`);
+    }
+    catch (error) {
+        // Log the error but don't fail the action
+        core.warning(`Failed to enable auto-merge for PR #${prNumber}: ${error instanceof Error ? error.message : String(error)}`);
+        // Check if it's a permissions issue
+        if (error instanceof Error && error.message.includes("permissions")) {
+            core.warning("Auto-merge requires the workflow to have write permissions for pull-requests. " +
+                "Please ensure your workflow has 'pull-requests: write' permission.");
+        }
+    }
+}
+/**
+ * Checks if auto-merge is already enabled on a PR
+ */
+async function isAutoMergeEnabled(octokit, owner, repo, prNumber) {
+    try {
+        const query = `
+			query CheckAutoMerge($owner: String!, $repo: String!, $prNumber: Int!) {
+				repository(owner: $owner, name: $repo) {
+					pullRequest(number: $prNumber) {
+						autoMergeRequest {
+							enabledAt
+						}
+					}
+				}
+			}
+		`;
+        const result = await octokit.graphql(query, {
+            owner,
+            repo,
+            prNumber,
+        });
+        return result.repository.pullRequest.autoMergeRequest !== null;
+    }
+    catch (error) {
+        core.warning(`Failed to check auto-merge status for PR #${prNumber}: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+    }
+}
+
+
+/***/ }),
+
 /***/ 9233:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -37373,6 +37541,7 @@ const updates_1 = __nccwpck_require__(8361);
 const git_1 = __nccwpck_require__(1243);
 const pr_1 = __nccwpck_require__(1309);
 const github_1 = __nccwpck_require__(9248);
+const automerge_1 = __nccwpck_require__(9270);
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
 const DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
@@ -37393,6 +37562,14 @@ async function run() {
             .split(",")
             .map((label) => label.trim())
             .filter((label) => label.length > 0);
+        const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
+        const autoMergeStrategy = (core.getInput("auto-merge-strategy") || "patch");
+        const autoMergeMethod = (core.getInput("auto-merge-method") || "squash");
+        const autoMergeConfig = {
+            enabled: autoMergeEnabled,
+            strategy: autoMergeStrategy,
+            mergeMethod: autoMergeMethod,
+        };
         if (!fs.existsSync(workspacePath)) {
             throw new Error(`Workspace path does not exist: ${workspacePath}`);
         }
@@ -37472,6 +37649,21 @@ async function run() {
             try {
                 const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
                 createdPRs.push(pr);
+                // Handle auto-merge if enabled
+                if ((0, automerge_1.shouldAutoMerge)(update, autoMergeConfig)) {
+                    core.info(`🤖 Auto-merge enabled for ${update.nameWithOwner}`);
+                    // Check if auto-merge is already enabled
+                    const alreadyEnabled = await (0, automerge_1.isAutoMergeEnabled)(octokit, owner, repo, pr.number);
+                    if (alreadyEnabled) {
+                        core.info(`   Auto-merge already enabled for PR #${pr.number}`);
+                    }
+                    else {
+                        await (0, automerge_1.enableAutoMerge)(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
+                    }
+                }
+                else if (autoMergeConfig.enabled) {
+                    core.info(`ℹ️ Auto-merge not applicable for ${update.nameWithOwner} (strategy: ${autoMergeConfig.strategy})`);
+                }
             }
             catch (error) {
                 core.error(`Failed to create/update PR for ${update.nameWithOwner}: ${error}`);
