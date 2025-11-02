@@ -37302,6 +37302,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.GIT_CONFLICT_STATUS = void 0;
 exports.checkExistingPR = checkExistingPR;
 exports.createOrUpdateBranch = createOrUpdateBranch;
+exports.requestReviewersAndAssignees = requestReviewersAndAssignees;
 exports.createOrUpdatePR = createOrUpdatePR;
 exports.createCommit = createCommit;
 const core = __importStar(__nccwpck_require__(7484));
@@ -37388,6 +37389,46 @@ async function createOrUpdateBranch(octokit, owner, repo, branchName, baseSha) {
     }
 }
 /**
+ * Requests reviewers and assignees for a pull request
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param prNumber PR number
+ * @param assignmentConfig Reviewer and assignee configuration
+ */
+async function requestReviewersAndAssignees(octokit, owner, repo, prNumber, assignmentConfig) {
+    try {
+        // Request reviewers (individual users and teams)
+        if (assignmentConfig.reviewers.length > 0 || assignmentConfig.teamReviewers.length > 0) {
+            await octokit.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number: prNumber,
+                reviewers: assignmentConfig.reviewers,
+                team_reviewers: assignmentConfig.teamReviewers,
+            });
+            const reviewerList = [
+                ...assignmentConfig.reviewers,
+                ...assignmentConfig.teamReviewers.map((team) => `@${owner}/${team}`),
+            ];
+            core.info(`✅ Requested reviewers: ${reviewerList.join(", ")}`);
+        }
+        // Assign users to the PR
+        if (assignmentConfig.assignees.length > 0) {
+            await octokit.rest.issues.addAssignees({
+                owner,
+                repo,
+                issue_number: prNumber,
+                assignees: assignmentConfig.assignees,
+            });
+            core.info(`✅ Added assignees: ${assignmentConfig.assignees.join(", ")}`);
+        }
+    }
+    catch (error) {
+        core.warning(`Failed to set reviewers/assignees: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+/**
  * Creates or updates a pull request
  * @param octokit GitHub API client
  * @param owner Repository owner
@@ -37397,15 +37438,18 @@ async function createOrUpdateBranch(octokit, owner, repo, branchName, baseSha) {
  * @param prTitle PR title
  * @param prBody PR body
  * @param prLabels Labels to apply
+ * @param assignmentConfig Optional reviewer and assignee configuration
  * @returns PR number and URL
  */
-async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels) {
+async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig) {
     const existingPRs = await octokit.rest.pulls.list({
         owner,
         repo,
         head: `${owner}:${branchName}`,
         state: "open",
     });
+    let prNumber;
+    let prUrl;
     if (existingPRs.data.length > 0) {
         const existingPR = existingPRs.data[0];
         core.info(`Updating existing PR #${existingPR.number}`);
@@ -37422,25 +37466,34 @@ async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, pr
             issue_number: existingPR.number,
             labels: prLabels,
         });
-        core.info(`✅ Updated PR: ${updatedPR.html_url}`);
-        return { number: updatedPR.number, url: updatedPR.html_url };
+        prNumber = updatedPR.number;
+        prUrl = updatedPR.html_url;
+        core.info(`✅ Updated PR: ${prUrl}`);
     }
-    const { data: pr } = await octokit.rest.pulls.create({
-        owner,
-        repo,
-        title: prTitle,
-        body: prBody,
-        head: branchName,
-        base: baseBranch,
-    });
-    await octokit.rest.issues.setLabels({
-        owner,
-        repo,
-        issue_number: pr.number,
-        labels: prLabels,
-    });
-    core.info(`✅ Created PR: ${pr.html_url}`);
-    return { number: pr.number, url: pr.html_url };
+    else {
+        const { data: pr } = await octokit.rest.pulls.create({
+            owner,
+            repo,
+            title: prTitle,
+            body: prBody,
+            head: branchName,
+            base: baseBranch,
+        });
+        await octokit.rest.issues.setLabels({
+            owner,
+            repo,
+            issue_number: pr.number,
+            labels: prLabels,
+        });
+        prNumber = pr.number;
+        prUrl = pr.html_url;
+        core.info(`✅ Created PR: ${prUrl}`);
+    }
+    // Request reviewers and assignees if configured
+    if (assignmentConfig) {
+        await requestReviewersAndAssignees(octokit, owner, repo, prNumber, assignmentConfig);
+    }
+    return { number: prNumber, url: prUrl };
 }
 /**
  * Creates a Git commit with the specified files
@@ -37590,6 +37643,23 @@ async function run() {
         const groupUpdates = core.getBooleanInput("group-updates") === true;
         const updateStrategy = (core.getInput("update-strategy") || "all");
         const dryRun = core.getBooleanInput("dry-run") === true;
+        const prReviewersInput = core.getInput("pr-reviewers") || "";
+        const prTeamReviewersInput = core.getInput("pr-team-reviewers") || "";
+        const prAssigneesInput = core.getInput("pr-assignees") || "";
+        const assignmentConfig = {
+            reviewers: prReviewersInput
+                .split(",")
+                .map((reviewer) => reviewer.trim())
+                .filter((reviewer) => reviewer.length > 0),
+            teamReviewers: prTeamReviewersInput
+                .split(",")
+                .map((team) => team.trim())
+                .filter((team) => team.length > 0),
+            assignees: prAssigneesInput
+                .split(",")
+                .map((assignee) => assignee.trim())
+                .filter((assignee) => assignee.length > 0),
+        };
         if (!fs.existsSync(workspacePath)) {
             throw new Error(`Workspace path does not exist: ${workspacePath}`);
         }
@@ -37766,7 +37836,7 @@ async function run() {
             core.info(`✅ Created commit: ${commitSha}`);
             const prBody = await (0, pr_1.generatePRBody)(updateGroup, octokit);
             try {
-                const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
+                const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig);
                 createdPRs.push(pr);
                 // Handle auto-merge if enabled (only for single extension updates or when all updates qualify)
                 if (updateGroup.length === 1 && (0, automerge_1.shouldAutoMerge)(updateGroup[0], autoMergeConfig)) {

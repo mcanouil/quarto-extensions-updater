@@ -8,7 +8,14 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { AutoMergeConfig, AutoMergeStrategy, MergeMethod, ExtensionFilterConfig, UpdateStrategy } from "./types";
+import type {
+	AutoMergeConfig,
+	AutoMergeStrategy,
+	MergeMethod,
+	ExtensionFilterConfig,
+	UpdateStrategy,
+	PRAssignmentConfig,
+} from "./types";
 
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
@@ -59,6 +66,25 @@ async function run(): Promise<void> {
 		const groupUpdates = core.getBooleanInput("group-updates") === true;
 		const updateStrategy = (core.getInput("update-strategy") || "all") as UpdateStrategy;
 		const dryRun = core.getBooleanInput("dry-run") === true;
+
+		const prReviewersInput = core.getInput("pr-reviewers") || "";
+		const prTeamReviewersInput = core.getInput("pr-team-reviewers") || "";
+		const prAssigneesInput = core.getInput("pr-assignees") || "";
+
+		const assignmentConfig: PRAssignmentConfig = {
+			reviewers: prReviewersInput
+				.split(",")
+				.map((reviewer) => reviewer.trim())
+				.filter((reviewer) => reviewer.length > 0),
+			teamReviewers: prTeamReviewersInput
+				.split(",")
+				.map((team) => team.trim())
+				.filter((team) => team.length > 0),
+			assignees: prAssigneesInput
+				.split(",")
+				.map((assignee) => assignee.trim())
+				.filter((assignee) => assignee.length > 0),
+		};
 
 		if (!fs.existsSync(workspacePath)) {
 			throw new Error(`Workspace path does not exist: ${workspacePath}`);
@@ -290,7 +316,17 @@ async function run(): Promise<void> {
 			const prBody = await generatePRBody(updateGroup, octokit);
 
 			try {
-				const pr = await createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
+				const pr = await createOrUpdatePR(
+					octokit,
+					owner,
+					repo,
+					branchName,
+					baseBranch,
+					prTitle,
+					prBody,
+					prLabels,
+					assignmentConfig,
+				);
 				createdPRs.push(pr);
 
 				// Handle auto-merge if enabled (only for single extension updates or when all updates qualify)

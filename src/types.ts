@@ -89,3 +89,12 @@ export interface ExtensionFilterConfig {
 	include: string[];
 	exclude: string[];
 }
+
+/**
+ * Configuration for PR reviewers and assignees
+ */
+export interface PRAssignmentConfig {
+	reviewers: string[];
+	teamReviewers: string[];
+	assignees: string[];
+}
