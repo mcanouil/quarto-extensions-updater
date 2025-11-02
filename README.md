@@ -17,6 +17,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
 - 🚀 **Auto-merge support** - automatically merge PRs based on configurable rules (e.g., patch updates only).
+- 🎯 **Selective updates** - include or exclude specific extensions from updates.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -87,6 +88,8 @@ jobs:
 | `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                    | No       | `false`                                                                 |
 | `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all) | No       | `patch`                                                                 |
 | `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                               | No       | `squash`                                                                |
+| `include-extensions`    | Comma-separated list of extensions to include (e.g., `owner/name1,owner/name2`)   | No       | `` (all)                                                                |
+| `exclude-extensions`    | Comma-separated list of extensions to exclude (e.g., `owner/name1,owner/name2`)   | No       | `` (none)                                                               |
 
 ## Outputs
 
@@ -262,6 +265,57 @@ jobs:
 - The PR will only merge automatically after all required status checks pass.
 - If auto-merge fails (e.g., due to permission issues), the PR will still be created but won't auto-merge.
 - The action logs a warning if auto-merge fails but continues normal operation.
+
+## Selective Extension Updates
+
+You can control which extensions are updated using include and exclude lists.
+
+### Include Only Specific Extensions
+
+To update only certain extensions, use the `include-extensions` input:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    include-extensions: "mcanouil/iconify,quarto-ext/lightbox"
+```
+
+This will only check for updates and create PRs for the specified extensions. All other extensions will be ignored.
+
+### Exclude Specific Extensions
+
+To exclude certain extensions from updates (e.g., to pin a specific version), use the `exclude-extensions` input:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    exclude-extensions: "quarto-ext/fancy-text,owner/unstable-extension"
+```
+
+This will check all extensions except the specified ones.
+
+### Combining Include and Exclude
+
+You can use both filters together. If an extension appears in both lists, the exclude filter takes precedence:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    include-extensions: "mcanouil/iconify,quarto-ext/lightbox,quarto-ext/fancy-text"
+    exclude-extensions: "quarto-ext/fancy-text"
+```
+
+In this example, only `mcanouil/iconify` and `quarto-ext/lightbox` will be updated.
+
+### Use Cases
+
+- **Pin Specific Extensions**: Use `exclude-extensions` to prevent updates to extensions you want to keep at a specific version.
+- **Gradual Rollout**: Use `include-extensions` to test updates on a subset of extensions before enabling updates for all.
+- **Unstable Extensions**: Exclude extensions that are under active development or have known issues.
+- **Critical Extensions**: Create separate workflows for critical vs. non-critical extensions with different schedules.
 
 ## Examples
 

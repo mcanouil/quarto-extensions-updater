@@ -1,15 +1,20 @@
 import * as core from "@actions/core";
 import * as semver from "semver";
-import { ExtensionUpdate, ExtensionRegistry, ExtensionDetails } from "./types";
+import { ExtensionUpdate, ExtensionRegistry, ExtensionDetails, ExtensionFilterConfig } from "./types";
 import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
 
 /**
  * Checks for available updates for installed Quarto extensions
  * @param workspacePath The workspace path to check
  * @param registry The extensions registry
+ * @param filterConfig Optional configuration for filtering extensions
  * @returns Array of available updates
  */
-export function checkForUpdates(workspacePath: string, registry: ExtensionRegistry): ExtensionUpdate[] {
+export function checkForUpdates(
+	workspacePath: string,
+	registry: ExtensionRegistry,
+	filterConfig?: ExtensionFilterConfig,
+): ExtensionUpdate[] {
 	const updates: ExtensionUpdate[] = [];
 	const manifestPaths = findExtensionManifests(workspacePath);
 
@@ -25,6 +30,19 @@ export function checkForUpdates(workspacePath: string, registry: ExtensionRegist
 
 		const { owner, name } = extensionInfo;
 		const nameWithOwner = `${owner}/${name}`;
+
+		// Apply include/exclude filters
+		if (filterConfig) {
+			if (filterConfig.include.length > 0 && !filterConfig.include.includes(nameWithOwner)) {
+				core.info(`Skipping ${nameWithOwner}: not in include list`);
+				continue;
+			}
+
+			if (filterConfig.exclude.length > 0 && filterConfig.exclude.includes(nameWithOwner)) {
+				core.info(`Skipping ${nameWithOwner}: in exclude list`);
+				continue;
+			}
+		}
 
 		if (!extensionData.source) {
 			core.info(`Skipping ${nameWithOwner}: no source field (cannot track updates)`);

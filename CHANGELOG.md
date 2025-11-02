@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- feat(filtering): add selective extension update support with include/exclude lists.
+- feat(filtering): add `include-extensions` input parameter for specifying which extensions to update.
+- feat(filtering): add `exclude-extensions` input parameter for specifying which extensions to skip.
+- feat(filtering): implement filtering logic in `checkForUpdates()` to respect include/exclude lists.
+- feat(filtering): exclude filter takes precedence when an extension appears in both lists.
+- feat(filtering): add `ExtensionFilterConfig` interface to type definitions.
+- docs(readme): add "Selective Extension Updates" section with usage examples.
+- docs(readme): add filtering input parameters to inputs table.
+- docs(readme): add selective updates feature to features list.
+- docs(readme): document use cases for include/exclude filters (pinning, gradual rollout, unstable extensions).
+- docs(changelog): document new selective extension update feature.
+- test(filtering): add comprehensive test coverage for filtering logic (7 new tests covering all scenarios).
+- refactor(types): add `ExtensionFilterConfig` interface with `include` and `exclude` arrays.
+- refactor(updates): update `checkForUpdates()` signature to accept optional `filterConfig` parameter.
+- refactor(index): parse `include-extensions` and `exclude-extensions` inputs and pass to `checkForUpdates()`.
 - feat(auto-merge): add auto-merge support for PRs based on configurable strategies.
 - feat(auto-merge): add `auto-merge` input parameter to enable/disable auto-merge (default: `false`).
 - feat(auto-merge): add `auto-merge-strategy` input parameter with options: `patch`, `minor`, `all` (default: `patch`).

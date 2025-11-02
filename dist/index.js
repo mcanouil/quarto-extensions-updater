@@ -37575,6 +37575,18 @@ async function run() {
             strategy: autoMergeStrategy,
             mergeMethod: autoMergeMethod,
         };
+        const includeExtensionsInput = core.getInput("include-extensions") || "";
+        const excludeExtensionsInput = core.getInput("exclude-extensions") || "";
+        const filterConfig = {
+            include: includeExtensionsInput
+                .split(",")
+                .map((ext) => ext.trim())
+                .filter((ext) => ext.length > 0),
+            exclude: excludeExtensionsInput
+                .split(",")
+                .map((ext) => ext.trim())
+                .filter((ext) => ext.length > 0),
+        };
         if (!fs.existsSync(workspacePath)) {
             throw new Error(`Workspace path does not exist: ${workspacePath}`);
         }
@@ -37595,7 +37607,7 @@ async function run() {
         const registry = await (0, registry_1.fetchExtensionsRegistry)(registryUrl);
         core.endGroup();
         core.startGroup("🔍 Checking for updates");
-        const updates = (0, updates_1.checkForUpdates)(workspacePath, registry);
+        const updates = (0, updates_1.checkForUpdates)(workspacePath, registry, filterConfig);
         core.endGroup();
         if (updates.length === 0) {
             core.info("✅ All extensions are up to date!");
@@ -38046,9 +38058,10 @@ const extensions_1 = __nccwpck_require__(9233);
  * Checks for available updates for installed Quarto extensions
  * @param workspacePath The workspace path to check
  * @param registry The extensions registry
+ * @param filterConfig Optional configuration for filtering extensions
  * @returns Array of available updates
  */
-function checkForUpdates(workspacePath, registry) {
+function checkForUpdates(workspacePath, registry, filterConfig) {
     const updates = [];
     const manifestPaths = (0, extensions_1.findExtensionManifests)(workspacePath);
     core.info(`Checking ${manifestPaths.length} extensions for updates...`);
@@ -38060,6 +38073,17 @@ function checkForUpdates(workspacePath, registry) {
         }
         const { owner, name } = extensionInfo;
         const nameWithOwner = `${owner}/${name}`;
+        // Apply include/exclude filters
+        if (filterConfig) {
+            if (filterConfig.include.length > 0 && !filterConfig.include.includes(nameWithOwner)) {
+                core.info(`Skipping ${nameWithOwner}: not in include list`);
+                continue;
+            }
+            if (filterConfig.exclude.length > 0 && filterConfig.exclude.includes(nameWithOwner)) {
+                core.info(`Skipping ${nameWithOwner}: in exclude list`);
+                continue;
+            }
+        }
         if (!extensionData.source) {
             core.info(`Skipping ${nameWithOwner}: no source field (cannot track updates)`);
             continue;
