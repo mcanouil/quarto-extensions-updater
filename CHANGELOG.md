@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix: use HTML anchor tags for PR links in GitHub Actions Job Summary to ensure proper rendering.
+
 ## 0.1.0 (2025-11-02)
 
 - feat: add `pr-reviewers`, `pr-team-reviewers`, and `pr-assignees` input parameters for automatic reviewer and assignee assignment on created PRs.
