@@ -8,7 +8,14 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { AutoMergeConfig, AutoMergeStrategy, MergeMethod, ExtensionFilterConfig, UpdateStrategy, PRAssignmentConfig } from "./types";
+import type {
+	AutoMergeConfig,
+	AutoMergeStrategy,
+	MergeMethod,
+	ExtensionFilterConfig,
+	UpdateStrategy,
+	PRAssignmentConfig,
+} from "./types";
 
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
@@ -309,7 +316,17 @@ async function run(): Promise<void> {
 			const prBody = await generatePRBody(updateGroup, octokit);
 
 			try {
-				const pr = await createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig);
+				const pr = await createOrUpdatePR(
+					octokit,
+					owner,
+					repo,
+					branchName,
+					baseBranch,
+					prTitle,
+					prBody,
+					prLabels,
+					assignmentConfig,
+				);
 				createdPRs.push(pr);
 
 				// Handle auto-merge if enabled (only for single extension updates or when all updates qualify)
