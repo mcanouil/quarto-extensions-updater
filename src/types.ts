@@ -76,3 +76,11 @@ export interface AutoMergeConfig {
  * Update type based on semver
  */
 export type UpdateType = "major" | "minor" | "patch" | "unknown";
+
+/**
+ * Configuration for filtering which extensions to update
+ */
+export interface ExtensionFilterConfig {
+	include: string[];
+	exclude: string[];
+}

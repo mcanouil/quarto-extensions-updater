@@ -67,6 +67,16 @@ inputs:
     required: false
     default: "squash"
 
+  include-extensions:
+    description: "Comma-separated list of extensions to include (e.g., 'owner/name1,owner/name2'). If specified, only these extensions will be updated."
+    required: false
+    default: ""
+
+  exclude-extensions:
+    description: "Comma-separated list of extensions to exclude (e.g., 'owner/name1,owner/name2'). These extensions will be skipped."
+    required: false
+    default: ""
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"

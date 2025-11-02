@@ -1,5 +1,5 @@
 import { checkForUpdates, groupUpdatesByType } from "./updates";
-import { ExtensionRegistry, ExtensionUpdate } from "./types";
+import { ExtensionRegistry, ExtensionUpdate, ExtensionFilterConfig } from "./types";
 import * as extensions from "./extensions";
 
 jest.mock("./extensions");
@@ -124,6 +124,186 @@ describe("checkForUpdates", () => {
 
 		expect(updates).toHaveLength(1);
 		expect(updates[0].currentVersion).toBe("v1.0.0");
+	});
+
+	describe("filtering", () => {
+		const mockRegistryMultiple: ExtensionRegistry = {
+			"mcanouil/iconify": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Use Iconify icons in Quarto HTML documents",
+				latestRelease: "1.1.1",
+				latestReleaseUrl: "https://github.com/mcanouil/quarto-iconify/releases/tag/v1.1.1",
+				licenseInfo: "MIT License",
+				name: "iconify",
+				nameWithOwner: "mcanouil/iconify",
+				owner: "mcanouil",
+				repositoryTopics: ["quarto", "iconify"],
+				stargazerCount: 10,
+				title: "Iconify",
+				url: "https://github.com/mcanouil/quarto-iconify",
+				author: "Mickaël Canouil",
+				template: false,
+				templateContent: null,
+			},
+			"quarto-ext/lightbox": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Lightbox for Quarto",
+				latestRelease: "2.0.0",
+				latestReleaseUrl: "https://github.com/quarto-ext/lightbox/releases/tag/v2.0.0",
+				licenseInfo: "MIT License",
+				name: "lightbox",
+				nameWithOwner: "quarto-ext/lightbox",
+				owner: "quarto-ext",
+				repositoryTopics: ["quarto"],
+				stargazerCount: 50,
+				title: "Lightbox",
+				url: "https://github.com/quarto-ext/lightbox",
+				author: "Quarto Extensions",
+				template: false,
+				templateContent: null,
+			},
+			"quarto-ext/fancy-text": {
+				createdAt: "2024-01-01T00:00:00Z",
+				defaultBranchRef: "main",
+				description: "Fancy text for Quarto",
+				latestRelease: "1.5.0",
+				latestReleaseUrl: "https://github.com/quarto-ext/fancy-text/releases/tag/v1.5.0",
+				licenseInfo: "MIT License",
+				name: "fancy-text",
+				nameWithOwner: "quarto-ext/fancy-text",
+				owner: "quarto-ext",
+				repositoryTopics: ["quarto"],
+				stargazerCount: 30,
+				title: "Fancy Text",
+				url: "https://github.com/quarto-ext/fancy-text",
+				author: "Quarto Extensions",
+				template: false,
+				templateContent: null,
+			},
+		};
+
+		beforeEach(() => {
+			const mockManifests = [
+				"/workspace/_extensions/mcanouil/iconify/_extension.yml",
+				"/workspace/_extensions/quarto-ext/lightbox/_extension.yml",
+				"/workspace/_extensions/quarto-ext/fancy-text/_extension.yml",
+			];
+
+			(extensions.findExtensionManifests as jest.Mock).mockReturnValue(mockManifests);
+			(extensions.readExtensionManifest as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("iconify")) {
+					return {
+						version: "1.0.0",
+						source: "mcanouil/quarto-iconify@1.0.0",
+						repository: "https://github.com/mcanouil/quarto-iconify",
+					};
+				} else if (path.includes("lightbox")) {
+					return {
+						version: "1.0.0",
+						source: "quarto-ext/lightbox@1.0.0",
+						repository: "https://github.com/quarto-ext/lightbox",
+					};
+				} else if (path.includes("fancy-text")) {
+					return {
+						version: "1.0.0",
+						source: "quarto-ext/fancy-text@1.0.0",
+						repository: "https://github.com/quarto-ext/fancy-text",
+					};
+				}
+				return null;
+			});
+			(extensions.extractExtensionInfo as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("iconify")) {
+					return { owner: "mcanouil", name: "iconify" };
+				} else if (path.includes("lightbox")) {
+					return { owner: "quarto-ext", name: "lightbox" };
+				} else if (path.includes("fancy-text")) {
+					return { owner: "quarto-ext", name: "fancy-text" };
+				}
+				return null;
+			});
+		});
+
+		it("should include only specified extensions when include filter is used", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: ["mcanouil/iconify", "quarto-ext/lightbox"],
+				exclude: [],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(2);
+			expect(updates.map((u) => u.nameWithOwner)).toContain("mcanouil/iconify");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("quarto-ext/lightbox");
+			expect(updates.map((u) => u.nameWithOwner)).not.toContain("quarto-ext/fancy-text");
+		});
+
+		it("should exclude specified extensions when exclude filter is used", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: [],
+				exclude: ["quarto-ext/fancy-text"],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(2);
+			expect(updates.map((u) => u.nameWithOwner)).toContain("mcanouil/iconify");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("quarto-ext/lightbox");
+			expect(updates.map((u) => u.nameWithOwner)).not.toContain("quarto-ext/fancy-text");
+		});
+
+		it("should handle both include and exclude filters (exclude takes precedence)", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: ["mcanouil/iconify", "quarto-ext/lightbox"],
+				exclude: ["quarto-ext/lightbox"],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(1);
+			expect(updates[0].nameWithOwner).toBe("mcanouil/iconify");
+		});
+
+		it("should return all updates when filter config is not provided", () => {
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple);
+
+			expect(updates).toHaveLength(3);
+		});
+
+		it("should return all updates when filter config has empty arrays", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: [],
+				exclude: [],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(3);
+		});
+
+		it("should return no updates when include filter matches no extensions", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: ["nonexistent/extension"],
+				exclude: [],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(0);
+		});
+
+		it("should exclude all extensions when all are in exclude list", () => {
+			const filterConfig: ExtensionFilterConfig = {
+				include: [],
+				exclude: ["mcanouil/iconify", "quarto-ext/lightbox", "quarto-ext/fancy-text"],
+			};
+
+			const updates = checkForUpdates("/workspace", mockRegistryMultiple, filterConfig);
+
+			expect(updates).toHaveLength(0);
+		});
 	});
 });
 
