@@ -7,6 +7,8 @@ import { checkForUpdates } from "./updates";
 import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
 import { generatePRTitle, generatePRBody, logUpdateSummary } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
+import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
+import type { AutoMergeConfig, AutoMergeStrategy, MergeMethod } from "./types";
 
 const DEFAULT_BASE_BRANCH = "main";
 const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
@@ -29,6 +31,16 @@ async function run(): Promise<void> {
 			.split(",")
 			.map((label) => label.trim())
 			.filter((label) => label.length > 0);
+
+		const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
+		const autoMergeStrategy = (core.getInput("auto-merge-strategy") || "patch") as AutoMergeStrategy;
+		const autoMergeMethod = (core.getInput("auto-merge-method") || "squash") as MergeMethod;
+
+		const autoMergeConfig: AutoMergeConfig = {
+			enabled: autoMergeEnabled,
+			strategy: autoMergeStrategy,
+			mergeMethod: autoMergeMethod,
+		};
 
 		if (!fs.existsSync(workspacePath)) {
 			throw new Error(`Workspace path does not exist: ${workspacePath}`);
@@ -142,6 +154,22 @@ async function run(): Promise<void> {
 			try {
 				const pr = await createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels);
 				createdPRs.push(pr);
+
+				// Handle auto-merge if enabled
+				if (shouldAutoMerge(update, autoMergeConfig)) {
+					core.info(`🤖 Auto-merge enabled for ${update.nameWithOwner}`);
+
+					// Check if auto-merge is already enabled
+					const alreadyEnabled = await isAutoMergeEnabled(octokit, owner, repo, pr.number);
+
+					if (alreadyEnabled) {
+						core.info(`   Auto-merge already enabled for PR #${pr.number}`);
+					} else {
+						await enableAutoMerge(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
+					}
+				} else if (autoMergeConfig.enabled) {
+					core.info(`ℹ️ Auto-merge not applicable for ${update.nameWithOwner} (strategy: ${autoMergeConfig.strategy})`);
+				}
 			} catch (error) {
 				core.error(`Failed to create/update PR for ${update.nameWithOwner}: ${error}`);
 				throw error;
