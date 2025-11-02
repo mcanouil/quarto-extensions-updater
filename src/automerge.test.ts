@@ -4,7 +4,8 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 
 jest.mock("@actions/core");
-jest.mock("@actions/github");
+
+type MockOctokit = ReturnType<typeof github.getOctokit>;
 
 describe("getUpdateType", () => {
 	it("should detect major updates", () => {
@@ -152,7 +153,14 @@ describe("shouldAutoMerge", () => {
 });
 
 describe("enableAutoMerge", () => {
-	let mockOctokit: any;
+	let mockOctokit: {
+		rest: {
+			pulls: {
+				get: jest.Mock;
+			};
+		};
+		graphql: jest.Mock;
+	};
 
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -173,7 +181,7 @@ describe("enableAutoMerge", () => {
 		});
 		mockOctokit.graphql.mockResolvedValue({});
 
-		await enableAutoMerge(mockOctokit, "owner", "repo", 42, "squash");
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
 
 		expect(mockOctokit.rest.pulls.get).toHaveBeenCalledWith({
 			owner: "owner",
@@ -197,15 +205,13 @@ describe("enableAutoMerge", () => {
 		});
 		mockOctokit.graphql.mockResolvedValue({});
 
-		// Test merge method
-		await enableAutoMerge(mockOctokit, "owner", "repo", 42, "merge");
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "merge");
 		expect(mockOctokit.graphql).toHaveBeenCalledWith(expect.any(String), {
 			pullRequestId: prNodeId,
 			mergeMethod: "MERGE",
 		});
 
-		// Test rebase method
-		await enableAutoMerge(mockOctokit, "owner", "repo", 42, "rebase");
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "rebase");
 		expect(mockOctokit.graphql).toHaveBeenCalledWith(expect.any(String), {
 			pullRequestId: prNodeId,
 			mergeMethod: "REBASE",
@@ -216,7 +222,7 @@ describe("enableAutoMerge", () => {
 		const error = new Error("Test error");
 		mockOctokit.rest.pulls.get.mockRejectedValue(error);
 
-		await enableAutoMerge(mockOctokit, "owner", "repo", 42, "squash");
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
 
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Failed to enable auto-merge for PR #42"));
 	});
@@ -225,7 +231,7 @@ describe("enableAutoMerge", () => {
 		const error = new Error("permissions error");
 		mockOctokit.rest.pulls.get.mockRejectedValue(error);
 
-		await enableAutoMerge(mockOctokit, "owner", "repo", 42, "squash");
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
 
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("permissions"));
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("pull-requests: write"));
@@ -233,7 +239,9 @@ describe("enableAutoMerge", () => {
 });
 
 describe("isAutoMergeEnabled", () => {
-	let mockOctokit: any;
+	let mockOctokit: {
+		graphql: jest.Mock;
+	};
 
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -253,7 +261,7 @@ describe("isAutoMergeEnabled", () => {
 			},
 		});
 
-		const result = await isAutoMergeEnabled(mockOctokit, "owner", "repo", 42);
+		const result = await isAutoMergeEnabled(mockOctokit as unknown as MockOctokit, "owner", "repo", 42);
 
 		expect(result).toBe(true);
 		expect(mockOctokit.graphql).toHaveBeenCalledWith(expect.stringContaining("autoMergeRequest"), {
@@ -272,7 +280,7 @@ describe("isAutoMergeEnabled", () => {
 			},
 		});
 
-		const result = await isAutoMergeEnabled(mockOctokit, "owner", "repo", 42);
+		const result = await isAutoMergeEnabled(mockOctokit as unknown as MockOctokit, "owner", "repo", 42);
 
 		expect(result).toBe(false);
 	});
@@ -281,7 +289,7 @@ describe("isAutoMergeEnabled", () => {
 		const error = new Error("Test error");
 		mockOctokit.graphql.mockRejectedValue(error);
 
-		const result = await isAutoMergeEnabled(mockOctokit, "owner", "repo", 42);
+		const result = await isAutoMergeEnabled(mockOctokit as unknown as MockOctokit, "owner", "repo", 42);
 
 		expect(result).toBe(false);
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Failed to check auto-merge status for PR #42"));
