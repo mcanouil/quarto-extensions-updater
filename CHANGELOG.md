@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2025-11-02)
 
 - fix: use HTML anchor tags for PR links in GitHub Actions Job Summary to ensure proper rendering.
 
