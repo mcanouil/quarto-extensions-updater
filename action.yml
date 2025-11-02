@@ -52,6 +52,21 @@ inputs:
     required: false
     default: "dependencies,quarto-extensions"
 
+  auto-merge:
+    description: "Enable automatic merging of PRs based on auto-merge-strategy"
+    required: false
+    default: "false"
+
+  auto-merge-strategy:
+    description: "Auto-merge strategy: 'patch' (patch only), 'minor' (minor and patch), 'all' (all updates)"
+    required: false
+    default: "patch"
+
+  auto-merge-method:
+    description: "Merge method to use: 'merge', 'squash', or 'rebase'"
+    required: false
+    default: "squash"
+
 outputs:
   updates-available:
     description: "Whether updates are available (true/false)"

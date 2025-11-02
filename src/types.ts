@@ -52,3 +52,27 @@ export interface ExtensionUpdate {
  * Registry of all available extensions
  */
 export type ExtensionRegistry = Record<string, ExtensionDetails>;
+
+/**
+ * Auto-merge strategy for PRs
+ */
+export type AutoMergeStrategy = "patch" | "minor" | "all";
+
+/**
+ * GitHub merge method
+ */
+export type MergeMethod = "merge" | "squash" | "rebase";
+
+/**
+ * Configuration for auto-merge feature
+ */
+export interface AutoMergeConfig {
+	enabled: boolean;
+	strategy: AutoMergeStrategy;
+	mergeMethod: MergeMethod;
+}
+
+/**
+ * Update type based on semver
+ */
+export type UpdateType = "major" | "minor" | "patch" | "unknown";

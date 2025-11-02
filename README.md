@@ -16,6 +16,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🔀 **One PR per extension** - each extension gets its own PR that updates when new versions are available.
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
+- 🚀 **Auto-merge support** - automatically merge PRs based on configurable rules (e.g., patch updates only).
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -65,21 +66,27 @@ jobs:
     pr-title-prefix: "chore(deps):"
     commit-message-prefix: "chore(deps):"
     pr-labels: "dependencies,quarto-extensions"
+    auto-merge: true
+    auto-merge-strategy: "patch"
+    auto-merge-method: "squash"
 ```
 
 ## Inputs
 
-| Input                   | Description                                              | Required | Default                                                                 |
-| ----------------------- | -------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `github-token`          | GitHub token for creating pull requests                  | Yes      | `${{ github.token }}`                                                   |
-| `workspace-path`        | Path to the workspace containing `_extensions` directory | No       | `.`                                                                     |
-| `registry-url`          | URL to the Quarto extensions registry JSON file          | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
-| `create-pr`             | Whether to create a pull request for updates             | No       | `true`                                                                  |
-| `branch-prefix`         | Prefix for the update branch name                        | No       | `chore/quarto-extensions`                                               |
-| `base-branch`           | Base branch to create pull requests against              | No       | `main`                                                                  |
-| `pr-title-prefix`       | Prefix for PR titles                                     | No       | `chore(deps):`                                                          |
-| `commit-message-prefix` | Prefix for commit messages                               | No       | `chore(deps):`                                                          |
-| `pr-labels`             | Comma-separated list of labels to add to PRs             | No       | `dependencies,quarto-extensions`                                        |
+| Input                   | Description                                                                       | Required | Default                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `github-token`          | GitHub token for creating pull requests                                           | Yes      | `${{ github.token }}`                                                   |
+| `workspace-path`        | Path to the workspace containing `_extensions` directory                          | No       | `.`                                                                     |
+| `registry-url`          | URL to the Quarto extensions registry JSON file                                   | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
+| `create-pr`             | Whether to create a pull request for updates                                      | No       | `true`                                                                  |
+| `branch-prefix`         | Prefix for the update branch name                                                 | No       | `chore/quarto-extensions`                                               |
+| `base-branch`           | Base branch to create pull requests against                                       | No       | `main`                                                                  |
+| `pr-title-prefix`       | Prefix for PR titles                                                              | No       | `chore(deps):`                                                          |
+| `commit-message-prefix` | Prefix for commit messages                                                        | No       | `chore(deps):`                                                          |
+| `pr-labels`             | Comma-separated list of labels to add to PRs                                      | No       | `dependencies,quarto-extensions`                                        |
+| `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                    | No       | `false`                                                                 |
+| `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all) | No       | `patch`                                                                 |
+| `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                               | No       | `squash`                                                                |
 
 ## Outputs
 
@@ -175,6 +182,86 @@ Updates the following Quarto extension(s):
 
 🤖 This PR was automatically generated by [quarto-extensions-updater](https://github.com/mcanouil/quarto-extensions-updater)
 ```
+
+## Auto-Merge
+
+The action supports automatically merging PRs based on the update type, similar to Dependabot's auto-merge feature.
+
+### How Auto-Merge Works
+
+When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy.
+PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
+
+### Auto-Merge Strategies
+
+- **`patch`** (default): Only auto-merge patch updates (e.g., 1.0.0 → 1.0.1).
+- **`minor`**: Auto-merge minor and patch updates (e.g., 1.0.0 → 1.1.0 or 1.0.1).
+- **`all`**: Auto-merge all updates including major versions.
+
+### Auto-Merge Methods
+
+- **`squash`** (default): Squash all commits into one.
+- **`merge`**: Create a merge commit.
+- **`rebase`**: Rebase and merge.
+
+### Required Permissions
+
+To use auto-merge, your workflow must have write permissions for pull requests.
+Add this to your workflow file:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+```
+
+### Example: Auto-Merge Patch Updates
+
+```yaml
+name: Update Quarto Extensions
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - uses: mcanouil/quarto-extensions-updater@v0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-merge: true
+          auto-merge-strategy: "patch"
+          auto-merge-method: "squash"
+```
+
+### Example: Auto-Merge Minor and Patch Updates
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    auto-merge: true
+    auto-merge-strategy: "minor"
+```
+
+### Important Notes
+
+- Auto-merge requires branch protection rules to be configured if you want to enforce checks before merging.
+- The PR will only merge automatically after all required status checks pass.
+- If auto-merge fails (e.g., due to permission issues), the PR will still be created but won't auto-merge.
+- The action logs a warning if auto-merge fails but continues normal operation.
 
 ## Examples
 

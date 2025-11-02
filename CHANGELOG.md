@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- feat(auto-merge): add auto-merge support for PRs based on configurable strategies.
+- feat(auto-merge): add `auto-merge` input parameter to enable/disable auto-merge (default: `false`).
+- feat(auto-merge): add `auto-merge-strategy` input parameter with options: `patch`, `minor`, `all` (default: `patch`).
+- feat(auto-merge): add `auto-merge-method` input parameter with options: `merge`, `squash`, `rebase` (default: `squash`).
+- feat(auto-merge): implement `shouldAutoMerge()` function to determine if PR should be auto-merged based on update type.
+- feat(auto-merge): implement `enableAutoMerge()` function using GitHub GraphQL API.
+- feat(auto-merge): implement `isAutoMergeEnabled()` function to check if auto-merge is already enabled.
+- feat(auto-merge): implement `getUpdateType()` function to classify updates as major, minor, or patch.
+- docs(readme): add auto-merge feature to features list.
+- docs(readme): add dedicated "Auto-Merge" section with configuration examples and required permissions.
+- docs(readme): add auto-merge input parameters to inputs table.
+- docs(readme): document required workflow permissions for auto-merge (`pull-requests: write`).
+- docs(readme): add examples for auto-merge with patch and minor strategies.
+- docs(changelog): document new auto-merge feature.
+- refactor(types): add `AutoMergeStrategy`, `MergeMethod`, `AutoMergeConfig`, and `UpdateType` types.
+- refactor(automerge): create dedicated `src/automerge.ts` module for auto-merge functionality.
+- refactor(index): integrate auto-merge logic into PR creation workflow.
+- test(automerge): add comprehensive test coverage for auto-merge functionality (26 tests, 95.34% coverage).
+- fix(automerge): add error handling for invalid semver versions in `getUpdateType()`.
+
 ## 0.0.5 (2025-10-31)
 
 - refactor(github): extract GitHub API operations into dedicated `src/github.ts` module.
