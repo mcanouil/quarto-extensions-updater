@@ -54,6 +54,11 @@ export interface ExtensionUpdate {
 export type ExtensionRegistry = Record<string, ExtensionDetails>;
 
 /**
+ * Update strategy - controls which types of updates to apply
+ */
+export type UpdateStrategy = "patch" | "minor" | "all";
+
+/**
  * Auto-merge strategy for PRs
  */
 export type AutoMergeStrategy = "patch" | "minor" | "all";

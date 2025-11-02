@@ -37588,6 +37588,7 @@ async function run() {
                 .filter((ext) => ext.length > 0),
         };
         const groupUpdates = core.getBooleanInput("group-updates") === true;
+        const updateStrategy = (core.getInput("update-strategy") || "all");
         if (!fs.existsSync(workspacePath)) {
             throw new Error(`Workspace path does not exist: ${workspacePath}`);
         }
@@ -37608,7 +37609,7 @@ async function run() {
         const registry = await (0, registry_1.fetchExtensionsRegistry)(registryUrl);
         core.endGroup();
         core.startGroup("🔍 Checking for updates");
-        const updates = (0, updates_1.checkForUpdates)(workspacePath, registry, filterConfig);
+        const updates = (0, updates_1.checkForUpdates)(workspacePath, registry, filterConfig, updateStrategy);
         core.endGroup();
         if (updates.length === 0) {
             core.info("✅ All extensions are up to date!");
@@ -38080,13 +38081,39 @@ const core = __importStar(__nccwpck_require__(7484));
 const semver = __importStar(__nccwpck_require__(2088));
 const extensions_1 = __nccwpck_require__(9233);
 /**
+ * Determines if an update should be applied based on the update strategy
+ * @param currentVersion The current version
+ * @param latestVersion The latest version
+ * @param strategy The update strategy
+ * @returns True if the update should be applied
+ */
+function shouldApplyUpdate(currentVersion, latestVersion, strategy) {
+    if (strategy === "all") {
+        return true;
+    }
+    const current = normaliseVersion(currentVersion);
+    const latest = normaliseVersion(latestVersion);
+    if (!semver.valid(current) || !semver.valid(latest)) {
+        return false;
+    }
+    const diff = semver.diff(current, latest);
+    if (strategy === "patch") {
+        return diff === "patch" || diff === "prepatch";
+    }
+    if (strategy === "minor") {
+        return diff === "minor" || diff === "preminor" || diff === "patch" || diff === "prepatch";
+    }
+    return false;
+}
+/**
  * Checks for available updates for installed Quarto extensions
  * @param workspacePath The workspace path to check
  * @param registry The extensions registry
  * @param filterConfig Optional configuration for filtering extensions
+ * @param updateStrategy Optional strategy to control which types of updates to apply (default: "all")
  * @returns Array of available updates
  */
-function checkForUpdates(workspacePath, registry, filterConfig) {
+function checkForUpdates(workspacePath, registry, filterConfig, updateStrategy = "all") {
     const updates = [];
     const manifestPaths = (0, extensions_1.findExtensionManifests)(workspacePath);
     core.info(`Checking ${manifestPaths.length} extensions for updates...`);
@@ -38134,6 +38161,12 @@ function checkForUpdates(workspacePath, registry, filterConfig) {
             continue;
         }
         if (semver.lt(currentVersion, normalizedLatest)) {
+            // Check if this update should be applied based on the update strategy
+            if (!shouldApplyUpdate(extensionData.version, latestVersion, updateStrategy)) {
+                const diff = semver.diff(currentVersion, normalizedLatest);
+                core.info(`Skipping ${nameWithOwner}: ${diff} update (${extensionData.version} → ${latestVersion}) not allowed by update strategy (${updateStrategy})`);
+                continue;
+            }
             core.info(`Update available for ${nameWithOwner}: ${extensionData.version} → ${latestVersion}`);
             updates.push({
                 name,

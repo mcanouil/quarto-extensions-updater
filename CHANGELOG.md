@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- feat: add `update-strategy` input parameter to control which types of updates to apply: `all` (default), `minor` (minor and patch only), `patch` (patch only).
+- feat: implement update strategy filtering logic in `checkForUpdates()` with `shouldApplyUpdate()` helper function.
+- test: add comprehensive test coverage for update strategy filtering (4 new tests).
 - feat: add `group-updates` input parameter to combine all extension updates into a single PR (default: `false`).
 - feat: implement update grouping logic with smart auto-merge (only enabled when all updates qualify).
 - feat: add `include-extensions` and `exclude-extensions` input parameters for filtering which extensions to update.
