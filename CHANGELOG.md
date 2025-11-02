@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2025-11-02)
 
 - feat: add `pr-reviewers`, `pr-team-reviewers`, and `pr-assignees` input parameters for automatic reviewer and assignee assignment on created PRs.
 - feat: implement `requestReviewersAndAssignees()` function in `src/github.ts` to request reviewers and assign users to PRs.
