@@ -36794,20 +36794,25 @@ const semver = __importStar(__nccwpck_require__(2088));
  * Determines the type of version update based on semver
  */
 function getUpdateType(currentVersion, latestVersion) {
-    const diff = semver.diff(currentVersion, latestVersion);
-    if (!diff) {
+    try {
+        const diff = semver.diff(currentVersion, latestVersion);
+        if (!diff) {
+            return "unknown";
+        }
+        if (diff === "major" || diff === "premajor") {
+            return "major";
+        }
+        if (diff === "minor" || diff === "preminor") {
+            return "minor";
+        }
+        if (diff === "patch" || diff === "prepatch") {
+            return "patch";
+        }
         return "unknown";
     }
-    if (diff === "major" || diff === "premajor") {
-        return "major";
+    catch {
+        return "unknown";
     }
-    if (diff === "minor" || diff === "preminor") {
-        return "minor";
-    }
-    if (diff === "patch" || diff === "prepatch") {
-        return "patch";
-    }
-    return "unknown";
 }
 /**
  * Determines if an update should be auto-merged based on the configured strategy

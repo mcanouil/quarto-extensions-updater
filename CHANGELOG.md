@@ -19,6 +19,8 @@
 - refactor(types): add `AutoMergeStrategy`, `MergeMethod`, `AutoMergeConfig`, and `UpdateType` types.
 - refactor(automerge): create dedicated `src/automerge.ts` module for auto-merge functionality.
 - refactor(index): integrate auto-merge logic into PR creation workflow.
+- test(automerge): add comprehensive test coverage for auto-merge functionality (26 tests, 95.34% coverage).
+- fix(automerge): add error handling for invalid semver versions in `getUpdateType()`.
 
 ## 0.0.5 (2025-10-31)
 

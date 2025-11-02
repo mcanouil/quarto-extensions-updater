@@ -7,25 +7,29 @@ import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "
  * Determines the type of version update based on semver
  */
 export function getUpdateType(currentVersion: string, latestVersion: string): UpdateType {
-	const diff = semver.diff(currentVersion, latestVersion);
+	try {
+		const diff = semver.diff(currentVersion, latestVersion);
 
-	if (!diff) {
+		if (!diff) {
+			return "unknown";
+		}
+
+		if (diff === "major" || diff === "premajor") {
+			return "major";
+		}
+
+		if (diff === "minor" || diff === "preminor") {
+			return "minor";
+		}
+
+		if (diff === "patch" || diff === "prepatch") {
+			return "patch";
+		}
+
+		return "unknown";
+	} catch {
 		return "unknown";
 	}
-
-	if (diff === "major" || diff === "premajor") {
-		return "major";
-	}
-
-	if (diff === "minor" || diff === "preminor") {
-		return "minor";
-	}
-
-	if (diff === "patch" || diff === "prepatch") {
-		return "patch";
-	}
-
-	return "unknown";
 }
 
 /**
