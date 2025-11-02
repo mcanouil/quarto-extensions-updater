@@ -21,6 +21,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 📦 **Grouped updates** - option to combine all extension updates into a single PR.
 - 🛡️ **Update strategy** - control which types of updates to apply (all, minor, patch).
 - 🧪 **Dry-run mode** - preview updates and test configuration without making changes.
+- 👥 **PR reviewers and assignees** - automatically request reviewers and assign team members to PRs.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -96,6 +97,9 @@ jobs:
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension       | No       | `false`                                                                 |
 | `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch` | No       | `all`                                                                   |
 | `dry-run`               | Run in dry-run mode: check for updates and report what would be done without making changes | No       | `false`                                                                 |
+| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (e.g., `user1,user2`) | No       | `` (none)                                                               |
+| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (e.g., `team1,team2`) | No       | `` (none)                                                               |
+| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (e.g., `user1,user2`) | No       | `` (none)                                                               |
 
 ## Outputs
 
@@ -459,6 +463,71 @@ When `dry-run` is enabled:
 - **Preview Updates**: See what updates are available before applying them.
 - **CI/CD Testing**: Test your workflow configuration without making changes.
 - **Regular Monitoring**: Run daily in dry-run mode to monitor available updates, then manually decide when to apply them.
+
+## PR Reviewers and Assignees
+
+Configure automatic reviewer requests and assignees for created pull requests to support team workflows.
+
+### Configuration Options
+
+- **`pr-reviewers`**: Individual GitHub users to request as reviewers.
+- **`pr-team-reviewers`**: GitHub team slugs to request as reviewers (requires organisation membership).
+- **`pr-assignees`**: GitHub users to assign to the PR.
+
+### Example: Request Individual Reviewers
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pr-reviewers: "user1,user2"
+```
+
+### Example: Request Team Reviewers
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pr-team-reviewers: "frontend-team,backend-team"
+```
+
+### Example: Assign PRs and Request Reviewers
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pr-reviewers: "team-lead"
+    pr-assignees: "dependency-manager"
+```
+
+### Example: Combined Team Workflow
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pr-reviewers: "user1,user2"
+    pr-team-reviewers: "platform-team"
+    pr-assignees: "dependency-manager,team-lead"
+    auto-merge: true
+    auto-merge-strategy: "patch"
+```
+
+In this example:
+
+- Individual reviewers `user1` and `user2` are requested.
+- The `platform-team` is also requested for review.
+- The PR is assigned to `dependency-manager` and `team-lead`.
+- Patch updates are automatically merged (after review approval if branch protection requires it).
+
+### Notes
+
+- **Team reviewers** require the repository to be part of an organisation and the team to have access to the repository.
+- **Permissions**: The GitHub token must have appropriate permissions to request reviewers and add assignees.
+- **Branch protection**: If branch protection rules require review approval, auto-merge will wait for the required approvals.
+- **Failed requests**: If reviewer/assignee requests fail (eg. due to permissions), a warning is logged but the PR creation will still succeed.
 
 ## Examples
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- feat: add `pr-reviewers`, `pr-team-reviewers`, and `pr-assignees` input parameters for automatic reviewer and assignee assignment on created PRs.
+- feat: implement `requestReviewersAndAssignees()` function in `src/github.ts` to request reviewers and assign users to PRs.
+- feat: update `createOrUpdatePR()` to accept optional `PRAssignmentConfig` parameter for setting reviewers and assignees.
+- feat: add `PRAssignmentConfig` interface to `src/types.ts` with `reviewers`, `teamReviewers`, and `assignees` fields.
 - feat: add `dry-run` input parameter to preview updates without creating PRs or making changes.
 - feat: implement dry-run mode with detailed reporting of configuration, planned actions, and auto-merge status.
 - feat: add `update-strategy` input parameter to control which types of updates to apply: `all` (default), `minor` (minor and patch only), `patch` (patch only).
@@ -19,6 +23,7 @@
 - test: add comprehensive test coverage for filtering logic (7 new tests).
 - test: add comprehensive test coverage for auto-merge functionality (26 tests, 95.34% coverage).
 - fix: add error handling for invalid semver versions.
+- fix: add graceful error handling for reviewer/assignee requests with warning logging on failure.
 
 ## 0.0.5 (2025-10-31)
 
