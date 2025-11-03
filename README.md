@@ -92,14 +92,14 @@ jobs:
 | `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                            | No       | `false`                                                                 |
 | `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all)         | No       | `patch`                                                                 |
 | `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                                       | No       | `squash`                                                                |
-| `include-extensions`    | Comma-separated list of extensions to include (*e.g.*, `owner/name1,owner/name2`)         | No       | `` (all)                                                                |
-| `exclude-extensions`    | Comma-separated list of extensions to exclude (*e.g.*, `owner/name1,owner/name2`)         | No       | `` (none)                                                               |
+| `include-extensions`    | Comma-separated list of extensions to include (*e.g.*, `owner/name1,owner/name2`)         | No       | *(all)*                                                                 |
+| `exclude-extensions`    | Comma-separated list of extensions to exclude (*e.g.*, `owner/name1,owner/name2`)         | No       | *(none)*                                                                |
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension              | No       | `false`                                                                 |
 | `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch`        | No       | `all`                                                                   |
 | `dry-run`               | Run in dry-run mode: check for updates and report without making changes                  | No       | `false`                                                                 |
-| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (*e.g.*, `user1,user2`)  | No       | `` (none)                                                               |
-| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (*e.g.*, `team1,team2`) | No       | `` (none)                                                               |
-| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (*e.g.*, `user1,user2`)         | No       | `` (none)                                                               |
+| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (*e.g.*, `user1,user2`)  | No       | *(none)*                                                                |
+| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (*e.g.*, `team1,team2`) | No       | *(none)*                                                                |
+| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (*e.g.*, `user1,user2`)         | No       | *(none)*                                                                |
 
 ## Outputs
 
