@@ -178,24 +178,29 @@ Example PR body:
 ```markdown
 Updates the following Quarto extension(s):
 
-## ⚠️ Major Updates
+## 🐛 Patch Updates
 
-- **[mcanouil/quarto-iconify](https://github.com/mcanouil/quarto-iconify)**: `1.0.0` → `3.0.1`
+- **[mcanouil/iconify](https://github.com/mcanouil/quarto-iconify)**: `3.0.0` → `3.0.2`
 
 ---
 
 ### Release Notes
 
 <details>
-<summary>Release 3.0.1</summary>
+<summary>Release 3.0.2</summary>
 
-> Release notes content would appear here...
+> ## What's Changed
+> * refactor: use module and enhance iconify extension by @mcanouil in https://github.com/mcanouil/quarto-iconify/pull/46
+> * ci: bump version for release :rocket: by @github-actions[bot] in https://github.com/mcanouil/quarto-iconify/pull/47
+> 
+> 
+> **Full Changelog**: https://github.com/mcanouil/quarto-iconify/compare/3.0.1...3.0.2
 
 </details>
 
-**About**: Iconify extension for Quarto
+**About**: Use Iconify icons in HTML-based Quarto documents (over 200,000 open source vector icons).
 
-**Links**: [Repository](https://github.com/mcanouil/quarto-iconify) · [Release](https://github.com/mcanouil/quarto-iconify/releases/tag/v3.0.1)
+**Links**: [Repository](https://github.com/mcanouil/quarto-iconify) · [Release](https://github.com/mcanouil/quarto-iconify/releases/tag/3.0.2)
 
 ---
 
