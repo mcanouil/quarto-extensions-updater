@@ -36918,6 +36918,350 @@ async function isAutoMergeEnabled(octokit, owner, repo, prNumber) {
 
 /***/ }),
 
+/***/ 2973:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseInputs = parseInputs;
+const core = __importStar(__nccwpck_require__(7484));
+const validation_1 = __nccwpck_require__(4344);
+const constants_1 = __nccwpck_require__(7242);
+/**
+ * Parses a comma-separated string input into a filtered array
+ * @param input Comma-separated string to parse
+ * @returns Array of trimmed non-empty strings
+ */
+function parseCommaSeparatedInput(input) {
+    return input
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
+/**
+ * Parses all GitHub Actions inputs and returns validated configuration
+ * @returns Validated application configuration object
+ * @throws ValidationError if any input validation fails
+ */
+function parseInputs() {
+    // Required inputs
+    const githubToken = core.getInput("github-token", { required: true });
+    // Path and registry
+    const workspacePath = core.getInput("workspace-path") || process.cwd();
+    const registryUrl = core.getInput("registry-url") || undefined;
+    // PR configuration
+    const createPR = core.getBooleanInput("create-pr") !== false;
+    const baseBranch = core.getInput("base-branch") || constants_1.DEFAULT_BASE_BRANCH;
+    const branchPrefix = core.getInput("branch-prefix") || constants_1.DEFAULT_BRANCH_PREFIX;
+    const prTitlePrefix = core.getInput("pr-title-prefix") || constants_1.DEFAULT_PR_TITLE_PREFIX;
+    const commitMessagePrefix = core.getInput("commit-message-prefix") || constants_1.DEFAULT_COMMIT_MESSAGE_PREFIX;
+    // PR labels
+    const prLabelsInput = core.getInput("pr-labels") || constants_1.DEFAULT_PR_LABELS.join(constants_1.LABEL_SEPARATOR);
+    const prLabels = parseCommaSeparatedInput(prLabelsInput);
+    // Auto-merge configuration
+    const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
+    const autoMergeStrategyInput = core.getInput("auto-merge-strategy") || "patch";
+    const autoMergeMethodInput = core.getInput("auto-merge-method") || "squash";
+    // Validate auto-merge inputs
+    (0, validation_1.validateAutoMergeStrategy)(autoMergeStrategyInput);
+    (0, validation_1.validateMergeMethod)(autoMergeMethodInput);
+    const autoMergeConfig = {
+        enabled: autoMergeEnabled,
+        strategy: autoMergeStrategyInput,
+        mergeMethod: autoMergeMethodInput,
+    };
+    // Extension filtering
+    const includeExtensionsInput = core.getInput("include-extensions") || "";
+    const excludeExtensionsInput = core.getInput("exclude-extensions") || "";
+    const filterConfig = {
+        include: parseCommaSeparatedInput(includeExtensionsInput),
+        exclude: parseCommaSeparatedInput(excludeExtensionsInput),
+    };
+    // Update configuration
+    const groupUpdates = core.getBooleanInput("group-updates") === true;
+    const updateStrategyInput = core.getInput("update-strategy") || "all";
+    const dryRun = core.getBooleanInput("dry-run") === true;
+    // Validate update strategy
+    (0, validation_1.validateUpdateStrategy)(updateStrategyInput);
+    const updateStrategy = updateStrategyInput;
+    // PR assignment configuration
+    const prReviewersInput = core.getInput("pr-reviewers") || "";
+    const prTeamReviewersInput = core.getInput("pr-team-reviewers") || "";
+    const prAssigneesInput = core.getInput("pr-assignees") || "";
+    const assignmentConfig = {
+        reviewers: parseCommaSeparatedInput(prReviewersInput),
+        teamReviewers: parseCommaSeparatedInput(prTeamReviewersInput),
+        assignees: parseCommaSeparatedInput(prAssigneesInput),
+    };
+    // Validate configuration
+    if (registryUrl) {
+        (0, validation_1.validateRegistryUrl)(registryUrl);
+    }
+    (0, validation_1.validateBranchPrefix)(branchPrefix);
+    return {
+        githubToken,
+        workspacePath,
+        registryUrl,
+        createPR,
+        baseBranch,
+        branchPrefix,
+        prTitlePrefix,
+        commitMessagePrefix,
+        prLabels,
+        autoMergeConfig,
+        filterConfig,
+        groupUpdates,
+        updateStrategy,
+        dryRun,
+        assignmentConfig,
+    };
+}
+
+
+/***/ }),
+
+/***/ 7242:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Application-wide constants
+ *
+ * This module contains all hardcoded values used throughout the application.
+ * Centralising constants improves maintainability and makes it easier to
+ * update configuration values.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.LOG_SEPARATOR_CHAR = exports.LOG_SEPARATOR_LENGTH = exports.INVALID_GIT_REF_CHARS = exports.HTTPS_PROTOCOL = exports.VALID_UPDATE_STRATEGIES = exports.VALID_AUTO_MERGE_STRATEGIES = exports.VALID_MERGE_METHODS = exports.QUARTO_SETUP_INSTRUCTIONS = exports.PR_FOOTER_TEXT = exports.ACTION_REPOSITORY_URL = exports.GITHUB_BASE_URL = exports.DEFAULT_REGISTRY_URL = exports.QUARTO_EXTENSIONS_DIR = exports.QUARTO_MANIFEST_FILENAMES = exports.QUARTO_ADD_COMMAND_TEMPLATE = exports.QUARTO_VERSION_COMMAND = exports.LABEL_SEPARATOR = exports.DEFAULT_PR_LABELS = exports.DEFAULT_COMMIT_MESSAGE_PREFIX = exports.DEFAULT_PR_TITLE_PREFIX = exports.DEFAULT_BRANCH_PREFIX = exports.DEFAULT_BASE_BRANCH = exports.GIT_FILE_MODE_REGULAR = exports.HTTP_USER_AGENT = exports.HTTP_HEADER_ACCEPT_JSON = exports.DEFAULT_FETCH_TIMEOUT_MS = exports.HTTP_UNPROCESSABLE_ENTITY = exports.HTTP_NOT_FOUND = void 0;
+// ============================================================================
+// HTTP and Network Constants
+// ============================================================================
+/** HTTP 404 Not Found status code */
+exports.HTTP_NOT_FOUND = 404;
+/** HTTP 422 Unprocessable Entity - Used by GitHub API to indicate a ref already exists */
+exports.HTTP_UNPROCESSABLE_ENTITY = 422;
+/** Default HTTP request timeout in milliseconds */
+exports.DEFAULT_FETCH_TIMEOUT_MS = 30000; // 30 seconds
+/** HTTP header for JSON content */
+exports.HTTP_HEADER_ACCEPT_JSON = "application/json";
+/** User agent string for HTTP requests */
+exports.HTTP_USER_AGENT = "quarto-extensions-updater";
+// ============================================================================
+// Git and GitHub Constants
+// ============================================================================
+/** Git file mode for regular non-executable file */
+exports.GIT_FILE_MODE_REGULAR = "100644";
+/** Default base branch for pull requests */
+exports.DEFAULT_BASE_BRANCH = "main";
+/** Default branch prefix for update branches */
+exports.DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
+/** Default prefix for PR titles */
+exports.DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
+/** Default prefix for commit messages */
+exports.DEFAULT_COMMIT_MESSAGE_PREFIX = "chore(deps):";
+/** Default labels for pull requests */
+exports.DEFAULT_PR_LABELS = ["dependencies", "quarto-extensions"];
+/** Separator for label lists */
+exports.LABEL_SEPARATOR = ",";
+// ============================================================================
+// Quarto CLI Constants
+// ============================================================================
+/** Command to check Quarto CLI version */
+exports.QUARTO_VERSION_COMMAND = "quarto --version";
+/** Command template for adding Quarto extensions (use with source parameter) */
+exports.QUARTO_ADD_COMMAND_TEMPLATE = "quarto add {source} --no-prompt";
+/** Quarto extension manifest filenames */
+exports.QUARTO_MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
+/** Quarto extensions directory name */
+exports.QUARTO_EXTENSIONS_DIR = "_extensions";
+// ============================================================================
+// Registry Constants
+// ============================================================================
+/** Default Quarto extensions registry URL */
+exports.DEFAULT_REGISTRY_URL = "https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json";
+/** GitHub repository base URL */
+exports.GITHUB_BASE_URL = "https://github.com";
+/** GitHub repository URL for this action */
+exports.ACTION_REPOSITORY_URL = "https://github.com/mcanouil/quarto-extensions-updater";
+// ============================================================================
+// PR and Documentation Constants
+// ============================================================================
+/** Footer text for auto-generated PRs */
+exports.PR_FOOTER_TEXT = `🤖 This PR was automatically generated by [quarto-extensions-updater](${exports.ACTION_REPOSITORY_URL})`;
+/** Instructions for setting up Quarto in GitHub Actions */
+exports.QUARTO_SETUP_INSTRUCTIONS = `In GitHub Actions, add this step before using quarto-extensions-updater:
+  - name: Setup Quarto
+    uses: quarto-dev/quarto-actions/setup@v2`;
+// ============================================================================
+// Validation Constants
+// ============================================================================
+/** Valid merge methods for GitHub PRs */
+exports.VALID_MERGE_METHODS = ["merge", "squash", "rebase"];
+/** Valid auto-merge strategies */
+exports.VALID_AUTO_MERGE_STRATEGIES = ["patch", "minor", "all"];
+/** Valid update strategies */
+exports.VALID_UPDATE_STRATEGIES = ["patch", "minor", "all"];
+/** URL protocol prefix for HTTPS */
+exports.HTTPS_PROTOCOL = "https://";
+/** Invalid Git ref characters pattern */
+exports.INVALID_GIT_REF_CHARS = /[~^:?*[\]\\]/;
+// ============================================================================
+// Output and Logging Constants
+// ============================================================================
+/** Number of characters to use for separator lines in logs */
+exports.LOG_SEPARATOR_LENGTH = 60;
+/** Character to use for separator lines */
+exports.LOG_SEPARATOR_CHAR = "─";
+
+
+/***/ }),
+
+/***/ 3916:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.GitHubAPIError = exports.GitOperationError = exports.RegistryError = exports.ValidationError = exports.QuartoExtensionUpdaterError = void 0;
+exports.isQuartoError = isQuartoError;
+exports.formatError = formatError;
+/**
+ * Base error class for quarto-extensions-updater errors
+ */
+class QuartoExtensionUpdaterError extends Error {
+    code;
+    context;
+    constructor(message, code, context) {
+        super(message);
+        this.code = code;
+        this.context = context;
+        this.name = "QuartoExtensionUpdaterError";
+        // Maintain proper prototype chain for instanceof checks
+        Object.setPrototypeOf(this, QuartoExtensionUpdaterError.prototype);
+    }
+}
+exports.QuartoExtensionUpdaterError = QuartoExtensionUpdaterError;
+/**
+ * Error thrown when input validation fails
+ */
+class ValidationError extends QuartoExtensionUpdaterError {
+    field;
+    value;
+    constructor(message, field, value) {
+        super(message, "VALIDATION_ERROR", { field, value });
+        this.field = field;
+        this.value = value;
+        this.name = "ValidationError";
+        Object.setPrototypeOf(this, ValidationError.prototype);
+    }
+}
+exports.ValidationError = ValidationError;
+/**
+ * Error thrown when registry operations fail
+ */
+class RegistryError extends QuartoExtensionUpdaterError {
+    url;
+    statusCode;
+    constructor(message, url, statusCode) {
+        super(message, "REGISTRY_ERROR", { url, statusCode });
+        this.url = url;
+        this.statusCode = statusCode;
+        this.name = "RegistryError";
+        Object.setPrototypeOf(this, RegistryError.prototype);
+    }
+}
+exports.RegistryError = RegistryError;
+/**
+ * Error thrown when Git operations fail
+ */
+class GitOperationError extends QuartoExtensionUpdaterError {
+    operation;
+    details;
+    constructor(message, operation, details) {
+        super(message, "GIT_OPERATION_ERROR", { operation, details });
+        this.operation = operation;
+        this.details = details;
+        this.name = "GitOperationError";
+        Object.setPrototypeOf(this, GitOperationError.prototype);
+    }
+}
+exports.GitOperationError = GitOperationError;
+/**
+ * Error thrown when GitHub API operations fail
+ */
+class GitHubAPIError extends QuartoExtensionUpdaterError {
+    operation;
+    statusCode;
+    constructor(message, operation, statusCode) {
+        super(message, "GITHUB_API_ERROR", { operation, statusCode });
+        this.operation = operation;
+        this.statusCode = statusCode;
+        this.name = "GitHubAPIError";
+        Object.setPrototypeOf(this, GitHubAPIError.prototype);
+    }
+}
+exports.GitHubAPIError = GitHubAPIError;
+/**
+ * Type guard to check if an error is a QuartoExtensionUpdaterError
+ */
+function isQuartoError(error) {
+    return error instanceof QuartoExtensionUpdaterError;
+}
+/**
+ * Formats an error for logging, extracting useful information
+ */
+function formatError(error) {
+    if (isQuartoError(error)) {
+        const parts = [`[${error.code}] ${error.message}`];
+        if (error.context && Object.keys(error.context).length > 0) {
+            parts.push(`Context: ${JSON.stringify(error.context)}`);
+        }
+        return parts.join(" - ");
+    }
+    if (error instanceof Error) {
+        return `${error.name}: ${error.message}`;
+    }
+    return String(error);
+}
+
+
+/***/ }),
+
 /***/ 9233:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -36965,8 +37309,7 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const yaml = __importStar(__nccwpck_require__(4281));
 const core = __importStar(__nccwpck_require__(7484));
-/** Valid Quarto extension manifest filenames */
-const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
+const constants_1 = __nccwpck_require__(7242);
 /**
  * Finds all Quarto extension manifests in the workspace
  * @param workspacePath The root path to search for extensions
@@ -36990,7 +37333,7 @@ function findExtensionManifests(workspacePath) {
                 if (!extEntry.isDirectory())
                     continue;
                 const extPath = path.join(ownerPath, extEntry.name);
-                for (const filename of MANIFEST_FILENAMES) {
+                for (const filename of constants_1.QUARTO_MANIFEST_FILENAMES) {
                     const manifestPath = path.join(extPath, filename);
                     if (fs.existsSync(manifestPath)) {
                         manifests.push(manifestPath);
@@ -37299,17 +37642,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.GIT_CONFLICT_STATUS = void 0;
 exports.checkExistingPR = checkExistingPR;
 exports.createOrUpdateBranch = createOrUpdateBranch;
 exports.requestReviewersAndAssignees = requestReviewersAndAssignees;
 exports.createOrUpdatePR = createOrUpdatePR;
 exports.createCommit = createCommit;
 const core = __importStar(__nccwpck_require__(7484));
-/** HTTP 422 Unprocessable Entity - Used by GitHub API to indicate a ref already exists */
-exports.GIT_CONFLICT_STATUS = 422;
-/** Git file mode for regular non-executable file */
-const FILE_MODE_REGULAR = "100644";
+const constants_1 = __nccwpck_require__(7242);
 /** Type guard to check if an error is a GitHub API error with status code */
 function isGitHubError(error) {
     return (error instanceof Error && "status" in error && typeof error.status === "number");
@@ -37344,7 +37683,7 @@ async function checkExistingPR(octokit, owner, repo, branchName, expectedTitle) 
     }
     catch (error) {
         if (isGitHubError(error)) {
-            if (error.status === 404) {
+            if (error.status === constants_1.HTTP_NOT_FOUND) {
                 core.debug(`No existing PRs found for branch: ${branchName}`);
                 return { exists: false };
             }
@@ -37373,7 +37712,7 @@ async function createOrUpdateBranch(octokit, owner, repo, branchName, baseSha) {
         core.info(`✅ Created branch: ${branchName}`);
     }
     catch (error) {
-        if (isGitHubError(error) && error.status === exports.GIT_CONFLICT_STATUS) {
+        if (isGitHubError(error) && error.status === constants_1.HTTP_UNPROCESSABLE_ENTITY) {
             core.info(`Branch ${branchName} already exists, updating it...`);
             await octokit.rest.git.updateRef({
                 owner,
@@ -37521,7 +37860,7 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
         });
         return {
             path: file.path,
-            mode: FILE_MODE_REGULAR,
+            mode: constants_1.GIT_FILE_MODE_REGULAR,
             type: "blob",
             sha: blob.sha,
         };
@@ -37593,383 +37932,114 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const fs = __importStar(__nccwpck_require__(9896));
-const path = __importStar(__nccwpck_require__(6928));
 const registry_1 = __nccwpck_require__(2976);
 const updates_1 = __nccwpck_require__(8361);
-const git_1 = __nccwpck_require__(1243);
 const pr_1 = __nccwpck_require__(1309);
-const github_1 = __nccwpck_require__(9248);
-const automerge_1 = __nccwpck_require__(9270);
-const DEFAULT_BASE_BRANCH = "main";
-const DEFAULT_BRANCH_PREFIX = "chore/quarto-extensions";
-const DEFAULT_PR_TITLE_PREFIX = "chore(deps):";
-const DEFAULT_COMMIT_MESSAGE_PREFIX = "chore(deps):";
-const DEFAULT_PR_LABELS = "dependencies,quarto-extensions";
+const config_1 = __nccwpck_require__(2973);
+const summary_1 = __nccwpck_require__(8855);
+const prProcessor_1 = __nccwpck_require__(6409);
+/**
+ * Validates that the workspace path exists
+ * @param workspacePath The workspace path to validate
+ * @throws Error if the workspace path does not exist
+ */
+function validateWorkspace(workspacePath) {
+    if (!fs.existsSync(workspacePath)) {
+        throw new Error(`Workspace path does not exist: ${workspacePath}`);
+    }
+}
+/**
+ * Sets GitHub Actions output values for extension updates
+ * @param updates Array of extension updates found
+ */
+function setUpdateOutputs(updates) {
+    core.setOutput("updates-available", updates.length > 0 ? "true" : "false");
+    core.setOutput("update-count", updates.length.toString());
+    core.setOutput("updates", JSON.stringify(updates.map((u) => ({
+        name: u.nameWithOwner,
+        currentVersion: u.currentVersion,
+        latestVersion: u.latestVersion,
+    }))));
+}
+/**
+ * Sets GitHub Actions output values for created pull requests
+ * @param createdPRs Array of created PR results with number and URL
+ */
+function setPROutputs(createdPRs) {
+    if (createdPRs.length > 0) {
+        core.setOutput("pr-number", createdPRs[0].number.toString());
+        core.setOutput("pr-url", createdPRs[0].url);
+        core.info(`📊 Summary: Created/updated ${createdPRs.length} PR(s)`);
+    }
+}
 async function run() {
     try {
-        const githubToken = core.getInput("github-token", { required: true });
-        const workspacePath = core.getInput("workspace-path") || process.cwd();
-        const registryUrl = core.getInput("registry-url") || undefined;
-        const createPR = core.getBooleanInput("create-pr") !== false;
-        const baseBranch = core.getInput("base-branch") || DEFAULT_BASE_BRANCH;
-        const branchPrefix = core.getInput("branch-prefix") || DEFAULT_BRANCH_PREFIX;
-        const prTitlePrefix = core.getInput("pr-title-prefix") || DEFAULT_PR_TITLE_PREFIX;
-        const commitMessagePrefix = core.getInput("commit-message-prefix") || DEFAULT_COMMIT_MESSAGE_PREFIX;
-        const prLabelsInput = core.getInput("pr-labels") || DEFAULT_PR_LABELS;
-        const prLabels = prLabelsInput
-            .split(",")
-            .map((label) => label.trim())
-            .filter((label) => label.length > 0);
-        const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
-        const autoMergeStrategy = (core.getInput("auto-merge-strategy") || "patch");
-        const autoMergeMethod = (core.getInput("auto-merge-method") || "squash");
-        const autoMergeConfig = {
-            enabled: autoMergeEnabled,
-            strategy: autoMergeStrategy,
-            mergeMethod: autoMergeMethod,
-        };
-        const includeExtensionsInput = core.getInput("include-extensions") || "";
-        const excludeExtensionsInput = core.getInput("exclude-extensions") || "";
-        const filterConfig = {
-            include: includeExtensionsInput
-                .split(",")
-                .map((ext) => ext.trim())
-                .filter((ext) => ext.length > 0),
-            exclude: excludeExtensionsInput
-                .split(",")
-                .map((ext) => ext.trim())
-                .filter((ext) => ext.length > 0),
-        };
-        const groupUpdates = core.getBooleanInput("group-updates") === true;
-        const updateStrategy = (core.getInput("update-strategy") || "all");
-        const dryRun = core.getBooleanInput("dry-run") === true;
-        const prReviewersInput = core.getInput("pr-reviewers") || "";
-        const prTeamReviewersInput = core.getInput("pr-team-reviewers") || "";
-        const prAssigneesInput = core.getInput("pr-assignees") || "";
-        const assignmentConfig = {
-            reviewers: prReviewersInput
-                .split(",")
-                .map((reviewer) => reviewer.trim())
-                .filter((reviewer) => reviewer.length > 0),
-            teamReviewers: prTeamReviewersInput
-                .split(",")
-                .map((team) => team.trim())
-                .filter((team) => team.length > 0),
-            assignees: prAssigneesInput
-                .split(",")
-                .map((assignee) => assignee.trim())
-                .filter((assignee) => assignee.length > 0),
-        };
-        if (!fs.existsSync(workspacePath)) {
-            throw new Error(`Workspace path does not exist: ${workspacePath}`);
-        }
-        if (registryUrl && !registryUrl.startsWith("https://")) {
-            throw new Error(`Registry URL must use HTTPS: ${registryUrl}`);
-        }
-        if (branchPrefix.includes(" ")) {
-            throw new Error(`Branch prefix cannot contain spaces: ${branchPrefix}`);
-        }
-        const octokit = github.getOctokit(githubToken);
+        // Parse and validate all inputs
+        const config = (0, config_1.parseInputs)();
+        // Validate workspace exists
+        validateWorkspace(config.workspacePath);
+        // Initialise GitHub client
+        const octokit = github.getOctokit(config.githubToken);
         const context = github.context;
         const { owner, repo } = context.repo;
         core.info("🚀 Starting Quarto Extensions Updater...");
-        core.info(`Workspace path: ${workspacePath}`);
+        core.info(`Workspace path: ${config.workspacePath}`);
         core.info(`Repository: ${owner}/${repo}`);
-        core.info(`Base branch: ${baseBranch}`);
+        core.info(`Base branch: ${config.baseBranch}`);
+        // Fetch registry and check for updates
         core.startGroup("📥 Fetching extensions registry");
-        const registry = await (0, registry_1.fetchExtensionsRegistry)(registryUrl);
+        const registry = await (0, registry_1.fetchExtensionsRegistry)(config.registryUrl);
         core.endGroup();
         core.startGroup("🔍 Checking for updates");
-        const updates = (0, updates_1.checkForUpdates)(workspacePath, registry, filterConfig, updateStrategy);
+        const updates = (0, updates_1.checkForUpdates)(config.workspacePath, registry, config.filterConfig, config.updateStrategy);
         core.endGroup();
+        // Handle no updates case
         if (updates.length === 0) {
             core.info("✅ All extensions are up to date!");
-            core.setOutput("updates-available", "false");
-            core.setOutput("update-count", "0");
+            setUpdateOutputs(updates);
             return;
         }
         (0, pr_1.logUpdateSummary)(updates);
-        core.setOutput("updates-available", "true");
-        core.setOutput("update-count", updates.length.toString());
-        core.setOutput("updates", JSON.stringify(updates.map((u) => ({
-            name: u.nameWithOwner,
-            currentVersion: u.currentVersion,
-            latestVersion: u.latestVersion,
-        }))));
+        setUpdateOutputs(updates);
         // Handle dry-run mode
-        if (dryRun) {
+        if (config.dryRun) {
             core.startGroup("🔍 Dry-Run Mode - No Changes Will Be Made");
-            core.summary.addHeading("Dry-Run Summary", 2);
-            core.summary.addRaw("No PRs will be created. This is a preview of what would happen.", true);
-            core.summary.addBreak();
-            // Configuration section
-            core.summary.addHeading("Configuration", 3);
-            const configTable = [
-                [
-                    { data: "Setting", header: true },
-                    { data: "Value", header: true },
-                ],
-                [
-                    { data: "Mode", header: false },
-                    { data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)", header: false },
-                ],
-                [
-                    { data: "Update Strategy", header: false },
-                    { data: updateStrategy, header: false },
-                ],
-            ];
-            if (filterConfig.include.length > 0) {
-                configTable.push([
-                    { data: "Include Filter", header: false },
-                    { data: filterConfig.include.join(", "), header: false },
-                ]);
-            }
-            if (filterConfig.exclude.length > 0) {
-                configTable.push([
-                    { data: "Exclude Filter", header: false },
-                    { data: filterConfig.exclude.join(", "), header: false },
-                ]);
-            }
-            if (autoMergeConfig.enabled) {
-                configTable.push([
-                    { data: "Auto-Merge", header: false },
-                    {
-                        data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
-                        header: false,
-                    },
-                ]);
-            }
-            else {
-                configTable.push([
-                    { data: "Auto-Merge", header: false },
-                    { data: "Disabled", header: false },
-                ]);
-            }
-            core.summary.addTable(configTable);
-            core.summary.addBreak();
-            // Planned actions section
-            core.summary.addHeading("Planned Actions", 3);
-            if (groupUpdates) {
-                core.summary.addRaw(`Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}`, true);
-            }
-            else {
-                core.summary.addRaw(`Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)`, true);
-            }
-            core.summary.addBreak();
-            // Updates table
-            const updatesTable = [
-                [
-                    { data: "Extension", header: true },
-                    { data: "Current", header: true },
-                    { data: "Latest", header: true },
-                    { data: "Auto-Merge", header: true },
-                ],
-            ];
-            for (const update of updates) {
-                const wouldAutoMerge = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig);
-                updatesTable.push([
-                    { data: update.nameWithOwner, header: false },
-                    { data: update.currentVersion, header: false },
-                    { data: update.latestVersion, header: false },
-                    { data: wouldAutoMerge ? "✓ Yes" : "✗ No", header: false },
-                ]);
-            }
-            core.summary.addTable(updatesTable);
-            core.summary.addBreak();
-            // Instructions
-            core.summary.addHeading("Next Steps", 3);
-            core.summary.addRaw("To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.", true);
-            await core.summary.write();
+            await (0, summary_1.generateDryRunSummary)(updates, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig);
             core.info("📋 Dry-run summary written to job summary");
             core.info(`✓ Found ${updates.length} update${updates.length > 1 ? "s" : ""} that would be applied`);
             core.info("💡 Check the job summary for detailed information");
             core.endGroup();
             return;
         }
-        if (!createPR) {
+        // Exit if PR creation is disabled
+        if (!config.createPR) {
             core.info("ℹ️ PR creation disabled, exiting...");
             return;
         }
+        // Get base branch SHA
         const { data: refData } = await octokit.rest.git.getRef({
             owner,
             repo,
-            ref: `heads/${baseBranch}`,
+            ref: `heads/${config.baseBranch}`,
         });
         const baseSha = refData.object.sha;
-        const createdPRs = [];
-        // Determine whether to create one PR for all updates or one PR per extension
-        const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
-        for (const updateGroup of updateGroups) {
-            const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
-            core.startGroup(`📝 Processing ${groupDescription}`);
-            const branchName = (0, git_1.createBranchName)(updateGroup, branchPrefix);
-            const prTitle = (0, pr_1.generatePRTitle)(updateGroup, prTitlePrefix);
-            const existingPR = await (0, github_1.checkExistingPR)(octokit, owner, repo, branchName, prTitle);
-            if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
-                if (updateGroup.length === 1) {
-                    core.info(`ℹ️ PR #${existingPR.prNumber} already exists for ${updateGroup[0].nameWithOwner}@${updateGroup[0].latestVersion}, skipping...`);
-                }
-                else {
-                    core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
-                }
-                core.info(`   URL: ${existingPR.prUrl}`);
-                createdPRs.push({ number: existingPR.prNumber, url: existingPR.prUrl });
-                core.endGroup();
-                continue;
-            }
-            const modifiedFiles = (0, git_1.applyUpdates)(updateGroup);
-            if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
-                const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-                throw new Error(`Failed to validate modified files for ${errorDesc}`);
-            }
-            core.info(`Modified ${modifiedFiles.length} file(s)`);
-            const commitMessage = (0, git_1.createCommitMessage)(updateGroup, commitMessagePrefix);
-            core.info(`Branch: ${branchName}`);
-            core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
-            await (0, github_1.createOrUpdateBranch)(octokit, owner, repo, branchName, baseSha);
-            const workspacePrefix = `${workspacePath}${path.sep}`;
-            const files = modifiedFiles.map((filePath) => ({
-                path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
-                content: fs.readFileSync(filePath),
-            }));
-            const commitSha = await (0, github_1.createCommit)(octokit, owner, repo, branchName, baseSha, commitMessage, files);
-            core.info(`✅ Created commit: ${commitSha}`);
-            const prBody = await (0, pr_1.generatePRBody)(updateGroup, octokit);
-            try {
-                const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig);
-                createdPRs.push(pr);
-                // Handle auto-merge if enabled (only for single extension updates or when all updates qualify)
-                if (updateGroup.length === 1 && (0, automerge_1.shouldAutoMerge)(updateGroup[0], autoMergeConfig)) {
-                    core.info(`🤖 Auto-merge enabled for ${updateGroup[0].nameWithOwner}`);
-                    // Check if auto-merge is already enabled
-                    const alreadyEnabled = await (0, automerge_1.isAutoMergeEnabled)(octokit, owner, repo, pr.number);
-                    if (alreadyEnabled) {
-                        core.info(`   Auto-merge already enabled for PR #${pr.number}`);
-                    }
-                    else {
-                        await (0, automerge_1.enableAutoMerge)(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
-                    }
-                }
-                else if (updateGroup.length > 1 && autoMergeConfig.enabled) {
-                    // For grouped updates, check if all updates qualify for auto-merge
-                    const allQualify = updateGroup.every((u) => (0, automerge_1.shouldAutoMerge)(u, autoMergeConfig));
-                    if (allQualify) {
-                        core.info(`🤖 Auto-merge enabled for grouped updates (all ${updateGroup.length} updates qualify)`);
-                        const alreadyEnabled = await (0, automerge_1.isAutoMergeEnabled)(octokit, owner, repo, pr.number);
-                        if (!alreadyEnabled) {
-                            await (0, automerge_1.enableAutoMerge)(octokit, owner, repo, pr.number, autoMergeConfig.mergeMethod);
-                        }
-                    }
-                    else {
-                        core.info(`ℹ️ Auto-merge not applicable for grouped updates (not all updates qualify for strategy: ${autoMergeConfig.strategy})`);
-                    }
-                }
-                else if (updateGroup.length === 1 && autoMergeConfig.enabled) {
-                    core.info(`ℹ️ Auto-merge not applicable for ${updateGroup[0].nameWithOwner} (strategy: ${autoMergeConfig.strategy})`);
-                }
-            }
-            catch (error) {
-                const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-                core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
-                throw error;
-            }
-            core.endGroup();
-        }
+        // Process all PRs
+        const createdPRs = await (0, prProcessor_1.processAllPRs)(octokit, owner, repo, updates, config.groupUpdates, {
+            workspacePath: config.workspacePath,
+            baseBranch: config.baseBranch,
+            baseSha,
+            branchPrefix: config.branchPrefix,
+            prTitlePrefix: config.prTitlePrefix,
+            commitMessagePrefix: config.commitMessagePrefix,
+            prLabels: config.prLabels,
+            autoMergeConfig: config.autoMergeConfig,
+            assignmentConfig: config.assignmentConfig,
+        });
+        // Set outputs and generate summary
         if (createdPRs.length > 0) {
-            core.setOutput("pr-number", createdPRs[0].number.toString());
-            core.setOutput("pr-url", createdPRs[0].url);
-            core.info(`📊 Summary: Created/updated ${createdPRs.length} PR(s)`);
-            // Generate job summary
+            setPROutputs(createdPRs);
             core.startGroup("📋 Generating Job Summary");
-            core.summary.addHeading("Extension Updates Summary", 2);
-            core.summary.addRaw(`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`, true);
-            core.summary.addBreak();
-            // Configuration section
-            core.summary.addHeading("Configuration", 3);
-            const configTable = [
-                [
-                    { data: "Setting", header: true },
-                    { data: "Value", header: true },
-                ],
-                [
-                    { data: "Mode", header: false },
-                    { data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)", header: false },
-                ],
-                [
-                    { data: "Update Strategy", header: false },
-                    { data: updateStrategy, header: false },
-                ],
-            ];
-            if (filterConfig.include.length > 0) {
-                configTable.push([
-                    { data: "Include Filter", header: false },
-                    { data: filterConfig.include.join(", "), header: false },
-                ]);
-            }
-            if (filterConfig.exclude.length > 0) {
-                configTable.push([
-                    { data: "Exclude Filter", header: false },
-                    { data: filterConfig.exclude.join(", "), header: false },
-                ]);
-            }
-            if (autoMergeConfig.enabled) {
-                configTable.push([
-                    { data: "Auto-Merge", header: false },
-                    {
-                        data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
-                        header: false,
-                    },
-                ]);
-            }
-            else {
-                configTable.push([
-                    { data: "Auto-Merge", header: false },
-                    { data: "Disabled", header: false },
-                ]);
-            }
-            core.summary.addTable(configTable);
-            core.summary.addBreak();
-            // Updates section
-            core.summary.addHeading("Applied Updates", 3);
-            // Create a map of updates to their PRs
-            const updateToPR = new Map();
-            if (groupUpdates && createdPRs.length > 0) {
-                // All updates go to the same PR
-                const pr = createdPRs[0];
-                for (const update of updates) {
-                    updateToPR.set(update.nameWithOwner, pr);
-                }
-            }
-            else {
-                // Match individual updates to their PRs (assumes same order)
-                for (let i = 0; i < Math.min(updates.length, createdPRs.length); i++) {
-                    updateToPR.set(updates[i].nameWithOwner, createdPRs[i]);
-                }
-            }
-            const updatesTable = [
-                [
-                    { data: "Extension", header: true },
-                    { data: "Current", header: true },
-                    { data: "Latest", header: true },
-                    { data: "Pull Request", header: true },
-                    { data: "Auto-Merge", header: true },
-                ],
-            ];
-            for (const update of updates) {
-                const pr = updateToPR.get(update.nameWithOwner);
-                const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
-                const autoMergeStatus = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
-                updatesTable.push([
-                    { data: update.nameWithOwner, header: false },
-                    { data: update.currentVersion, header: false },
-                    { data: update.latestVersion, header: false },
-                    { data: prLink, header: false },
-                    { data: autoMergeStatus, header: false },
-                ]);
-            }
-            core.summary.addTable(updatesTable);
-            core.summary.addBreak();
-            await core.summary.write();
+            await (0, summary_1.generateCompletedSummary)(updates, createdPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig);
             core.endGroup();
         }
         core.info("🎉 Successfully completed!");
@@ -38033,6 +38103,7 @@ exports.generatePRLabels = generatePRLabels;
 exports.logUpdateSummary = logUpdateSummary;
 const core = __importStar(__nccwpck_require__(7484));
 const updates_1 = __nccwpck_require__(8361);
+const constants_1 = __nccwpck_require__(7242);
 /**
  * Fetches release notes for a specific release
  * @param octokit GitHub API client
@@ -38145,7 +38216,7 @@ async function generatePRBody(updates, octokit) {
     }
     sections.push("---");
     sections.push("");
-    sections.push("🤖 This PR was automatically generated by [quarto-extensions-updater](https://github.com/mcanouil/quarto-extensions-updater)");
+    sections.push(constants_1.PR_FOOTER_TEXT);
     return sections.join("\n");
 }
 /**
@@ -38162,24 +38233,20 @@ function formatUpdateList(updates) {
 }
 /**
  * Generates labels for the PR based on update types
- * @param updates Array of extension updates
  * @returns Array of label names
+ *
+ * Note: Additional labels based on update type (major/minor/patch) and count
+ * are not currently added. To enable this feature, uncomment the code below
+ * and add the updates parameter back to the function signature.
  */
-function generatePRLabels(updates) {
-    const labels = ["dependencies", "quarto-extensions"];
-    const grouped = (0, updates_1.groupUpdatesByType)(updates);
-    if (grouped.major.length > 0) {
-        // labels.push("major-update");
-    }
-    if (grouped.minor.length > 0) {
-        // labels.push("minor-update");
-    }
-    if (grouped.patch.length > 0) {
-        // labels.push("patch-update");
-    }
-    if (updates.length > 1) {
-        // labels.push("multiple-updates");
-    }
+function generatePRLabels() {
+    const labels = [...constants_1.DEFAULT_PR_LABELS];
+    // Uncomment to add type-specific labels (and add updates: ExtensionUpdate[] parameter):
+    // const grouped = groupUpdatesByType(updates);
+    // if (grouped.major.length > 0) labels.push("major-update");
+    // if (grouped.minor.length > 0) labels.push("minor-update");
+    // if (grouped.patch.length > 0) labels.push("patch-update");
+    // if (updates.length > 1) labels.push("multiple-updates");
     return labels;
 }
 /**
@@ -38188,7 +38255,7 @@ function generatePRLabels(updates) {
  */
 function logUpdateSummary(updates) {
     core.info("📦 Extension Updates Summary:");
-    core.info("─".repeat(60));
+    core.info(constants_1.LOG_SEPARATOR_CHAR.repeat(constants_1.LOG_SEPARATOR_LENGTH));
     const grouped = (0, updates_1.groupUpdatesByType)(updates);
     if (grouped.major.length > 0) {
         core.warning(`⚠️  Major updates (${grouped.major.length}):`);
@@ -38208,8 +38275,172 @@ function logUpdateSummary(updates) {
             core.info(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
         }
     }
-    core.info("─".repeat(60));
+    core.info(constants_1.LOG_SEPARATOR_CHAR.repeat(constants_1.LOG_SEPARATOR_LENGTH));
     core.info(`Total: ${updates.length} extension(s) to update`);
+}
+
+
+/***/ }),
+
+/***/ 6409:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.processPRForUpdateGroup = processPRForUpdateGroup;
+exports.processAllPRs = processAllPRs;
+const core = __importStar(__nccwpck_require__(7484));
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+const git_1 = __nccwpck_require__(1243);
+const pr_1 = __nccwpck_require__(1309);
+const github_1 = __nccwpck_require__(9248);
+const automerge_1 = __nccwpck_require__(9270);
+/**
+ * Handles auto-merge logic for a PR
+ */
+async function handleAutoMerge(octokit, owner, repo, prNumber, updateGroup, autoMergeConfig) {
+    if (!autoMergeConfig.enabled) {
+        return;
+    }
+    // For single extension updates
+    if (updateGroup.length === 1) {
+        if ((0, automerge_1.shouldAutoMerge)(updateGroup[0], autoMergeConfig)) {
+            core.info(`🤖 Auto-merge enabled for ${updateGroup[0].nameWithOwner}`);
+            const alreadyEnabled = await (0, automerge_1.isAutoMergeEnabled)(octokit, owner, repo, prNumber);
+            if (alreadyEnabled) {
+                core.info(`   Auto-merge already enabled for PR #${prNumber}`);
+            }
+            else {
+                await (0, automerge_1.enableAutoMerge)(octokit, owner, repo, prNumber, autoMergeConfig.mergeMethod);
+            }
+        }
+        else {
+            core.info(`ℹ️ Auto-merge not applicable for ${updateGroup[0].nameWithOwner} (strategy: ${autoMergeConfig.strategy})`);
+        }
+        return;
+    }
+    // For grouped updates, check if all updates qualify for auto-merge
+    const allQualify = updateGroup.every((u) => (0, automerge_1.shouldAutoMerge)(u, autoMergeConfig));
+    if (allQualify) {
+        core.info(`🤖 Auto-merge enabled for grouped updates (all ${updateGroup.length} updates qualify)`);
+        const alreadyEnabled = await (0, automerge_1.isAutoMergeEnabled)(octokit, owner, repo, prNumber);
+        if (!alreadyEnabled) {
+            await (0, automerge_1.enableAutoMerge)(octokit, owner, repo, prNumber, autoMergeConfig.mergeMethod);
+        }
+    }
+    else {
+        core.info(`ℹ️ Auto-merge not applicable for grouped updates (not all updates qualify for strategy: ${autoMergeConfig.strategy})`);
+    }
+}
+/**
+ * Processes a single update group (either a single extension or multiple grouped extensions)
+ */
+async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config) {
+    const branchName = (0, git_1.createBranchName)(updateGroup, config.branchPrefix);
+    const prTitle = (0, pr_1.generatePRTitle)(updateGroup, config.prTitlePrefix);
+    // Check for existing PR
+    const existingPR = await (0, github_1.checkExistingPR)(octokit, owner, repo, branchName, prTitle);
+    if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
+        if (updateGroup.length === 1) {
+            core.info(`ℹ️ PR #${existingPR.prNumber} already exists for ${updateGroup[0].nameWithOwner}@${updateGroup[0].latestVersion}, skipping...`);
+        }
+        else {
+            core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
+        }
+        core.info(`   URL: ${existingPR.prUrl}`);
+        return { number: existingPR.prNumber, url: existingPR.prUrl };
+    }
+    // Apply updates and validate
+    const modifiedFiles = (0, git_1.applyUpdates)(updateGroup);
+    if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
+        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+        throw new Error(`Failed to validate modified files for ${errorDesc}`);
+    }
+    core.info(`Modified ${modifiedFiles.length} file(s)`);
+    // Create commit
+    const commitMessage = (0, git_1.createCommitMessage)(updateGroup, config.commitMessagePrefix);
+    core.info(`Branch: ${branchName}`);
+    core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
+    await (0, github_1.createOrUpdateBranch)(octokit, owner, repo, branchName, config.baseSha);
+    const workspacePrefix = `${config.workspacePath}${path.sep}`;
+    const files = modifiedFiles.map((filePath) => ({
+        path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+        content: fs.readFileSync(filePath),
+    }));
+    const commitSha = await (0, github_1.createCommit)(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
+    core.info(`✅ Created commit: ${commitSha}`);
+    // Create or update PR
+    const prBody = await (0, pr_1.generatePRBody)(updateGroup, octokit);
+    try {
+        const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, config.baseBranch, prTitle, prBody, config.prLabels, config.assignmentConfig);
+        // Handle auto-merge
+        await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
+        return pr;
+    }
+    catch (error) {
+        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+        core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
+        throw error;
+    }
+}
+/**
+ * Processes all update groups and returns results
+ */
+async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config) {
+    const createdPRs = [];
+    // Determine whether to create one PR for all updates or one PR per extension
+    const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
+    for (const updateGroup of updateGroups) {
+        const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
+        core.startGroup(`📝 Processing ${groupDescription}`);
+        try {
+            const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
+            createdPRs.push(pr);
+        }
+        catch (error) {
+            core.error(`Failed to process ${groupDescription}: ${error}`);
+            throw error;
+        }
+        finally {
+            core.endGroup();
+        }
+    }
+    return createdPRs;
 }
 
 
@@ -38256,34 +38487,272 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.fetchExtensionsRegistry = fetchExtensionsRegistry;
 const core = __importStar(__nccwpck_require__(7484));
-const EXTENSIONS_REGISTRY_URL = "https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json";
+const errors_1 = __nccwpck_require__(3916);
+const constants_1 = __nccwpck_require__(7242);
 /**
- * Fetches the Quarto extensions registry from GitHub
+ * Fetches the Quarto extensions registry from GitHub with timeout
  * @param registryUrl Optional custom registry URL
  * @returns The extension registry
+ * @throws RegistryError if the fetch fails
  */
 async function fetchExtensionsRegistry(registryUrl) {
-    const url = registryUrl || EXTENSIONS_REGISTRY_URL;
+    const url = registryUrl || constants_1.DEFAULT_REGISTRY_URL;
     try {
         core.info(`Fetching extensions registry from: ${url}`);
+        // Create an AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), constants_1.DEFAULT_FETCH_TIMEOUT_MS);
         const response = await fetch(url, {
             headers: {
-                Accept: "application/json",
-                "User-Agent": "quarto-extensions-updater",
+                Accept: constants_1.HTTP_HEADER_ACCEPT_JSON,
+                "User-Agent": constants_1.HTTP_USER_AGENT,
             },
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
         if (!response.ok) {
-            throw new Error(`Failed to fetch registry: ${response.status} ${response.statusText}`);
+            throw new errors_1.RegistryError(`Failed to fetch registry: ${response.status} ${response.statusText}`, url, response.status);
         }
-        const registry = (await response.json());
+        let registry;
+        try {
+            registry = (await response.json());
+        }
+        catch (parseError) {
+            throw new errors_1.RegistryError(`Failed to parse registry JSON: ${parseError}`, url);
+        }
+        // Validate registry structure (must be an object, not an array or null)
+        if (!registry || typeof registry !== "object" || Array.isArray(registry)) {
+            throw new errors_1.RegistryError("Registry response is not a valid object", url);
+        }
         const extensionCount = Object.keys(registry).length;
         core.info(`Successfully fetched ${extensionCount} extensions from registry`);
         return registry;
     }
     catch (error) {
-        core.error(`Error fetching extensions registry: ${error}`);
-        throw error;
+        // Handle timeout errors
+        if (error instanceof Error && error.name === "AbortError") {
+            const timeoutError = new errors_1.RegistryError(`Registry fetch timed out after ${constants_1.DEFAULT_FETCH_TIMEOUT_MS / 1000} seconds`, url);
+            core.error(timeoutError.message);
+            throw timeoutError;
+        }
+        // Re-throw RegistryError as-is
+        if (error instanceof errors_1.RegistryError) {
+            core.error(error.message);
+            throw error;
+        }
+        // Wrap other errors
+        const wrappedError = new errors_1.RegistryError(`Unexpected error fetching registry: ${error}`, url);
+        core.error(wrappedError.message);
+        throw wrappedError;
     }
+}
+
+
+/***/ }),
+
+/***/ 8855:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generateDryRunSummary = generateDryRunSummary;
+exports.generateCompletedSummary = generateCompletedSummary;
+const core = __importStar(__nccwpck_require__(7484));
+const automerge_1 = __nccwpck_require__(9270);
+/**
+ * Generates configuration table for job summaries
+ */
+function generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    const configTable = [
+        [
+            { data: "Setting", header: true },
+            { data: "Value", header: true },
+        ],
+        [
+            { data: "Mode", header: false },
+            {
+                data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)",
+                header: false,
+            },
+        ],
+        [
+            { data: "Update Strategy", header: false },
+            { data: updateStrategy, header: false },
+        ],
+    ];
+    if (filterConfig.include.length > 0) {
+        configTable.push([
+            { data: "Include Filter", header: false },
+            { data: filterConfig.include.join(", "), header: false },
+        ]);
+    }
+    if (filterConfig.exclude.length > 0) {
+        configTable.push([
+            { data: "Exclude Filter", header: false },
+            { data: filterConfig.exclude.join(", "), header: false },
+        ]);
+    }
+    if (autoMergeConfig.enabled) {
+        configTable.push([
+            { data: "Auto-Merge", header: false },
+            {
+                data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
+                header: false,
+            },
+        ]);
+    }
+    else {
+        configTable.push([
+            { data: "Auto-Merge", header: false },
+            { data: "Disabled", header: false },
+        ]);
+    }
+    return configTable;
+}
+/**
+ * Generates dry-run job summary for GitHub Actions
+ * @param updates Array of extension updates that would be applied
+ * @param groupUpdates Whether updates are grouped in a single PR
+ * @param updateStrategy The update strategy being used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ */
+async function generateDryRunSummary(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    core.summary.addHeading("Dry-Run Summary", 2);
+    core.summary.addRaw("No PRs will be created. This is a preview of what would happen.", true);
+    core.summary.addBreak();
+    // Configuration section
+    core.summary.addHeading("Configuration", 3);
+    const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    core.summary.addTable(configTable);
+    core.summary.addBreak();
+    // Planned actions section
+    core.summary.addHeading("Planned Actions", 3);
+    if (groupUpdates) {
+        core.summary.addRaw(`Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}`, true);
+    }
+    else {
+        core.summary.addRaw(`Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)`, true);
+    }
+    core.summary.addBreak();
+    // Updates table
+    const updatesTable = [
+        [
+            { data: "Extension", header: true },
+            { data: "Current", header: true },
+            { data: "Latest", header: true },
+            { data: "Auto-Merge", header: true },
+        ],
+    ];
+    for (const update of updates) {
+        const wouldAutoMerge = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig);
+        updatesTable.push([
+            { data: update.nameWithOwner, header: false },
+            { data: update.currentVersion, header: false },
+            { data: update.latestVersion, header: false },
+            { data: wouldAutoMerge ? "✓ Yes" : "✗ No", header: false },
+        ]);
+    }
+    core.summary.addTable(updatesTable);
+    core.summary.addBreak();
+    // Instructions
+    core.summary.addHeading("Next Steps", 3);
+    core.summary.addRaw("To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.", true);
+    await core.summary.write();
+}
+/**
+ * Generates job summary for completed PR operations
+ * @param updates Array of extension updates that were applied
+ * @param createdPRs Array of created PR results
+ * @param groupUpdates Whether updates were grouped in a single PR
+ * @param updateStrategy The update strategy that was used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ */
+async function generateCompletedSummary(updates, createdPRs, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    core.summary.addHeading("Extension Updates Summary", 2);
+    core.summary.addRaw(`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`, true);
+    core.summary.addBreak();
+    // Configuration section
+    core.summary.addHeading("Configuration", 3);
+    const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    core.summary.addTable(configTable);
+    core.summary.addBreak();
+    // Updates section
+    core.summary.addHeading("Applied Updates", 3);
+    // Create a map of updates to their PRs
+    const updateToPR = new Map();
+    if (groupUpdates && createdPRs.length > 0) {
+        // All updates go to the same PR
+        const pr = createdPRs[0];
+        for (const update of updates) {
+            updateToPR.set(update.nameWithOwner, pr);
+        }
+    }
+    else {
+        // Match individual updates to their PRs (assumes same order)
+        for (let i = 0; i < Math.min(updates.length, createdPRs.length); i++) {
+            updateToPR.set(updates[i].nameWithOwner, createdPRs[i]);
+        }
+    }
+    const updatesTable = [
+        [
+            { data: "Extension", header: true },
+            { data: "Current", header: true },
+            { data: "Latest", header: true },
+            { data: "Pull Request", header: true },
+            { data: "Auto-Merge", header: true },
+        ],
+    ];
+    for (const update of updates) {
+        const pr = updateToPR.get(update.nameWithOwner);
+        const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
+        const autoMergeStatus = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
+        updatesTable.push([
+            { data: update.nameWithOwner, header: false },
+            { data: update.currentVersion, header: false },
+            { data: update.latestVersion, header: false },
+            { data: prLink, header: false },
+            { data: autoMergeStatus, header: false },
+        ]);
+    }
+    core.summary.addTable(updatesTable);
+    core.summary.addBreak();
+    await core.summary.write();
 }
 
 
@@ -38504,6 +38973,120 @@ function groupUpdatesByType(updates) {
         }
     }
     return grouped;
+}
+
+
+/***/ }),
+
+/***/ 4344:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.validateMergeMethod = validateMergeMethod;
+exports.validateAutoMergeStrategy = validateAutoMergeStrategy;
+exports.validateUpdateStrategy = validateUpdateStrategy;
+exports.validateWorkspacePath = validateWorkspacePath;
+exports.validateRegistryUrl = validateRegistryUrl;
+exports.validateBranchPrefix = validateBranchPrefix;
+exports.parseCommaSeparatedList = parseCommaSeparatedList;
+const errors_1 = __nccwpck_require__(3916);
+const constants_1 = __nccwpck_require__(7242);
+/**
+ * Validates that a merge method is one of the allowed values
+ * @param method The merge method to validate
+ * @throws ValidationError if the merge method is invalid
+ */
+function validateMergeMethod(method) {
+    if (!constants_1.VALID_MERGE_METHODS.includes(method)) {
+        throw new errors_1.ValidationError(`Invalid merge method: '${method}'. Must be one of: ${constants_1.VALID_MERGE_METHODS.join(", ")}`, "auto-merge-method", method);
+    }
+}
+/**
+ * Validates that an auto-merge strategy is one of the allowed values
+ * @param strategy The auto-merge strategy to validate
+ * @throws ValidationError if the strategy is invalid
+ */
+function validateAutoMergeStrategy(strategy) {
+    if (!constants_1.VALID_AUTO_MERGE_STRATEGIES.includes(strategy)) {
+        throw new errors_1.ValidationError(`Invalid auto-merge strategy: '${strategy}'. Must be one of: ${constants_1.VALID_AUTO_MERGE_STRATEGIES.join(", ")}`, "auto-merge-strategy", strategy);
+    }
+}
+/**
+ * Validates that an update strategy is one of the allowed values
+ * @param strategy The update strategy to validate
+ * @throws ValidationError if the strategy is invalid
+ */
+function validateUpdateStrategy(strategy) {
+    if (!constants_1.VALID_UPDATE_STRATEGIES.includes(strategy)) {
+        throw new errors_1.ValidationError(`Invalid update strategy: '${strategy}'. Must be one of: ${constants_1.VALID_UPDATE_STRATEGIES.join(", ")}`, "update-strategy", strategy);
+    }
+}
+/**
+ * Validates a workspace path
+ * @param workspacePath The workspace path to validate
+ * @throws ValidationError if the path is invalid
+ */
+function validateWorkspacePath(workspacePath) {
+    if (!workspacePath || workspacePath.trim().length === 0) {
+        throw new errors_1.ValidationError("Workspace path cannot be empty", "workspace-path", workspacePath);
+    }
+}
+/**
+ * Validates a registry URL
+ * @param registryUrl The registry URL to validate
+ * @throws ValidationError if the URL is invalid
+ */
+function validateRegistryUrl(registryUrl) {
+    if (!registryUrl.startsWith(constants_1.HTTPS_PROTOCOL)) {
+        throw new errors_1.ValidationError(`Registry URL must use HTTPS: ${registryUrl}`, "registry-url", registryUrl);
+    }
+    try {
+        new URL(registryUrl);
+    }
+    catch {
+        throw new errors_1.ValidationError(`Invalid registry URL format: ${registryUrl}`, "registry-url", registryUrl);
+    }
+}
+/**
+ * Validates a branch prefix
+ * @param branchPrefix The branch prefix to validate
+ * @throws ValidationError if the prefix is invalid
+ */
+function validateBranchPrefix(branchPrefix) {
+    if (branchPrefix.includes(" ")) {
+        throw new errors_1.ValidationError(`Branch prefix cannot contain spaces: ${branchPrefix}`, "branch-prefix", branchPrefix);
+    }
+    if (branchPrefix.includes("..")) {
+        throw new errors_1.ValidationError(`Branch prefix cannot contain '..': ${branchPrefix}`, "branch-prefix", branchPrefix);
+    }
+    // Check for invalid Git ref characters
+    if (constants_1.INVALID_GIT_REF_CHARS.test(branchPrefix)) {
+        throw new errors_1.ValidationError(`Branch prefix contains invalid characters: ${branchPrefix}`, "branch-prefix", branchPrefix);
+    }
+}
+/**
+ * Parses and validates a comma-separated list input
+ * @param input The comma-separated input string
+ * @param fieldName The name of the field (for error messages)
+ * @returns Array of trimmed, non-empty strings
+ * @throws ValidationError if the list format is invalid
+ */
+function parseCommaSeparatedList(input, fieldName) {
+    if (!input || input.trim().length === 0) {
+        return [];
+    }
+    const items = input
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    // Validate no empty items after trimming
+    const originalCount = input.split(",").length;
+    if (items.length !== originalCount && items.length > 0) {
+        throw new errors_1.ValidationError(`Invalid ${fieldName} format: contains empty values after comma separation`, fieldName, input);
+    }
+    return items;
 }
 
 

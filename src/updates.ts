@@ -1,6 +1,12 @@
 import * as core from "@actions/core";
 import * as semver from "semver";
-import { ExtensionUpdate, ExtensionRegistry, ExtensionDetails, ExtensionFilterConfig, UpdateStrategy } from "./types";
+import type {
+	ExtensionUpdate,
+	ExtensionRegistry,
+	ExtensionDetails,
+	ExtensionFilterConfig,
+	UpdateStrategy,
+} from "./types";
 import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
 
 /**

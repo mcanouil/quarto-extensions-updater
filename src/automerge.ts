@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
-import * as github from "@actions/github";
 import * as semver from "semver";
+import type { OctokitClient } from "./github";
 import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "./types";
 
 /**
@@ -58,7 +58,7 @@ export function shouldAutoMerge(update: ExtensionUpdate, config: AutoMergeConfig
  * Enables auto-merge on a pull request
  */
 export async function enableAutoMerge(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	prNumber: number,
@@ -128,7 +128,7 @@ export async function enableAutoMerge(
  * Checks if auto-merge is already enabled on a PR
  */
 export async function isAutoMergeEnabled(
-	octokit: ReturnType<typeof github.getOctokit>,
+	octokit: OctokitClient,
 	owner: string,
 	repo: string,
 	prNumber: number,

@@ -2,10 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import * as core from "@actions/core";
-import { ExtensionData } from "./types";
-
-/** Valid Quarto extension manifest filenames */
-const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"] as const;
+import type { ExtensionData } from "./types";
+import { QUARTO_MANIFEST_FILENAMES } from "./constants";
 
 /** Quarto extension manifest YAML structure */
 interface ExtensionManifestYAML {
@@ -46,7 +44,7 @@ export function findExtensionManifests(workspacePath: string): string[] {
 
 				const extPath = path.join(ownerPath, extEntry.name);
 
-				for (const filename of MANIFEST_FILENAMES) {
+				for (const filename of QUARTO_MANIFEST_FILENAMES) {
 					const manifestPath = path.join(extPath, filename);
 					if (fs.existsSync(manifestPath)) {
 						manifests.push(manifestPath);
