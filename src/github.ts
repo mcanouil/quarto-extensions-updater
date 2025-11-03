@@ -1,12 +1,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import type { PRAssignmentConfig } from "./types.js";
-
-/** HTTP 422 Unprocessable Entity - Used by GitHub API to indicate a ref already exists */
-export const GIT_CONFLICT_STATUS = 422;
-
-/** Git file mode for regular non-executable file */
-const FILE_MODE_REGULAR = "100644" as const;
+import type { PRAssignmentConfig } from "./types";
+import { HTTP_UNPROCESSABLE_ENTITY, HTTP_NOT_FOUND, GIT_FILE_MODE_REGULAR } from "./constants";
 
 /** GitHub API error with status code */
 interface GitHubError extends Error {
@@ -65,7 +60,7 @@ export async function checkExistingPR(
 		}
 	} catch (error) {
 		if (isGitHubError(error)) {
-			if (error.status === 404) {
+			if (error.status === HTTP_NOT_FOUND) {
 				core.debug(`No existing PRs found for branch: ${branchName}`);
 				return { exists: false };
 			}
@@ -101,7 +96,7 @@ export async function createOrUpdateBranch(
 		});
 		core.info(`✅ Created branch: ${branchName}`);
 	} catch (error: unknown) {
-		if (isGitHubError(error) && error.status === GIT_CONFLICT_STATUS) {
+		if (isGitHubError(error) && error.status === HTTP_UNPROCESSABLE_ENTITY) {
 			core.info(`Branch ${branchName} already exists, updating it...`);
 			await octokit.rest.git.updateRef({
 				owner,
@@ -287,7 +282,7 @@ export async function createCommit(
 
 			return {
 				path: file.path,
-				mode: FILE_MODE_REGULAR,
+				mode: GIT_FILE_MODE_REGULAR,
 				type: "blob" as const,
 				sha: blob.sha,
 			};

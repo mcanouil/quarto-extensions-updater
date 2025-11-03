@@ -2,7 +2,7 @@ import * as core from "@actions/core";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import { ExtensionUpdate } from "./types";
+import type { ExtensionUpdate } from "./types";
 import { updateManifestSource } from "./extensions";
 
 /**
