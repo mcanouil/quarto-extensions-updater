@@ -102,9 +102,7 @@ describe("processPRForUpdateGroup", () => {
 			url: "https://github.com/owner/repo/pull/456",
 		});
 
-		expect(mockCore.info).toHaveBeenCalledWith(
-			expect.stringContaining("PR #456 already exists for owner/ext1@1.1.0"),
-		);
+		expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining("PR #456 already exists for owner/ext1@1.1.0"));
 		expect(mockApplyUpdates).not.toHaveBeenCalled();
 	});
 
@@ -373,9 +371,7 @@ describe("processAllPRs", () => {
 
 		mockCreateOrUpdatePR.mockRejectedValue(new Error("API error"));
 
-		await expect(processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig)).rejects.toThrow(
-			"API error",
-		);
+		await expect(processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig)).rejects.toThrow("API error");
 
 		expect(mockCore.endGroup).toHaveBeenCalled();
 		expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining("Failed to process owner/ext1"));

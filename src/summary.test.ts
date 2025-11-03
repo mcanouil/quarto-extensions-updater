@@ -231,8 +231,14 @@ describe("generateCompletedSummary", () => {
 
 		const updatesTableCall = mockSummary.addTable.mock.calls[1][0];
 		// Both updates should link to the same PR
-		expect(updatesTableCall[1][3]).toEqual({ data: '<a href="https://github.com/owner/repo/pull/123">#123</a>', header: false });
-		expect(updatesTableCall[2][3]).toEqual({ data: '<a href="https://github.com/owner/repo/pull/123">#123</a>', header: false });
+		expect(updatesTableCall[1][3]).toEqual({
+			data: '<a href="https://github.com/owner/repo/pull/123">#123</a>',
+			header: false,
+		});
+		expect(updatesTableCall[2][3]).toEqual({
+			data: '<a href="https://github.com/owner/repo/pull/123">#123</a>',
+			header: false,
+		});
 	});
 
 	it("should link updates to individual PRs in non-grouped mode", async () => {
@@ -252,9 +258,15 @@ describe("generateCompletedSummary", () => {
 
 		const updatesTableCall = mockSummary.addTable.mock.calls[1][0];
 		// First update to first PR
-		expect(updatesTableCall[1][3]).toEqual({ data: '<a href="https://github.com/owner/repo/pull/123">#123</a>', header: false });
+		expect(updatesTableCall[1][3]).toEqual({
+			data: '<a href="https://github.com/owner/repo/pull/123">#123</a>',
+			header: false,
+		});
 		// Second update to second PR
-		expect(updatesTableCall[2][3]).toEqual({ data: '<a href="https://github.com/owner/repo/pull/124">#124</a>', header: false });
+		expect(updatesTableCall[2][3]).toEqual({
+			data: '<a href="https://github.com/owner/repo/pull/124">#124</a>',
+			header: false,
+		});
 	});
 
 	it("should handle update without PR as N/A", async () => {
@@ -271,7 +283,10 @@ describe("generateCompletedSummary", () => {
 
 		const updatesTableCall = mockSummary.addTable.mock.calls[1][0];
 		// First update has PR
-		expect(updatesTableCall[1][3]).toEqual({ data: '<a href="https://github.com/owner/repo/pull/123">#123</a>', header: false });
+		expect(updatesTableCall[1][3]).toEqual({
+			data: '<a href="https://github.com/owner/repo/pull/123">#123</a>',
+			header: false,
+		});
 		// Second update has no PR
 		expect(updatesTableCall[2][3]).toEqual({ data: "N/A", header: false });
 	});
