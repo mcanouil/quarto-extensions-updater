@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- refactor: modularise codebase into dedicated modules (`config.ts`, `prProcessor.ts`, `summary.ts`, `validation.ts`, `errors.ts`, `constants.ts`) with comprehensive input validation and improved error handling.
+- refactor: improve PR body generation with collapsible release notes and enhance auto-merge logic.
+- test: add comprehensive unit tests across all modules.
+- docs: update README for clarity and consistency with British English conventions, improve structure, and update examples to match actual code behaviour.
+- fix: correct update type detection in auto-merge strategy and improve error messages for invalid configuration values.
+
 ## 0.1.1 (2025-11-02)
 
 - fix: use HTML anchor tags for PR links in GitHub Actions Job Summary to ensure proper rendering.
