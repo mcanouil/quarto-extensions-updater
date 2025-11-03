@@ -6,31 +6,16 @@ import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge";
 import { generateDryRunSummary, generateCompletedSummary } from "./summary";
 import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "./types";
+import { createMockUpdate, createMockSummary } from "./__test-utils__/mockFactories";
 
 const mockCore = jest.mocked(core);
 const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 
 // Mock the summary API
-const mockSummary = {
-	addHeading: jest.fn().mockReturnThis(),
-	addRaw: jest.fn().mockReturnThis(),
-	addBreak: jest.fn().mockReturnThis(),
-	addTable: jest.fn().mockReturnThis(),
-	write: jest.fn().mockResolvedValue(undefined),
-};
+const mockSummary = createMockSummary();
 
 describe("generateDryRunSummary", () => {
-	const createUpdate = (nameWithOwner: string, current: string, latest: string): ExtensionUpdate => ({
-		name: nameWithOwner.split("/")[1],
-		owner: nameWithOwner.split("/")[0],
-		nameWithOwner,
-		repositoryName: nameWithOwner,
-		currentVersion: current,
-		latestVersion: latest,
-		manifestPath: `/workspace/_extensions/${nameWithOwner}/_extension.yml`,
-		url: `https://github.com/${nameWithOwner}`,
-		releaseUrl: `https://github.com/${nameWithOwner}/releases/tag/${latest}`,
-	});
+	const createUpdate = createMockUpdate;
 
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -192,17 +177,7 @@ describe("generateDryRunSummary", () => {
 });
 
 describe("generateCompletedSummary", () => {
-	const createUpdate = (nameWithOwner: string, current: string, latest: string): ExtensionUpdate => ({
-		name: nameWithOwner.split("/")[1],
-		owner: nameWithOwner.split("/")[0],
-		nameWithOwner,
-		repositoryName: nameWithOwner,
-		currentVersion: current,
-		latestVersion: latest,
-		manifestPath: `/workspace/_extensions/${nameWithOwner}/_extension.yml`,
-		url: `https://github.com/${nameWithOwner}`,
-		releaseUrl: `https://github.com/${nameWithOwner}/releases/tag/${latest}`,
-	});
+	const createUpdate = createMockUpdate;
 
 	beforeEach(() => {
 		jest.clearAllMocks();

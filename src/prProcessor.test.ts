@@ -18,6 +18,7 @@ import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit }
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
 import { processPRForUpdateGroup, processAllPRs, type PRProcessingConfig } from "./prProcessor";
 import type { ExtensionUpdate } from "./types";
+import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
 
 const mockCore = jest.mocked(core);
 const mockFs = jest.mocked(fs);
@@ -35,20 +36,10 @@ const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 const mockEnableAutoMerge = jest.mocked(enableAutoMerge);
 const mockIsAutoMergeEnabled = jest.mocked(isAutoMergeEnabled);
 
-const mockOctokit = {} as ReturnType<typeof github.getOctokit>;
+const mockOctokit = createMockOctokit();
 
 describe("processPRForUpdateGroup", () => {
-	const createUpdate = (nameWithOwner: string, current: string, latest: string): ExtensionUpdate => ({
-		name: nameWithOwner.split("/")[1],
-		owner: nameWithOwner.split("/")[0],
-		nameWithOwner,
-		repositoryName: nameWithOwner,
-		currentVersion: current,
-		latestVersion: latest,
-		manifestPath: `/workspace/_extensions/${nameWithOwner}/_extension.yml`,
-		url: `https://github.com/${nameWithOwner}`,
-		releaseUrl: `https://github.com/${nameWithOwner}/releases/tag/${latest}`,
-	});
+	const createUpdate = createMockUpdate;
 
 	const baseConfig: PRProcessingConfig = {
 		workspacePath: "/workspace",
@@ -300,17 +291,7 @@ describe("processPRForUpdateGroup", () => {
 });
 
 describe("processAllPRs", () => {
-	const createUpdate = (nameWithOwner: string, current: string, latest: string): ExtensionUpdate => ({
-		name: nameWithOwner.split("/")[1],
-		owner: nameWithOwner.split("/")[0],
-		nameWithOwner,
-		repositoryName: nameWithOwner,
-		currentVersion: current,
-		latestVersion: latest,
-		manifestPath: `/workspace/_extensions/${nameWithOwner}/_extension.yml`,
-		url: `https://github.com/${nameWithOwner}`,
-		releaseUrl: `https://github.com/${nameWithOwner}/releases/tag/${latest}`,
-	});
+	const createUpdate = createMockUpdate;
 
 	const baseConfig: PRProcessingConfig = {
 		workspacePath: "/workspace",

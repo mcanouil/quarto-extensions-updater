@@ -2,6 +2,7 @@ import { getUpdateType, shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } f
 import type { ExtensionUpdate, AutoMergeConfig } from "./types";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
 
 jest.mock("@actions/core");
 
@@ -46,18 +47,8 @@ describe("getUpdateType", () => {
 });
 
 describe("shouldAutoMerge", () => {
-	const createUpdate = (current: string, latest: string): ExtensionUpdate => ({
-		name: "test-extension",
-		owner: "test-owner",
-		nameWithOwner: "test-owner/test-extension",
-		repositoryName: "test-extension",
-		currentVersion: current,
-		latestVersion: latest,
-		manifestPath: "/path/to/_extension.yml",
-		url: "https://github.com/test-owner/test-extension",
-		releaseUrl: `https://github.com/test-owner/test-extension/releases/tag/${latest}`,
-		description: "Test extension",
-	});
+	const createUpdate = (current: string, latest: string): ExtensionUpdate =>
+		createMockUpdate("test-owner/test-extension", current, latest);
 
 	describe("when auto-merge is disabled", () => {
 		const config: AutoMergeConfig = {
@@ -153,25 +144,10 @@ describe("shouldAutoMerge", () => {
 });
 
 describe("enableAutoMerge", () => {
-	let mockOctokit: {
-		rest: {
-			pulls: {
-				get: jest.Mock;
-			};
-		};
-		graphql: jest.Mock;
-	};
+	const mockOctokit = createMockOctokit();
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockOctokit = {
-			rest: {
-				pulls: {
-					get: jest.fn(),
-				},
-			},
-			graphql: jest.fn(),
-		};
 	});
 
 	it("should enable auto-merge successfully", async () => {
@@ -239,15 +215,10 @@ describe("enableAutoMerge", () => {
 });
 
 describe("isAutoMergeEnabled", () => {
-	let mockOctokit: {
-		graphql: jest.Mock;
-	};
+	const mockOctokit = createMockOctokit();
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockOctokit = {
-			graphql: jest.fn(),
-		};
 	});
 
 	it("should return true when auto-merge is enabled", async () => {
