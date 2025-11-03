@@ -13,15 +13,15 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 📦 Updates extensions using Quarto CLI (`quarto add`).
 - 🔄 Maintains `source` field in extension manifests for tracking.
 - 📝 Creates detailed pull requests with release notes.
-- 🔀 **One PR per extension** - each extension gets its own PR that updates when new versions are available (or group all updates into a single PR).
+- 🔀 **One PR per extension** — each extension gets its own PR that updates when new versions are available (or group all updates into a single PR).
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
-- 🚀 **Auto-merge support** - automatically merge PRs based on configurable rules (e.g., patch updates only).
-- 🎯 **Selective updates** - include or exclude specific extensions from updates.
-- 📦 **Grouped updates** - option to combine all extension updates into a single PR.
-- 🛡️ **Update strategy** - control which types of updates to apply (all, minor, patch).
-- 🧪 **Dry-run mode** - preview updates and test configuration without making changes.
-- 👥 **PR reviewers and assignees** - automatically request reviewers and assign team members to PRs.
+- 🚀 **Auto-merge support** — automatically merge PRs based on configurable rules (*e.g.*, patch updates only).
+- 🎯 **Selective updates** — include or exclude specific extensions from updates.
+- 📦 **Grouped updates** — option to combine all extension updates into a single PR.
+- 🛡️ **Update strategy** — control which types of updates to apply (all, minor, patch).
+- 🧪 **Dry-run mode** — preview updates and test configuration without making changes.
+- 👥 **PR reviewers and assignees** — automatically request reviewers and assign team members to PRs.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -29,7 +29,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 
 ### Basic Setup
 
-Create a workflow file (e.g., `.github/workflows/update-extensions.yml`):
+Create a workflow file (*e.g.*, `.github/workflows/update-extensions.yml`):
 
 ```yaml
 name: Update Quarto Extensions
@@ -47,7 +47,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -78,28 +78,28 @@ jobs:
 
 ## Inputs
 
-| Input                   | Description                                                                       | Required | Default                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `github-token`          | GitHub token for creating pull requests                                           | Yes      | `${{ github.token }}`                                                   |
-| `workspace-path`        | Path to the workspace containing `_extensions` directory                          | No       | `.`                                                                     |
-| `registry-url`          | URL to the Quarto extensions registry JSON file                                   | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
-| `create-pr`             | Whether to create a pull request for updates                                      | No       | `true`                                                                  |
-| `branch-prefix`         | Prefix for the update branch name                                                 | No       | `chore/quarto-extensions`                                               |
-| `base-branch`           | Base branch to create pull requests against                                       | No       | `main`                                                                  |
-| `pr-title-prefix`       | Prefix for PR titles                                                              | No       | `chore(deps):`                                                          |
-| `commit-message-prefix` | Prefix for commit messages                                                        | No       | `chore(deps):`                                                          |
-| `pr-labels`             | Comma-separated list of labels to add to PRs                                      | No       | `dependencies,quarto-extensions`                                        |
-| `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                    | No       | `false`                                                                 |
-| `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all) | No       | `patch`                                                                 |
-| `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                               | No       | `squash`                                                                |
-| `include-extensions`    | Comma-separated list of extensions to include (e.g., `owner/name1,owner/name2`)   | No       | `` (all)                                                                |
-| `exclude-extensions`    | Comma-separated list of extensions to exclude (e.g., `owner/name1,owner/name2`)   | No       | `` (none)                                                               |
-| `group-updates`         | Group all extension updates into a single PR instead of one PR per extension       | No       | `false`                                                                 |
-| `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch` | No       | `all`                                                                   |
-| `dry-run`               | Run in dry-run mode: check for updates and report what would be done without making changes | No       | `false`                                                                 |
-| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (e.g., `user1,user2`) | No       | `` (none)                                                               |
-| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (e.g., `team1,team2`) | No       | `` (none)                                                               |
-| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (e.g., `user1,user2`) | No       | `` (none)                                                               |
+| Input                   | Description                                                                               | Required | Default                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `github-token`          | GitHub token for creating pull requests                                                   | Yes      | `${{ github.token }}`                                                   |
+| `workspace-path`        | Path to the workspace containing `_extensions` directory                                  | No       | `.`                                                                     |
+| `registry-url`          | URL to the Quarto extensions registry JSON file                                           | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
+| `create-pr`             | Whether to create a pull request for updates                                              | No       | `true`                                                                  |
+| `branch-prefix`         | Prefix for the update branch name                                                         | No       | `chore/quarto-extensions`                                               |
+| `base-branch`           | Base branch to create pull requests against                                               | No       | `main`                                                                  |
+| `pr-title-prefix`       | Prefix for PR titles                                                                      | No       | `chore(deps):`                                                          |
+| `commit-message-prefix` | Prefix for commit messages                                                                | No       | `chore(deps):`                                                          |
+| `pr-labels`             | Comma-separated list of labels to add to PRs                                              | No       | `dependencies,quarto-extensions`                                        |
+| `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                            | No       | `false`                                                                 |
+| `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all)         | No       | `patch`                                                                 |
+| `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                                       | No       | `squash`                                                                |
+| `include-extensions`    | Comma-separated list of extensions to include (*e.g.*, `owner/name1,owner/name2`)         | No       | `` (all)                                                                |
+| `exclude-extensions`    | Comma-separated list of extensions to exclude (*e.g.*, `owner/name1,owner/name2`)         | No       | `` (none)                                                               |
+| `group-updates`         | Group all extension updates into a single PR instead of one PR per extension              | No       | `false`                                                                 |
+| `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch`        | No       | `all`                                                                   |
+| `dry-run`               | Run in dry-run mode: check for updates and report without making changes                  | No       | `false`                                                                 |
+| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (*e.g.*, `user1,user2`)  | No       | `` (none)                                                               |
+| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (*e.g.*, `team1,team2`) | No       | `` (none)                                                               |
+| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (*e.g.*, `user1,user2`)         | No       | `` (none)                                                               |
 
 ## Outputs
 
@@ -120,24 +120,26 @@ jobs:
 5. **Apply Updates**: Uses Quarto CLI (`quarto add owner/repo@version --no-prompt`) to update extensions.
 6. **Track Updates**: Maintains `source` field in extension manifests for future update tracking.
 7. **Create/Update PR**:
-   - Creates a new PR if none exists for this extension
-   - Updates the existing PR if one already exists (same branch name)
-   - Ensures **one PR per extension** at most
+   - Creates a new PR if none exists for this extension.
+   - Updates the existing PR if one already exists (same branch name).
+   - Ensures **one PR per extension** at most.
 
 ## Requirements
 
-- Quarto CLI must be installed in the workflow environment.
+This action requires:
+
+- Quarto CLI installed in the workflow environment.
 - Use `quarto-dev/quarto-actions/setup@v2` to install Quarto in GitHub Actions.
 
 ## Extension Registry
 
 This action uses the Quarto extensions registry maintained at:
 
-- Repository: [mcanouil/quarto-extensions](https://github.com/mcanouil/quarto-extensions).
-- Branch: `quarto-wizard`.
-- File: `quarto-extensions.json`.
+- **Repository**: [mcanouil/quarto-extensions](https://github.com/mcanouil/quarto-extensions)
+- **Branch**: `quarto-wizard`
+- **File**: `quarto-extensions.json`
 
-The registry contains metadata about Quarto extensions including:
+The registry contains metadata about Quarto extensions, including:
 
 - Latest release versions.
 - Release URLs.
@@ -146,7 +148,7 @@ The registry contains metadata about Quarto extensions including:
 
 ## Extension Manifest Format
 
-Extensions should have a manifest file (`_extension.yml` or `_extension.yaml`) in the format:
+Extensions should have a manifest file (`_extension.yml` or `_extension.yaml`) with the following structure:
 
 ```yaml
 title: "My Extension"
@@ -157,14 +159,14 @@ contributes:
 source: "owner/repo@v1.0.0"
 ```
 
-The action will automatically add or update the `source` field.
+The action will automatically add or update the `source` field to track extension origins.
 
 ## Pull Request Format
 
-The action creates pull requests with:
+The action creates pull requests with the following details:
 
 - **Title**: Clear description of the update(s).
-- **Labels**: `dependencies`, `quarto-extensions`, update type labels.
+- **Labels**: `dependencies`, `quarto-extensions`, and update type labels.
 - **Body**:
   - Updates grouped by type (major, minor, patch).
   - Links to release notes.
@@ -176,7 +178,7 @@ Example PR body:
 ```markdown
 Updates the following Quarto extension(s):
 
-## ✨ Minor Updates
+## ⚠️ Major Updates
 
 - **[mcanouil/quarto-iconify](https://github.com/mcanouil/quarto-iconify)**: `1.0.0` → `3.0.1`
 
@@ -184,12 +186,16 @@ Updates the following Quarto extension(s):
 
 ### Release Notes
 
-**mcanouil/quarto-iconify** (1.0.0 → 3.0.1)
+<details>
+<summary>Release 3.0.1</summary>
 
-- [Release notes](https://github.com/mcanouil/quarto-iconify/releases/tag/v3.0.1)
-- [Repository](https://github.com/mcanouil/quarto-iconify)
+> Release notes content would appear here...
 
-> A fancy text extension for Quarto
+</details>
+
+**About**: Iconify extension for Quarto
+
+**Links**: [Repository](https://github.com/mcanouil/quarto-iconify) · [Release](https://github.com/mcanouil/quarto-iconify/releases/tag/v3.0.1)
 
 ---
 
@@ -202,13 +208,12 @@ The action supports automatically merging PRs based on the update type, similar 
 
 ### How Auto-Merge Works
 
-When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy.
-PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
+When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy. PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
 
 ### Auto-Merge Strategies
 
-- **`patch`** (default): Only auto-merge patch updates (e.g., 1.0.0 → 1.0.1).
-- **`minor`**: Auto-merge minor and patch updates (e.g., 1.0.0 → 1.1.0 or 1.0.1).
+- **`patch`** (default): Only auto-merge patch updates (*e.g.*, 1.0.0 to 1.0.1).
+- **`minor`**: Auto-merge minor and patch updates (*e.g.*, 1.0.0 to 1.1.0 or 1.0.1).
 - **`all`**: Auto-merge all updates including major versions.
 
 ### Auto-Merge Methods
@@ -219,8 +224,7 @@ PRs will be merged automatically once all required status checks pass and branch
 
 ### Required Permissions
 
-To use auto-merge, your workflow must have write permissions for pull requests.
-Add this to your workflow file:
+To use auto-merge, your workflow must have write permissions for pull requests. Add this to your workflow file:
 
 ```yaml
 permissions:
@@ -246,7 +250,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -273,7 +277,7 @@ jobs:
 
 - Auto-merge requires branch protection rules to be configured if you want to enforce checks before merging.
 - The PR will only merge automatically after all required status checks pass.
-- If auto-merge fails (e.g., due to permission issues), the PR will still be created but won't auto-merge.
+- If auto-merge fails (*e.g.*, due to permission issues), the PR will still be created but will not auto-merge.
 - The action logs a warning if auto-merge fails but continues normal operation.
 
 ## Grouped Updates
@@ -294,20 +298,7 @@ When `group-updates` is enabled:
 - All extension updates are combined into a single PR.
 - The PR title reflects the total number of extensions being updated.
 - The PR body lists all updates grouped by type (major, minor, patch).
-- Auto-merge will only be enabled if **all** extensions in the group qualify based on your auto-merge strategy.
-
-### Use Cases for Grouped Updates
-
-- **Fewer PRs**: Reduce notification noise by combining all updates into one PR.
-- **Batch Updates**: Apply all extension updates at once for easier testing.
-- **Simplified Review**: Review all changes in a single pull request.
-
-### Use Cases for Individual PRs (Default)
-
-- **Granular Control**: Review and merge each extension update independently.
-- **Targeted Testing**: Test each extension update separately to identify issues.
-- **Selective Auto-merge**: Automatically merge safe updates (e.g., patches) whilst reviewing others manually.
-- **Better Change Tracking**: See exactly which extension caused issues if problems arise.
+- Auto-merge will only be enabled if all extensions in the group qualify based on your auto-merge strategy.
 
 ## Update Strategy
 
@@ -316,8 +307,8 @@ Control which types of updates are applied based on semantic versioning.
 ### Available Strategies
 
 - **`all`** (default): Apply all updates regardless of type (major, minor, patch).
-- **`minor`**: Only apply minor and patch updates, skip major breaking changes.
-- **`patch`**: Only apply patch updates, skip minor and major changes.
+- **`minor`**: Only apply minor and patch updates; skip major breaking changes.
+- **`patch`**: Only apply patch updates; skip minor and major changes.
 
 ### Examples
 
@@ -339,12 +330,6 @@ Control which types of updates are applied based on semantic versioning.
     update-strategy: "minor"
 ```
 
-### Use Cases
-
-- **Conservative Updates**: Use `patch` to only apply bug fixes and avoid any new features or breaking changes.
-- **Balanced Approach**: Use `minor` to get new features whilst avoiding breaking changes.
-- **Stay Current**: Use `all` (default) to get all updates including major versions.
-
 ### Combining with Auto-Merge
 
 Update strategy works independently from auto-merge strategy:
@@ -358,7 +343,8 @@ Update strategy works independently from auto-merge strategy:
     auto-merge-strategy: "patch"  # Auto-merge only patch updates
 ```
 
-In this example:
+In this configuration:
+
 - Only minor and patch updates are detected (major updates are skipped entirely).
 - Of those updates, only patch updates are auto-merged.
 - Minor updates create PRs that require manual review.
@@ -382,7 +368,7 @@ This will only check for updates and create PRs for the specified extensions. Al
 
 ### Exclude Specific Extensions
 
-To exclude certain extensions from updates (e.g., to pin a specific version), use the `exclude-extensions` input:
+To exclude certain extensions from updates (*e.g.*, to pin a specific version), use the `exclude-extensions` input:
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -395,7 +381,7 @@ This will check all extensions except the specified ones.
 
 ### Combining Include and Exclude
 
-You can use both filters together. If an extension appears in both lists, the exclude filter takes precedence:
+You can combine both filters. If an extension appears in both lists, the exclude filter takes precedence:
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -406,13 +392,6 @@ You can use both filters together. If an extension appears in both lists, the ex
 ```
 
 In this example, only `mcanouil/iconify` and `quarto-ext/lightbox` will be updated.
-
-### Use Cases
-
-- **Pin Specific Extensions**: Use `exclude-extensions` to prevent updates to extensions you want to keep at a specific version.
-- **Gradual Rollout**: Use `include-extensions` to test updates on a subset of extensions before enabling updates for all.
-- **Unstable Extensions**: Exclude extensions that are under active development or have known issues.
-- **Critical Extensions**: Create separate workflows for critical vs. non-critical extensions with different schedules.
 
 ## Dry-Run Mode
 
@@ -435,34 +414,18 @@ When `dry-run` is enabled:
 - Reports all configuration settings (update strategy, filters, grouping, auto-merge).
 - Shows exactly which PRs would be created.
 - Indicates which updates would be auto-merged.
-- **No PRs are created**.
-- **No changes are made to your repository**.
+- **No PRs are created.**
+- **No changes are made to your repository.**
 
 ### Example Output
 
-```text
-🔍 Running in dry-run mode - no PRs will be created
+The dry-run mode generates a GitHub Actions Job Summary with the following sections:
 
-📋 Dry-run summary:
-   Mode: Individual PRs (one per extension)
-   Update strategy: minor
-   Exclude filter: owner/unstable-ext
-   Auto-merge: enabled (patch updates, squash method)
-
-✓ Would create 3 PRs (one per extension)
-   - mcanouil/iconify: 1.0.0 → 1.0.1 (would auto-merge)
-   - quarto-ext/lightbox: 1.5.0 → 1.6.0
-   - quarto-ext/fancy-text: 2.0.0 → 2.1.0
-
-💡 Remove 'dry-run: true' to apply these updates
-```
-
-### Use Cases
-
-- **Test Configuration**: Verify your update strategy, filters, and grouping settings work as expected.
-- **Preview Updates**: See what updates are available before applying them.
-- **CI/CD Testing**: Test your workflow configuration without making changes.
-- **Regular Monitoring**: Run daily in dry-run mode to monitor available updates, then manually decide when to apply them.
+- **Dry-Run Summary**: Notification that no PRs will be created.
+- **Configuration**: Table showing mode, update strategy, filters, and auto-merge settings.
+- **Planned Actions**: Number of PRs that would be created.
+- **Updates Table**: List of all updates with current version, latest version, and auto-merge status.
+- **Next Steps**: Instructions to remove `dry-run: true` to apply updates.
 
 ## PR Reviewers and Assignees
 
@@ -474,7 +437,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
 - **`pr-team-reviewers`**: GitHub team slugs to request as reviewers (requires organisation membership).
 - **`pr-assignees`**: GitHub users to assign to the PR.
 
-### Example: Request Individual Reviewers
+### Request Individual Reviewers
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -483,7 +446,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
     pr-reviewers: "user1,user2"
 ```
 
-### Example: Request Team Reviewers
+### Request Team Reviewers
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -492,7 +455,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
     pr-team-reviewers: "frontend-team,backend-team"
 ```
 
-### Example: Assign PRs and Request Reviewers
+### Assign PRs and Request Reviewers
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -502,7 +465,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
     pr-assignees: "dependency-manager"
 ```
 
-### Example: Combined Team Workflow
+### Combined Team Workflow
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
@@ -515,7 +478,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
     auto-merge-strategy: "patch"
 ```
 
-In this example:
+In this configuration:
 
 - Individual reviewers `user1` and `user2` are requested.
 - The `platform-team` is also requested for review.
@@ -527,7 +490,7 @@ In this example:
 - **Team reviewers** require the repository to be part of an organisation and the team to have access to the repository.
 - **Permissions**: The GitHub token must have appropriate permissions to request reviewers and add assignees.
 - **Branch protection**: If branch protection rules require review approval, auto-merge will wait for the required approvals.
-- **Failed requests**: If reviewer/assignee requests fail (eg. due to permissions), a warning is logged but the PR creation will still succeed.
+- **Failed requests**: If reviewer/assignee requests fail (*e.g.*, due to permissions), a warning is logged but the PR creation will still succeed.
 
 ## Examples
 
@@ -569,11 +532,19 @@ In this example:
 
 ### Different Schedule
 
+**Weekly schedule:**
+
 ```yaml
 on:
   schedule:
     - cron: "0 0 * * 0"  # Weekly on Sunday
-    # or
+```
+
+**Monthly schedule:**
+
+```yaml
+on:
+  schedule:
     - cron: "0 0 1 * *"  # Monthly on 1st day
 ```
 
@@ -593,9 +564,9 @@ Use conventional commits style with custom labels:
 
 This will create PRs with:
 
-- Branch: `deps/quarto/update-owner-name`
-- Title: `build(deps): update owner/name extension to 1.2.3`
-- Labels: `dependencies`, `quarto`, `automated`, `low-priority`
+- **Branch**: `deps/quarto/update-owner-name`
+- **Title**: `build(deps): update owner/name extension to 1.2.3`
+- **Labels**: `dependencies`, `quarto`, `automated`, `low-priority`
 
 ## Troubleshooting
 
@@ -611,9 +582,9 @@ Ensure your extensions are in `_extensions/owner/name/` structure with `_extensi
 
 ### PR Not Created
 
-- Verify workflow has `contents: write` and `pull-requests: write` permissions..
-- Check GitHub Actions logs for errors..
-- Ensure no existing PR with same branch name..
+- Verify workflow has `contents: write` and `pull-requests: write` permissions.
+- Check GitHub Actions logs for errors.
+- Ensure no existing PR with same branch name.
 
 ## Related Projects
 
@@ -622,21 +593,24 @@ Ensure your extensions are in `_extensions/owner/name/` structure with `_extensi
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+To set up the development environment:
 
 ```bash
-npm install    # Install dependencies
-npm run build  # Build the action
-npm test       # Run tests
-npm run format # Format code
-npm run lint   # Lint code
+npm install     # Install dependencies
+npm run build   # Build the action
+npm test        # Run tests
+npm run format  # Format code
+npm run lint    # Lint code
+npm run all     # Format, lint, and build
 ```
+
+For more details on contributing to this project, please refer to the development guidelines.
 
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request on the [GitHub repository](https://github.com/mcanouil/quarto-extensions-updater).
 
-## License
+## Licence
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT Licence.
 See the [LICENSE](LICENSE) file for details.
