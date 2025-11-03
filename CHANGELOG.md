@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2025-11-03)
 
 - refactor: modularise codebase into dedicated modules (`config.ts`, `prProcessor.ts`, `summary.ts`, `validation.ts`, `errors.ts`, `constants.ts`) with comprehensive input validation and improved error handling.
 - refactor: improve PR body generation with collapsible release notes and enhance auto-merge logic.
