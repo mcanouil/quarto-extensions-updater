@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- feat: add `create-issue` input parameter to enable GitHub issue creation in dry-run mode (defaults to `false`).
+- feat: implement `createIssueForUpdates()` function in `src/github.ts` to create issues with dry-run summaries.
+- feat: add `issue-number` and `issue-url` outputs for tracking created issues.
+- feat: enhance dry-run configuration display with "Default" column and ⚙️ indicator for non-default settings to ease debugging.
+- feat: unify dry-run summary formatting between GitHub Actions job summaries and GitHub issues using shared `generateDryRunMarkdown()` function.
+- refactor: extract `generateDryRunMarkdown()` in `src/summary.ts` as single source of truth for dry-run content generation.
+- refactor: update `generateDryRunSummary()` to use markdown-based rendering via `generateDryRunMarkdown()`.
+- test: add comprehensive test coverage for `generateDryRunMarkdown()` (7 tests).
+- test: add test coverage for `createIssueForUpdates()` (3 tests).
+- test: add test coverage for `create-issue` configuration parsing (2 tests).
+- test: add test coverage for dry-run summary with issue creation notice (2 tests).
+- docs: add "Creating Issues in Dry-Run Mode" section to README with usage examples.
+- docs: update inputs and outputs tables in README with new `create-issue`, `issue-number`, and `issue-url` entries.
+
 ## 0.2.0 (2025-11-03)
 
 - refactor: modularise codebase into dedicated modules (`config.ts`, `prProcessor.ts`, `summary.ts`, `validation.ts`, `errors.ts`, `constants.ts`) with comprehensive input validation and improved error handling.

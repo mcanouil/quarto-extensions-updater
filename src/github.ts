@@ -1,7 +1,8 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import type { PRAssignmentConfig } from "./types";
+import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig } from "./types";
 import { HTTP_UNPROCESSABLE_ENTITY, HTTP_NOT_FOUND, GIT_FILE_MODE_REGULAR } from "./constants";
+import { generateDryRunMarkdown } from "./summary";
 
 /** GitHub API error with status code */
 interface GitHubError extends Error {
@@ -312,4 +313,43 @@ export async function createCommit(
 	});
 
 	return commit.sha;
+}
+
+/**
+ * Creates a GitHub issue with dry-run update summary
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param updates Array of extension updates found
+ * @param groupUpdates Whether updates would be grouped
+ * @param updateStrategy The update strategy being used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ * @returns Issue number and URL
+ */
+export async function createIssueForUpdates(
+	octokit: OctokitClient,
+	owner: string,
+	repo: string,
+	updates: ExtensionUpdate[],
+	groupUpdates: boolean,
+	updateStrategy: UpdateStrategy,
+	filterConfig: ExtensionFilterConfig,
+	autoMergeConfig: AutoMergeConfig,
+): Promise<{ number: number; url: string }> {
+	const title = `Quarto Extensions Updates Available (${updates.length} update${updates.length > 1 ? "s" : ""})`;
+
+	// Generate the same markdown content as the job summary
+	const body = generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+
+	const { data: issue } = await octokit.rest.issues.create({
+		owner,
+		repo,
+		title,
+		body,
+	});
+
+	core.info(`✅ Created issue: ${issue.html_url}`);
+
+	return { number: issue.number, url: issue.html_url };
 }
