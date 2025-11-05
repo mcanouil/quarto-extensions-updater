@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2025-11-05)
 
 - feat: add `create-issue` input parameter to enable GitHub issue creation in dry-run mode (defaults to `false`).
 - feat: implement `createIssueForUpdates()` function in `src/github.ts` to create issues with dry-run summaries.
