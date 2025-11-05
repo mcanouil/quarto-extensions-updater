@@ -7,6 +7,7 @@ import { logUpdateSummary } from "./pr";
 import { parseInputs } from "./config";
 import { generateDryRunSummary, generateCompletedSummary } from "./summary";
 import { processAllPRs } from "./prProcessor";
+import { createIssueForUpdates } from "./github";
 import type { ExtensionUpdate } from "./types";
 
 /**
@@ -98,11 +99,30 @@ async function run(): Promise<void> {
 				config.updateStrategy,
 				config.filterConfig,
 				config.autoMergeConfig,
+				config.createIssue,
 			);
 
 			core.info("📋 Dry-run summary written to job summary");
 			core.info(`✓ Found ${updates.length} update${updates.length > 1 ? "s" : ""} that would be applied`);
 			core.info("💡 Check the job summary for detailed information");
+
+			// Create issue if enabled
+			if (config.createIssue) {
+				core.info("📝 Creating issue with update summary...");
+				const issue = await createIssueForUpdates(
+					octokit,
+					owner,
+					repo,
+					updates,
+					config.groupUpdates,
+					config.updateStrategy,
+					config.filterConfig,
+					config.autoMergeConfig,
+				);
+				core.setOutput("issue-number", issue.number.toString());
+				core.setOutput("issue-url", issue.url);
+				core.info(`✅ Issue created: ${issue.url}`);
+			}
 
 			core.endGroup();
 			return;

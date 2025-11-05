@@ -4,7 +4,7 @@ jest.mock("./automerge");
 
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge";
-import { generateDryRunSummary, generateCompletedSummary } from "./summary";
+import { generateDryRunSummary, generateCompletedSummary, generateDryRunMarkdown } from "./summary";
 import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "./types";
 import { createMockUpdate, createMockSummary } from "./__test-utils__/mockFactories";
 
@@ -13,6 +13,126 @@ const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 
 // Mock the summary API
 const mockSummary = createMockSummary();
+
+describe("generateDryRunMarkdown", () => {
+	const createUpdate = createMockUpdate;
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockShouldAutoMerge.mockReturnValue(false);
+	});
+
+	it("should generate markdown with configuration table including defaults", () => {
+		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown(updates, false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("## Dry-Run Summary");
+		expect(markdown).toContain("### Configuration");
+		expect(markdown).toContain("Settings marked with ⚙️ are non-default values");
+		expect(markdown).toContain("| Setting | Value | Default |");
+		expect(markdown).toContain("| Mode | Individual PRs (one per extension) | Individual PRs |");
+		expect(markdown).toContain("| Update Strategy | all | all |");
+		expect(markdown).toContain("| Include Filter | *(all)* | *(all)* |");
+		expect(markdown).toContain("| Exclude Filter | *(none)* | *(none)* |");
+		expect(markdown).toContain("| Auto-Merge | Disabled | Disabled |");
+	});
+
+	it("should mark non-default settings with indicator", () => {
+		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		const filterConfig: ExtensionFilterConfig = {
+			include: ["owner/ext1"],
+			exclude: ["owner/ext2"],
+		};
+		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "minor", mergeMethod: "rebase" };
+
+		const markdown = generateDryRunMarkdown(updates, true, "patch", filterConfig, autoMergeConfig);
+
+		// Non-default settings should have ⚙️ indicator
+		expect(markdown).toContain("| ⚙️ Mode | Grouped updates (single PR)");
+		expect(markdown).toContain("| ⚙️ Update Strategy | patch");
+		expect(markdown).toContain("| ⚙️ Include Filter | owner/ext1");
+		expect(markdown).toContain("| ⚙️ Exclude Filter | owner/ext2");
+		expect(markdown).toContain("| ⚙️ Auto-Merge | Enabled (minor updates, rebase method)");
+	});
+
+	it("should include planned actions section", () => {
+		const updates: ExtensionUpdate[] = [
+			createUpdate("owner/ext1", "1.0.0", "1.1.0"),
+			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
+		];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdownGrouped = generateDryRunMarkdown(updates, true, "all", filterConfig, autoMergeConfig);
+		const markdownIndividual = generateDryRunMarkdown(updates, false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdownGrouped).toContain("### Planned Actions");
+		expect(markdownGrouped).toContain("Would create **1 PR** with 2 extension updates");
+
+		expect(markdownIndividual).toContain("### Planned Actions");
+		expect(markdownIndividual).toContain("Would create **2 PRs** (one per extension)");
+	});
+
+	it("should include available updates table", () => {
+		const updates: ExtensionUpdate[] = [
+			createUpdate("owner/ext1", "1.0.0", "1.1.0"),
+			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
+		];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		mockShouldAutoMerge.mockReturnValue(false);
+
+		const markdown = generateDryRunMarkdown(updates, false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("### Available Updates");
+		expect(markdown).toContain("| Extension | Current | Latest | Auto-Merge |");
+		expect(markdown).toContain("| owner/ext1 | 1.0.0 | 1.1.0 | ✗ No |");
+		expect(markdown).toContain("| owner/ext2 | 2.0.0 | 2.1.0 | ✗ No |");
+	});
+
+	it("should show auto-merge status for each update", () => {
+		const updates: ExtensionUpdate[] = [
+			createUpdate("owner/ext1", "1.0.0", "1.0.1"),
+			createUpdate("owner/ext2", "1.0.0", "2.0.0"),
+		];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "patch", mergeMethod: "squash" };
+
+		mockShouldAutoMerge.mockImplementation((update: ExtensionUpdate) => {
+			return update.nameWithOwner === "owner/ext1"; // Only patch update
+		});
+
+		const markdown = generateDryRunMarkdown(updates, false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("| owner/ext1 | 1.0.0 | 1.0.1 | ✓ Yes |");
+		expect(markdown).toContain("| owner/ext2 | 1.0.0 | 2.0.0 | ✗ No |");
+	});
+
+	it("should include next steps section", () => {
+		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown(updates, false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("### Next Steps");
+		expect(markdown).toContain("To apply these updates, remove `dry-run: true` from your workflow configuration.");
+	});
+
+	it("should handle singular update correctly", () => {
+		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown(updates, true, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("Would create **1 PR** with 1 extension update");
+	});
+});
 
 describe("generateDryRunSummary", () => {
 	const createUpdate = createMockUpdate;
@@ -31,14 +151,13 @@ describe("generateDryRunSummary", () => {
 
 		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig);
 
-		expect(mockSummary.addHeading).toHaveBeenCalledWith("Dry-Run Summary", 2);
-		expect(mockSummary.addRaw).toHaveBeenCalledWith(
-			"No PRs will be created. This is a preview of what would happen.",
-			true,
-		);
-		expect(mockSummary.addHeading).toHaveBeenCalledWith("Configuration", 3);
-		expect(mockSummary.addTable).toHaveBeenCalled();
-		expect(mockSummary.addRaw).toHaveBeenCalledWith("Would create **1 PR** (one per extension)", true);
+		// Should call addRaw with markdown content
+		expect(mockSummary.addRaw).toHaveBeenCalled();
+		const markdownCall = mockSummary.addRaw.mock.calls[0][0];
+		expect(markdownCall).toContain("## Dry-Run Summary");
+		expect(markdownCall).toContain("No PRs will be created");
+		expect(markdownCall).toContain("### Configuration");
+		expect(markdownCall).toContain("Would create **1 PR** (one per extension)");
 		expect(mockSummary.write).toHaveBeenCalled();
 	});
 
@@ -54,125 +173,36 @@ describe("generateDryRunSummary", () => {
 
 		await generateDryRunSummary(updates, true, "all", filterConfig, autoMergeConfig);
 
-		expect(mockSummary.addRaw).toHaveBeenCalledWith("Would create **1 PR** with 3 extension updates", true);
+		const markdownCall = mockSummary.addRaw.mock.calls[0][0];
+		expect(markdownCall).toContain("Would create **1 PR** with 3 extension updates");
 	});
 
-	it("should include filter configuration when provided", async () => {
+	it("should add issue creation notice when createIssue is true", async () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
-
-		const filterConfig: ExtensionFilterConfig = {
-			include: ["owner/ext1", "owner/ext2"],
-			exclude: ["owner/ext3"],
-		};
-		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
-
-		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig);
-
-		const tableCall = mockSummary.addTable.mock.calls[0][0];
-		// Check that include filter is in the table
-		const includeRow = tableCall.find((row: unknown[]) => {
-			const firstCell = row[0] as { data: string; header: boolean };
-			return firstCell.data === "Include Filter";
-		});
-		expect(includeRow).toBeDefined();
-		expect(includeRow[1]).toEqual({ data: "owner/ext1, owner/ext2", header: false });
-
-		// Check that exclude filter is in the table
-		const excludeRow = tableCall.find((row: unknown[]) => {
-			const firstCell = row[0] as { data: string; header: boolean };
-			return firstCell.data === "Exclude Filter";
-		});
-		expect(excludeRow).toBeDefined();
-		expect(excludeRow[1]).toEqual({ data: "owner/ext3", header: false });
-	});
-
-	it("should show auto-merge enabled configuration", async () => {
-		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.0.1")];
-
-		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
-		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "minor", mergeMethod: "rebase" };
-
-		await generateDryRunSummary(updates, false, "patch", filterConfig, autoMergeConfig);
-
-		const tableCall = mockSummary.addTable.mock.calls[0][0];
-		const autoMergeRow = tableCall.find((row: unknown[]) => {
-			const firstCell = row[0] as { data: string; header: boolean };
-			return firstCell.data === "Auto-Merge";
-		});
-		expect(autoMergeRow[1]).toEqual({
-			data: "Enabled (minor updates, rebase method)",
-			header: false,
-		});
-	});
-
-	it("should show auto-merge disabled configuration", async () => {
-		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.0.1")];
-
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
 		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
 
-		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig);
+		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig, true);
 
-		const tableCall = mockSummary.addTable.mock.calls[0][0];
-		const autoMergeRow = tableCall.find((row: unknown[]) => {
-			const firstCell = row[0] as { data: string; header: boolean };
-			return firstCell.data === "Auto-Merge";
-		});
-		expect(autoMergeRow[1]).toEqual({ data: "Disabled", header: false });
+		expect(mockSummary.addBreak).toHaveBeenCalled();
+		expect(mockSummary.addRaw).toHaveBeenCalledWith(
+			"ℹ️ A GitHub issue has been created with this summary for tracking purposes.",
+			true,
+		);
 	});
 
-	it("should include auto-merge status for each update", async () => {
-		const updates: ExtensionUpdate[] = [
-			createUpdate("owner/ext1", "1.0.0", "1.0.1"),
-			createUpdate("owner/ext2", "1.0.0", "2.0.0"),
-		];
-
-		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
-		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "patch", mergeMethod: "squash" };
-
-		mockShouldAutoMerge.mockImplementation((update: ExtensionUpdate) => {
-			return update.nameWithOwner === "owner/ext1"; // Only patch update
-		});
-
-		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig);
-
-		const updatesTableCall = mockSummary.addTable.mock.calls[1][0];
-		// First update should have auto-merge
-		expect(updatesTableCall[1][3]).toEqual({ data: "✓ Yes", header: false });
-		// Second update should not
-		expect(updatesTableCall[2][3]).toEqual({ data: "✗ No", header: false });
-	});
-
-	it("should use singular for single update", async () => {
+	it("should not add issue creation notice when createIssue is false", async () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
-
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
 		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
 
-		await generateDryRunSummary(updates, true, "all", filterConfig, autoMergeConfig);
+		await generateDryRunSummary(updates, false, "all", filterConfig, autoMergeConfig, false);
 
-		expect(mockSummary.addRaw).toHaveBeenCalledWith("Would create **1 PR** with 1 extension update", true);
-	});
-
-	it("should handle different update strategies", async () => {
-		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.0.1")];
-		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
-		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
-
-		const strategies: ("all" | "minor" | "patch")[] = ["all", "minor", "patch"];
-
-		for (const strategy of strategies) {
-			jest.clearAllMocks();
-
-			await generateDryRunSummary(updates, false, strategy, filterConfig, autoMergeConfig);
-
-			const tableCall = mockSummary.addTable.mock.calls[0][0];
-			const strategyRow = tableCall.find((row: unknown[]) => {
-				const firstCell = row[0] as { data: string; header: boolean };
-				return firstCell.data === "Update Strategy";
-			});
-			expect(strategyRow[1]).toEqual({ data: strategy, header: false });
-		}
+		// addRaw should only be called once (for the markdown content, not for the issue notice)
+		expect(mockSummary.addRaw).toHaveBeenCalledTimes(1);
+		const calls = mockSummary.addRaw.mock.calls;
+		const hasIssueNotice = calls.some((call) => call[0].includes("GitHub issue has been created"));
+		expect(hasIssueNotice).toBe(false);
 	});
 });
 

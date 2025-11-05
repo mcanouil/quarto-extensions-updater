@@ -52,6 +52,7 @@ describe("parseInputs", () => {
 				"auto-merge": false,
 				"group-updates": false,
 				"dry-run": false,
+				"create-issue": false,
 			};
 			return defaults[name] ?? false;
 		});
@@ -82,6 +83,7 @@ describe("parseInputs", () => {
 			groupUpdates: false,
 			updateStrategy: "all",
 			dryRun: false,
+			createIssue: false,
 			assignmentConfig: {
 				reviewers: [],
 				teamReviewers: [],
@@ -124,6 +126,7 @@ describe("parseInputs", () => {
 				"auto-merge": true,
 				"group-updates": true,
 				"dry-run": true,
+				"create-issue": false,
 			};
 			return inputs[name] ?? false;
 		});
@@ -152,6 +155,7 @@ describe("parseInputs", () => {
 			groupUpdates: true,
 			updateStrategy: "patch",
 			dryRun: true,
+			createIssue: false,
 			assignmentConfig: {
 				reviewers: ["user1", "user2"],
 				teamReviewers: ["team1", "team2"],
@@ -403,5 +407,28 @@ describe("parseInputs", () => {
 		const config = parseInputs();
 
 		expect(config.dryRun).toBe(true);
+	});
+
+	it("should handle create-issue set to true", () => {
+		mockCore.getBooleanInput.mockImplementation((name: string) => {
+			if (name === "create-issue") return true;
+			if (name === "create-pr") return true;
+			return false;
+		});
+
+		const config = parseInputs();
+
+		expect(config.createIssue).toBe(true);
+	});
+
+	it("should handle create-issue set to false (default)", () => {
+		mockCore.getBooleanInput.mockImplementation((name: string) => {
+			if (name === "create-pr") return true;
+			return false;
+		});
+
+		const config = parseInputs();
+
+		expect(config.createIssue).toBe(false);
 	});
 });

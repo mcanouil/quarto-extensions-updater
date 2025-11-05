@@ -41,6 +41,7 @@ export interface AppConfig {
 	groupUpdates: boolean;
 	updateStrategy: UpdateStrategy;
 	dryRun: boolean;
+	createIssue: boolean;
 	assignmentConfig: PRAssignmentConfig;
 }
 
@@ -108,6 +109,7 @@ export function parseInputs(): AppConfig {
 	const groupUpdates = core.getBooleanInput("group-updates") === true;
 	const updateStrategyInput = core.getInput("update-strategy") || "all";
 	const dryRun = core.getBooleanInput("dry-run") === true;
+	const createIssue = core.getBooleanInput("create-issue") === true;
 
 	// Validate update strategy
 	validateUpdateStrategy(updateStrategyInput);
@@ -145,6 +147,7 @@ export function parseInputs(): AppConfig {
 		groupUpdates,
 		updateStrategy,
 		dryRun,
+		createIssue,
 		assignmentConfig,
 	};
 }

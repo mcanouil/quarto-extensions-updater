@@ -97,6 +97,7 @@ jobs:
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension              | No       | `false`                                                                 |
 | `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch`        | No       | `all`                                                                   |
 | `dry-run`               | Run in dry-run mode: check for updates and report without making changes                  | No       | `false`                                                                 |
+| `create-issue`          | In dry-run mode, create a GitHub issue with the update summary                            | No       | `false`                                                                 |
 | `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (*e.g.*, `user1,user2`)  | No       | *(none)*                                                                |
 | `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (*e.g.*, `team1,team2`) | No       | *(none)*                                                                |
 | `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (*e.g.*, `user1,user2`)         | No       | *(none)*                                                                |
@@ -110,6 +111,8 @@ jobs:
 | `updates`           | JSON array of updates (name, currentVersion, latestVersion) |
 | `pr-number`         | Pull request number (if created)                            |
 | `pr-url`            | Pull request URL (if created)                               |
+| `issue-number`      | Issue number (if created in dry-run mode)                   |
+| `issue-url`         | Issue URL (if created in dry-run mode)                      |
 
 ## How It Works
 
@@ -421,6 +424,25 @@ When `dry-run` is enabled:
 - Indicates which updates would be auto-merged.
 - **No PRs are created.**
 - **No changes are made to your repository.**
+
+### Creating Issues in Dry-Run Mode
+
+Optionally create a GitHub issue with the update summary when running in dry-run mode:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    dry-run: true
+    create-issue: true
+```
+
+When `create-issue` is enabled in dry-run mode:
+
+- A GitHub issue is created with the update summary.
+- The issue includes all configuration settings and available updates.
+- Issue number and URL are available as outputs (`issue-number`, `issue-url`).
+- Useful for tracking updates without creating PRs immediately.
 
 ### Example Output
 

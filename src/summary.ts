@@ -3,6 +3,84 @@ import { shouldAutoMerge } from "./automerge";
 import type { ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig } from "./types";
 
 /**
+ * Generates markdown content for dry-run summary
+ * @param updates Array of extension updates that would be applied
+ * @param groupUpdates Whether updates are grouped in a single PR
+ * @param updateStrategy The update strategy being used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ * @returns Markdown string for the dry-run summary
+ */
+export function generateDryRunMarkdown(
+	updates: ExtensionUpdate[],
+	groupUpdates: boolean,
+	updateStrategy: UpdateStrategy,
+	filterConfig: ExtensionFilterConfig,
+	autoMergeConfig: AutoMergeConfig,
+): string {
+	let markdown = "## Dry-Run Summary\n\n";
+	markdown += "No PRs will be created. This is a preview of what would happen.\n\n";
+
+	// Configuration section
+	markdown += "### Configuration\n\n";
+	markdown += "Settings marked with ⚙️ are non-default values.\n\n";
+	markdown += "| Setting | Value | Default |\n|---------|-------|----------|\n";
+
+	// Mode (group-updates)
+	const modeValue = groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)";
+	const modeIndicator = groupUpdates ? "⚙️ " : "";
+	markdown += `| ${modeIndicator}Mode | ${modeValue} | Individual PRs |\n`;
+
+	// Update Strategy
+	const updateStrategyIndicator = updateStrategy !== "all" ? "⚙️ " : "";
+	markdown += `| ${updateStrategyIndicator}Update Strategy | ${updateStrategy} | all |\n`;
+
+	// Include Filter
+	const includeValue = filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*";
+	const includeIndicator = filterConfig.include.length > 0 ? "⚙️ " : "";
+	markdown += `| ${includeIndicator}Include Filter | ${includeValue} | *(all)* |\n`;
+
+	// Exclude Filter
+	const excludeValue = filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*";
+	const excludeIndicator = filterConfig.exclude.length > 0 ? "⚙️ " : "";
+	markdown += `| ${excludeIndicator}Exclude Filter | ${excludeValue} | *(none)* |\n`;
+
+	// Auto-Merge
+	const autoMergeValue = autoMergeConfig.enabled
+		? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
+		: "Disabled";
+	const autoMergeIndicator = autoMergeConfig.enabled ? "⚙️ " : "";
+	markdown += `| ${autoMergeIndicator}Auto-Merge | ${autoMergeValue} | Disabled |\n`;
+
+	markdown += "\n";
+
+	// Planned actions section
+	markdown += "### Planned Actions\n\n";
+	if (groupUpdates) {
+		markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
+	} else {
+		markdown += `Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)\n\n`;
+	}
+
+	// Updates table
+	markdown += "### Available Updates\n\n";
+	markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
+
+	for (const update of updates) {
+		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
+		markdown += `| ${update.nameWithOwner} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+	}
+
+	markdown += "\n";
+
+	// Next steps
+	markdown += "### Next Steps\n\n";
+	markdown += "To apply these updates, remove `dry-run: true` from your workflow configuration.\n";
+
+	return markdown;
+}
+
+/**
  * Configuration table row data
  */
 interface ConfigTableRow {
@@ -76,6 +154,7 @@ function generateConfigTable(
  * @param updateStrategy The update strategy being used
  * @param filterConfig Extension filtering configuration
  * @param autoMergeConfig Auto-merge configuration
+ * @param createIssue Whether an issue will be created with the summary
  */
 export async function generateDryRunSummary(
 	updates: ExtensionUpdate[],
@@ -83,61 +162,22 @@ export async function generateDryRunSummary(
 	updateStrategy: UpdateStrategy,
 	filterConfig: ExtensionFilterConfig,
 	autoMergeConfig: AutoMergeConfig,
+	createIssue = false,
 ): Promise<void> {
-	core.summary.addHeading("Dry-Run Summary", 2);
-	core.summary.addRaw("No PRs will be created. This is a preview of what would happen.", true);
-	core.summary.addBreak();
+	// Generate markdown content
+	const markdown = generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
 
-	// Configuration section
-	core.summary.addHeading("Configuration", 3);
-	const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
-	core.summary.addTable(configTable);
-	core.summary.addBreak();
+	// Add the markdown to the summary
+	core.summary.addRaw(markdown);
 
-	// Planned actions section
-	core.summary.addHeading("Planned Actions", 3);
-	if (groupUpdates) {
+	// Add issue creation notice if applicable
+	if (createIssue) {
+		core.summary.addBreak();
 		core.summary.addRaw(
-			`Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}`,
-			true,
-		);
-	} else {
-		core.summary.addRaw(
-			`Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)`,
+			"ℹ️ A GitHub issue has been created with this summary for tracking purposes.",
 			true,
 		);
 	}
-	core.summary.addBreak();
-
-	// Updates table
-	const updatesTable = [
-		[
-			{ data: "Extension", header: true },
-			{ data: "Current", header: true },
-			{ data: "Latest", header: true },
-			{ data: "Auto-Merge", header: true },
-		],
-	];
-
-	for (const update of updates) {
-		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
-		updatesTable.push([
-			{ data: update.nameWithOwner, header: false },
-			{ data: update.currentVersion, header: false },
-			{ data: update.latestVersion, header: false },
-			{ data: wouldAutoMerge ? "✓ Yes" : "✗ No", header: false },
-		]);
-	}
-
-	core.summary.addTable(updatesTable);
-	core.summary.addBreak();
-
-	// Instructions
-	core.summary.addHeading("Next Steps", 3);
-	core.summary.addRaw(
-		"To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.",
-		true,
-	);
 
 	await core.summary.write();
 }

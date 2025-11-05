@@ -4,8 +4,10 @@ import {
 	createOrUpdatePR,
 	createCommit,
 	requestReviewersAndAssignees,
+	createIssueForUpdates,
 } from "./github";
-import type { PRAssignmentConfig } from "./types";
+import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "./types";
+import { createMockUpdate } from "./__test-utils__/mockFactories";
 import { HTTP_UNPROCESSABLE_ENTITY } from "./constants";
 import * as core from "@actions/core";
 
@@ -37,6 +39,7 @@ interface MockOctokit {
 		issues: {
 			setLabels: jest.Mock;
 			addAssignees: jest.Mock;
+			create: jest.Mock;
 		};
 	};
 }
@@ -67,6 +70,7 @@ describe("github.ts", () => {
 				issues: {
 					setLabels: jest.fn(),
 					addAssignees: jest.fn(),
+					create: jest.fn(),
 				},
 			},
 		};
@@ -585,6 +589,115 @@ describe("github.ts", () => {
 				content: binaryContent.toString("base64"),
 				encoding: "base64",
 			});
+		});
+	});
+});
+
+	describe("createIssueForUpdates", () => {
+		it("should create an issue with dry-run summary", async () => {
+			const updates: ExtensionUpdate[] = [
+				createMockUpdate("owner/ext1", "1.0.0", "1.1.0"),
+				createMockUpdate("owner/ext2", "2.0.0", "2.1.0"),
+			];
+			const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+			const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+			mockOctokit.rest.issues.create.mockResolvedValue({
+				data: {
+					number: 42,
+					html_url: "https://github.com/owner/repo/issues/42",
+				},
+			});
+
+			const result = await createIssueForUpdates(
+				mockOctokit as any,
+				"owner",
+				"repo",
+				updates,
+				false,
+				"all",
+				filterConfig,
+				autoMergeConfig,
+			);
+
+			expect(mockOctokit.rest.issues.create).toHaveBeenCalledWith({
+				owner: "owner",
+				repo: "repo",
+				title: "Quarto Extensions Updates Available (2 updates)",
+				body: expect.stringContaining("## Dry-Run Summary"),
+			});
+
+			expect(result).toEqual({
+				number: 42,
+				url: "https://github.com/owner/repo/issues/42",
+			});
+		});
+
+		it("should include configuration and updates in issue body", async () => {
+			const updates: ExtensionUpdate[] = [createMockUpdate("owner/ext1", "1.0.0", "1.1.0")];
+			const filterConfig: ExtensionFilterConfig = { include: ["owner/ext1"], exclude: [] };
+			const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "minor", mergeMethod": "rebase" };
+
+			mockOctokit.rest.issues.create.mockResolvedValue({
+				data: {
+					number: 1,
+					html_url: "https://github.com/owner/repo/issues/1",
+				},
+			});
+
+			await createIssueForUpdates(
+				mockOctokit as any,
+				"owner",
+				"repo",
+				updates,
+				true,
+				"patch",
+				filterConfig,
+				autoMergeConfig,
+			);
+
+			const createCall = mockOctokit.rest.issues.create.mock.calls[0][0];
+			const body = createCall.body;
+
+			// Check that the body contains configuration information
+			expect(body).toContain("### Configuration");
+			expect(body).toContain("⚙️ Mode");
+			expect(body).toContain("⚙️ Update Strategy");
+			expect(body).toContain("⚙️ Include Filter");
+			expect(body).toContain("⚙️ Auto-Merge");
+
+			// Check that the body contains update information
+			expect(body).toContain("### Available Updates");
+			expect(body).toContain("owner/ext1");
+			expect(body).toContain("1.0.0");
+			expect(body).toContain("1.1.0");
+		});
+
+		it("should use singular 'update' for single update", async () => {
+			const updates: ExtensionUpdate[] = [createMockUpdate("owner/ext1", "1.0.0", "1.1.0")];
+			const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+			const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+			mockOctokit.rest.issues.create.mockResolvedValue({
+				data: {
+					number: 1,
+					html_url: "https://github.com/owner/repo/issues/1",
+				},
+			});
+
+			await createIssueForUpdates(
+				mockOctokit as any,
+				"owner",
+				"repo",
+				updates,
+				false,
+				"all",
+				filterConfig,
+				autoMergeConfig,
+			);
+
+			const createCall = mockOctokit.rest.issues.create.mock.calls[0][0];
+			expect(createCall.title).toBe("Quarto Extensions Updates Available (1 update)");
 		});
 	});
 });

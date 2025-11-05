@@ -92,6 +92,11 @@ inputs:
     required: false
     default: "false"
 
+  create-issue:
+    description: "In dry-run mode, create a GitHub issue with the update summary (defaults to false)"
+    required: false
+    default: "false"
+
   pr-reviewers:
     description: "Comma-separated list of GitHub usernames to request as reviewers on created PRs (e.g., 'user1,user2')"
     required: false
@@ -122,6 +127,12 @@ outputs:
 
   pr-url:
     description: "Pull request URL (if created)"
+
+  issue-number:
+    description: "Issue number (if created in dry-run mode)"
+
+  issue-url:
+    description: "Issue URL (if created in dry-run mode)"
 
 runs:
   using: "node24"
