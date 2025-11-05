@@ -204,7 +204,6 @@ describe("generateDryRunSummary", () => {
 		const hasIssueNotice = calls.some((call) => call[0].includes("GitHub issue has been created"));
 		expect(hasIssueNotice).toBe(false);
 	});
-
 });
 
 describe("generateCompletedSummary", () => {
