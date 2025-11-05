@@ -1,6 +1,12 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig } from "./types";
+import type {
+	PRAssignmentConfig,
+	ExtensionUpdate,
+	AutoMergeConfig,
+	UpdateStrategy,
+	ExtensionFilterConfig,
+} from "./types";
 import { HTTP_UNPROCESSABLE_ENTITY, HTTP_NOT_FOUND, GIT_FILE_MODE_REGULAR } from "./constants";
 import { generateDryRunMarkdown } from "./summary";
 

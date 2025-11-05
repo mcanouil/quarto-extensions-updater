@@ -173,10 +173,7 @@ export async function generateDryRunSummary(
 	// Add issue creation notice if applicable
 	if (createIssue) {
 		core.summary.addBreak();
-		core.summary.addRaw(
-			"ℹ️ A GitHub issue has been created with this summary for tracking purposes.",
-			true,
-		);
+		core.summary.addRaw("ℹ️ A GitHub issue has been created with this summary for tracking purposes.", true);
 	}
 
 	await core.summary.write();

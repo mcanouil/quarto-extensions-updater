@@ -37015,6 +37015,7 @@ function parseInputs() {
     const groupUpdates = core.getBooleanInput("group-updates") === true;
     const updateStrategyInput = core.getInput("update-strategy") || "all";
     const dryRun = core.getBooleanInput("dry-run") === true;
+    const createIssue = core.getBooleanInput("create-issue") === true;
     // Validate update strategy
     (0, validation_1.validateUpdateStrategy)(updateStrategyInput);
     const updateStrategy = updateStrategyInput;
@@ -37047,6 +37048,7 @@ function parseInputs() {
         groupUpdates,
         updateStrategy,
         dryRun,
+        createIssue,
         assignmentConfig,
     };
 }
@@ -37647,8 +37649,10 @@ exports.createOrUpdateBranch = createOrUpdateBranch;
 exports.requestReviewersAndAssignees = requestReviewersAndAssignees;
 exports.createOrUpdatePR = createOrUpdatePR;
 exports.createCommit = createCommit;
+exports.createIssueForUpdates = createIssueForUpdates;
 const core = __importStar(__nccwpck_require__(7484));
 const constants_1 = __nccwpck_require__(7242);
+const summary_1 = __nccwpck_require__(8855);
 /** Type guard to check if an error is a GitHub API error with status code */
 function isGitHubError(error) {
     return (error instanceof Error && "status" in error && typeof error.status === "number");
@@ -37886,6 +37890,31 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
     });
     return commit.sha;
 }
+/**
+ * Creates a GitHub issue with dry-run update summary
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param updates Array of extension updates found
+ * @param groupUpdates Whether updates would be grouped
+ * @param updateStrategy The update strategy being used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ * @returns Issue number and URL
+ */
+async function createIssueForUpdates(octokit, owner, repo, updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    const title = `Quarto Extensions Updates Available (${updates.length} update${updates.length > 1 ? "s" : ""})`;
+    // Generate the same markdown content as the job summary
+    const body = (0, summary_1.generateDryRunMarkdown)(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    const { data: issue } = await octokit.rest.issues.create({
+        owner,
+        repo,
+        title,
+        body,
+    });
+    core.info(`✅ Created issue: ${issue.html_url}`);
+    return { number: issue.number, url: issue.html_url };
+}
 
 
 /***/ }),
@@ -37938,6 +37967,7 @@ const pr_1 = __nccwpck_require__(1309);
 const config_1 = __nccwpck_require__(2973);
 const summary_1 = __nccwpck_require__(8855);
 const prProcessor_1 = __nccwpck_require__(6409);
+const github_1 = __nccwpck_require__(9248);
 /**
  * Validates that the workspace path exists
  * @param workspacePath The workspace path to validate
@@ -38004,10 +38034,18 @@ async function run() {
         // Handle dry-run mode
         if (config.dryRun) {
             core.startGroup("🔍 Dry-Run Mode - No Changes Will Be Made");
-            await (0, summary_1.generateDryRunSummary)(updates, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig);
+            await (0, summary_1.generateDryRunSummary)(updates, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, config.createIssue);
             core.info("📋 Dry-run summary written to job summary");
             core.info(`✓ Found ${updates.length} update${updates.length > 1 ? "s" : ""} that would be applied`);
             core.info("💡 Check the job summary for detailed information");
+            // Create issue if enabled
+            if (config.createIssue) {
+                core.info("📝 Creating issue with update summary...");
+                const issue = await (0, github_1.createIssueForUpdates)(octokit, owner, repo, updates, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig);
+                core.setOutput("issue-number", issue.number.toString());
+                core.setOutput("issue-url", issue.url);
+                core.info(`✅ Issue created: ${issue.url}`);
+            }
             core.endGroup();
             return;
         }
@@ -38589,10 +38627,70 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generateDryRunMarkdown = generateDryRunMarkdown;
 exports.generateDryRunSummary = generateDryRunSummary;
 exports.generateCompletedSummary = generateCompletedSummary;
 const core = __importStar(__nccwpck_require__(7484));
 const automerge_1 = __nccwpck_require__(9270);
+/**
+ * Generates markdown content for dry-run summary
+ * @param updates Array of extension updates that would be applied
+ * @param groupUpdates Whether updates are grouped in a single PR
+ * @param updateStrategy The update strategy being used
+ * @param filterConfig Extension filtering configuration
+ * @param autoMergeConfig Auto-merge configuration
+ * @returns Markdown string for the dry-run summary
+ */
+function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    let markdown = "## Dry-Run Summary\n\n";
+    markdown += "No PRs will be created. This is a preview of what would happen.\n\n";
+    // Configuration section
+    markdown += "### Configuration\n\n";
+    markdown += "Settings marked with ⚙️ are non-default values.\n\n";
+    markdown += "| Setting | Value | Default |\n|---------|-------|----------|\n";
+    // Mode (group-updates)
+    const modeValue = groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)";
+    const modeIndicator = groupUpdates ? "⚙️ " : "";
+    markdown += `| ${modeIndicator}Mode | ${modeValue} | Individual PRs |\n`;
+    // Update Strategy
+    const updateStrategyIndicator = updateStrategy !== "all" ? "⚙️ " : "";
+    markdown += `| ${updateStrategyIndicator}Update Strategy | ${updateStrategy} | all |\n`;
+    // Include Filter
+    const includeValue = filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*";
+    const includeIndicator = filterConfig.include.length > 0 ? "⚙️ " : "";
+    markdown += `| ${includeIndicator}Include Filter | ${includeValue} | *(all)* |\n`;
+    // Exclude Filter
+    const excludeValue = filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*";
+    const excludeIndicator = filterConfig.exclude.length > 0 ? "⚙️ " : "";
+    markdown += `| ${excludeIndicator}Exclude Filter | ${excludeValue} | *(none)* |\n`;
+    // Auto-Merge
+    const autoMergeValue = autoMergeConfig.enabled
+        ? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
+        : "Disabled";
+    const autoMergeIndicator = autoMergeConfig.enabled ? "⚙️ " : "";
+    markdown += `| ${autoMergeIndicator}Auto-Merge | ${autoMergeValue} | Disabled |\n`;
+    markdown += "\n";
+    // Planned actions section
+    markdown += "### Planned Actions\n\n";
+    if (groupUpdates) {
+        markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
+    }
+    else {
+        markdown += `Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)\n\n`;
+    }
+    // Updates table
+    markdown += "### Available Updates\n\n";
+    markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
+    for (const update of updates) {
+        const wouldAutoMerge = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig);
+        markdown += `| ${update.nameWithOwner} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+    }
+    markdown += "\n";
+    // Next steps
+    markdown += "### Next Steps\n\n";
+    markdown += "To apply these updates, remove `dry-run: true` from your workflow configuration.\n";
+    return markdown;
+}
 /**
  * Generates configuration table for job summaries
  */
@@ -38650,48 +38748,18 @@ function generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMer
  * @param updateStrategy The update strategy being used
  * @param filterConfig Extension filtering configuration
  * @param autoMergeConfig Auto-merge configuration
+ * @param createIssue Whether an issue will be created with the summary
  */
-async function generateDryRunSummary(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
-    core.summary.addHeading("Dry-Run Summary", 2);
-    core.summary.addRaw("No PRs will be created. This is a preview of what would happen.", true);
-    core.summary.addBreak();
-    // Configuration section
-    core.summary.addHeading("Configuration", 3);
-    const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
-    core.summary.addTable(configTable);
-    core.summary.addBreak();
-    // Planned actions section
-    core.summary.addHeading("Planned Actions", 3);
-    if (groupUpdates) {
-        core.summary.addRaw(`Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}`, true);
+async function generateDryRunSummary(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig, createIssue = false) {
+    // Generate markdown content
+    const markdown = generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    // Add the markdown to the summary
+    core.summary.addRaw(markdown);
+    // Add issue creation notice if applicable
+    if (createIssue) {
+        core.summary.addBreak();
+        core.summary.addRaw("ℹ️ A GitHub issue has been created with this summary for tracking purposes.", true);
     }
-    else {
-        core.summary.addRaw(`Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)`, true);
-    }
-    core.summary.addBreak();
-    // Updates table
-    const updatesTable = [
-        [
-            { data: "Extension", header: true },
-            { data: "Current", header: true },
-            { data: "Latest", header: true },
-            { data: "Auto-Merge", header: true },
-        ],
-    ];
-    for (const update of updates) {
-        const wouldAutoMerge = (0, automerge_1.shouldAutoMerge)(update, autoMergeConfig);
-        updatesTable.push([
-            { data: update.nameWithOwner, header: false },
-            { data: update.currentVersion, header: false },
-            { data: update.latestVersion, header: false },
-            { data: wouldAutoMerge ? "✓ Yes" : "✗ No", header: false },
-        ]);
-    }
-    core.summary.addTable(updatesTable);
-    core.summary.addBreak();
-    // Instructions
-    core.summary.addHeading("Next Steps", 3);
-    core.summary.addRaw("To apply these updates, remove <code>dry-run: true</code> from your workflow configuration.", true);
     await core.summary.write();
 }
 /**
