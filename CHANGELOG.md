@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- refactor: relocate all test files from `src/` to top-level `tests/` directory for better organisation.
+
 ## 0.3.0 (2025-11-05)
 
 - feat: add `create-issue` input parameter to enable GitHub issue creation in dry-run mode (defaults to `false`).
