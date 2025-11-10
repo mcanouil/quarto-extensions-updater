@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- refactor: relocate all test files from `src/` to top-level `tests/` directory for better organisation.
+- revert: "Implement auto-merge with delay and retry logic" #26
 
 ## 0.4.0 (2025-11-10)
 
