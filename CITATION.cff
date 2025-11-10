@@ -9,5 +9,5 @@ authors:
 repository-code: "https://github.com/mcanouil/quarto-extensions-updater"
 url: "https://github.com/mcanouil/quarto-extensions-updater"
 license: "MIT"
-date-released: "2025-11-05"
-version: 0.3.0
+date-released: "2025-11-10"
+version: 0.4.0
