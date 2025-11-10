@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2025-11-10)
 
 - revert: "Implement auto-merge with delay and retry logic" #26
 
