@@ -1,8 +1,8 @@
-import { checkForUpdates, groupUpdatesByType } from "./updates";
-import { ExtensionRegistry, ExtensionUpdate, ExtensionFilterConfig } from "./types";
-import * as extensions from "./extensions";
+import { checkForUpdates, groupUpdatesByType } from "../src/updates";
+import { ExtensionRegistry, ExtensionUpdate, ExtensionFilterConfig } from "../src/types";
+import * as extensions from "../src/extensions";
 
-jest.mock("./extensions");
+jest.mock("../src/extensions");
 
 describe("checkForUpdates", () => {
 	const mockRegistry: ExtensionRegistry = {

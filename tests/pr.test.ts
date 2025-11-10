@@ -1,5 +1,5 @@
-import { generatePRTitle, generatePRBody, generatePRLabels, logUpdateSummary } from "./pr";
-import { ExtensionUpdate } from "./types";
+import { generatePRTitle, generatePRBody, generatePRLabels, logUpdateSummary } from "../src/pr";
+import { ExtensionUpdate } from "../src/types";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 

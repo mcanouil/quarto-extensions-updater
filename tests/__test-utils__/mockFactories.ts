@@ -3,7 +3,7 @@
  * This module provides factory functions to reduce duplication across test files
  */
 
-import type { ExtensionUpdate } from "../types";
+import type { ExtensionUpdate } from "../../src/types";
 import type * as github from "@actions/github";
 
 /**

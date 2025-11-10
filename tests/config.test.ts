@@ -1,16 +1,16 @@
 // Mock @actions/core before importing
 jest.mock("@actions/core");
-jest.mock("./validation");
+jest.mock("../src/validation");
 
 import * as core from "@actions/core";
-import { parseInputs } from "./config";
+import { parseInputs } from "../src/config";
 import {
 	validateAutoMergeStrategy,
 	validateMergeMethod,
 	validateUpdateStrategy,
 	validateRegistryUrl,
 	validateBranchPrefix,
-} from "./validation";
+} from "../src/validation";
 
 const mockCore = jest.mocked(core);
 const mockValidateAutoMergeStrategy = jest.mocked(validateAutoMergeStrategy);

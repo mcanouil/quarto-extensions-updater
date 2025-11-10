@@ -1,5 +1,5 @@
-import { fetchExtensionsRegistry } from "./registry";
-import { RegistryError } from "./errors";
+import { fetchExtensionsRegistry } from "../src/registry";
+import { RegistryError } from "../src/errors";
 import * as core from "@actions/core";
 
 // Mock @actions/core

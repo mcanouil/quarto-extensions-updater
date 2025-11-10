@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
-import { updateManifestSource } from "./extensions";
-import type { ExtensionUpdate } from "./types";
+import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "../src/git";
+import { updateManifestSource } from "../src/extensions";
+import type { ExtensionUpdate } from "../src/types";
 
 // Mock modules before importing
 jest.mock("child_process");
@@ -19,7 +19,7 @@ jest.mock("fs", () => ({
 }));
 jest.mock("path");
 jest.mock("@actions/core");
-jest.mock("./extensions");
+jest.mock("../src/extensions");
 
 // Import after mocking
 import * as fs from "fs";

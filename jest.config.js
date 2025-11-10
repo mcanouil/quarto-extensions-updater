@@ -3,13 +3,14 @@ module.exports = {
   testEnvironment: 'node',
   clearMocks: true,
   moduleFileExtensions: ['js', 'ts'],
-  testMatch: ['**/*.test.ts'],
+  roots: ['<rootDir>'],
+  testMatch: ['<rootDir>/tests/**/*.test.ts'],
   transform: {
     '^.+\\.ts$': 'ts-jest'
   },
   verbose: true,
   collectCoverage: true,
-  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
+  collectCoverageFrom: ['src/**/*.ts'],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html']
 }

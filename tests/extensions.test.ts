@@ -21,7 +21,7 @@ import {
 	readExtensionManifest,
 	extractExtensionInfo,
 	updateManifestSource,
-} from "./extensions";
+} from "../src/extensions";
 
 const mockFs = jest.mocked(fs);
 

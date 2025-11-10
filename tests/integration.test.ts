@@ -1,8 +1,8 @@
 import * as path from "path";
 import * as fs from "fs";
-import { checkForUpdates } from "./updates";
-import { fetchExtensionsRegistry } from "./registry";
-import type { ExtensionRegistry } from "./types";
+import { checkForUpdates } from "../src/updates";
+import { fetchExtensionsRegistry } from "../src/registry";
+import type { ExtensionRegistry } from "../src/types";
 
 describe("Integration Tests - Real Quarto Extension", () => {
 	const testDir = path.join(__dirname, "..", "test-workspace");
