@@ -219,6 +219,9 @@ The action supports enabling automatic merging of PRs based on the update type.
 When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy.
 PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
 
+> [!IMPORTANT]
+> Auto-merge requires at least one required status check or branch protection rule to be configured on the base branch. Without this, GitHub will not allow auto-merge to be enabled.
+
 ### Auto-Merge Strategies
 
 - **`patch`** (default): Only auto-merge patch updates (*e.g.*, 1.0.0 to 1.0.1).
