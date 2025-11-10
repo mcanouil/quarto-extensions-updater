@@ -16,7 +16,7 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🔀 **One PR per extension** — each extension gets its own PR that updates when new versions are available (or group all updates into a single PR).
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
-- 🚀 **Auto-merge support** — automatically merge PRs based on configurable rules (*e.g.*, patch updates only).
+- 🚀 **Auto-merge support** — enable automatic merging of PRs based on configurable rules (*e.g.*, patch updates only).
 - 🎯 **Selective updates** — include or exclude specific extensions from updates.
 - 📦 **Grouped updates** — option to combine all extension updates into a single PR.
 - 🛡️ **Update strategy** — control which types of updates to apply (all, minor, patch).
@@ -212,11 +212,12 @@ Updates the following Quarto extension(s):
 
 ## Auto-Merge
 
-The action supports automatically merging PRs based on the update type, similar to Dependabot's auto-merge feature.
+The action supports enabling automatic merging of PRs based on the update type.
 
 ### How Auto-Merge Works
 
-When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy. PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
+When enabled, the action will automatically enable GitHub's auto-merge feature on PRs that match your configured strategy.
+PRs will be merged automatically once all required status checks pass and branch protection rules are satisfied.
 
 ### Auto-Merge Strategies
 
@@ -232,7 +233,8 @@ When enabled, the action will automatically enable GitHub's auto-merge feature o
 
 ### Required Permissions
 
-To use auto-merge, your workflow must have write permissions for pull requests. Add this to your workflow file:
+To use auto-merge, your workflow must have write permissions for pull requests.
+Add this to your workflow file:
 
 ```yaml
 permissions:
@@ -290,7 +292,8 @@ jobs:
 
 ## Grouped Updates
 
-By default, the action creates one PR per extension for granular control. However, you can group all updates into a single PR if you prefer fewer PRs.
+By default, the action creates one PR per extension for granular control.
+However, you can group all updates into a single PR if you prefer fewer PRs.
 
 ### Enable Grouped Updates
 
@@ -372,7 +375,8 @@ To update only certain extensions, use the `include-extensions` input:
     include-extensions: "mcanouil/iconify,quarto-ext/lightbox"
 ```
 
-This will only check for updates and create PRs for the specified extensions. All other extensions will be ignored.
+This will only check for updates and create PRs for the specified extensions.
+All other extensions will be ignored.
 
 ### Exclude Specific Extensions
 
@@ -389,7 +393,8 @@ This will check all extensions except the specified ones.
 
 ### Combining Include and Exclude
 
-You can combine both filters. If an extension appears in both lists, the exclude filter takes precedence:
+You can combine both filters.
+If an extension appears in both lists, the exclude filter takes precedence:
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v0
