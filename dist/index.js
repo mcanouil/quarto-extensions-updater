@@ -36790,6 +36790,8 @@ exports.enableAutoMerge = enableAutoMerge;
 exports.isAutoMergeEnabled = isAutoMergeEnabled;
 const core = __importStar(__nccwpck_require__(7484));
 const semver = __importStar(__nccwpck_require__(2088));
+const utils_1 = __nccwpck_require__(1798);
+const constants_1 = __nccwpck_require__(7242);
 /**
  * Determines the type of version update based on semver
  */
@@ -36834,47 +36836,84 @@ function shouldAutoMerge(update, config) {
     }
 }
 /**
- * Enables auto-merge on a pull request
+ * Checks if an error is the "clean status" error from GitHub
  */
-async function enableAutoMerge(octokit, owner, repo, prNumber, mergeMethod) {
-    try {
-        core.info(`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`);
-        // Use GraphQL API to enable auto-merge
-        // The REST API doesn't support auto-merge directly
-        const mutation = `
-			mutation EnableAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
-				enablePullRequestAutoMerge(input: {
-					pullRequestId: $pullRequestId
-					mergeMethod: $mergeMethod
-				}) {
-					pullRequest {
-						id
-						number
-						autoMergeRequest {
-							enabledAt
-							enabledBy {
-								login
-							}
+function isCleanStatusError(error) {
+    return error instanceof Error && error.message.toLowerCase().includes("pull request is in clean status");
+}
+/**
+ * Attempts to enable auto-merge with the GraphQL API
+ */
+async function attemptEnableAutoMerge(octokit, pullRequestId, mergeMethod) {
+    const mutation = `
+		mutation EnableAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+			enablePullRequestAutoMerge(input: {
+				pullRequestId: $pullRequestId
+				mergeMethod: $mergeMethod
+			}) {
+				pullRequest {
+					id
+					number
+					autoMergeRequest {
+						enabledAt
+						enabledBy {
+							login
 						}
 					}
 				}
 			}
-		`;
-        // First, get the PR node ID
+		}
+	`;
+    await octokit.graphql(mutation, {
+        pullRequestId,
+        mergeMethod,
+    });
+}
+/**
+ * Enables auto-merge on a pull request with delay and retry logic
+ */
+async function enableAutoMerge(octokit, owner, repo, prNumber, mergeMethod) {
+    try {
+        core.info(`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`);
+        // Get the PR node ID
         const prData = await octokit.rest.pulls.get({
             owner,
             repo,
             pull_number: prNumber,
         });
         const pullRequestId = prData.data.node_id;
-        // Convert merge method to GraphQL enum format
         const mergeMethodEnum = mergeMethod.toUpperCase();
-        // Enable auto-merge using GraphQL
-        await octokit.graphql(mutation, {
-            pullRequestId,
-            mergeMethod: mergeMethodEnum,
-        });
-        core.info(`Successfully enabled auto-merge for PR #${prNumber}`);
+        // Wait before attempting to enable auto-merge
+        // This gives GitHub time to compute the PR's mergeable state
+        core.debug(`Waiting ${constants_1.AUTO_MERGE_INITIAL_DELAY_MS}ms before enabling auto-merge...`);
+        await (0, utils_1.sleep)(constants_1.AUTO_MERGE_INITIAL_DELAY_MS);
+        try {
+            // First attempt to enable auto-merge
+            await attemptEnableAutoMerge(octokit, pullRequestId, mergeMethodEnum);
+            core.info(`✅ Successfully enabled auto-merge for PR #${prNumber}`);
+        }
+        catch (firstError) {
+            // Check if this is the "clean status" error
+            if (isCleanStatusError(firstError)) {
+                core.info(`PR #${prNumber} is in clean status, waiting ${constants_1.AUTO_MERGE_RETRY_DELAY_MS}ms before retrying...`);
+                await (0, utils_1.sleep)(constants_1.AUTO_MERGE_RETRY_DELAY_MS);
+                try {
+                    // Retry once
+                    await attemptEnableAutoMerge(octokit, pullRequestId, mergeMethodEnum);
+                    core.info(`✅ Successfully enabled auto-merge for PR #${prNumber} on retry`);
+                }
+                catch (retryError) {
+                    // Still failed after retry
+                    core.warning(`Failed to enable auto-merge for PR #${prNumber} after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+                    core.warning("This may occur if the repository has no required status checks configured. " +
+                        "Auto-merge requires at least one required status check or branch protection rule.");
+                }
+            }
+            else {
+                // Different error - rethrow to be caught by outer catch
+                throw firstError;
+            }
+        }
     }
     catch (error) {
         // Log the error but don't fail the action
@@ -37069,7 +37108,7 @@ function parseInputs() {
  * update configuration values.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.LOG_SEPARATOR_CHAR = exports.LOG_SEPARATOR_LENGTH = exports.INVALID_GIT_REF_CHARS = exports.HTTPS_PROTOCOL = exports.VALID_UPDATE_STRATEGIES = exports.VALID_AUTO_MERGE_STRATEGIES = exports.VALID_MERGE_METHODS = exports.QUARTO_SETUP_INSTRUCTIONS = exports.PR_FOOTER_TEXT = exports.ACTION_REPOSITORY_URL = exports.GITHUB_BASE_URL = exports.DEFAULT_REGISTRY_URL = exports.QUARTO_EXTENSIONS_DIR = exports.QUARTO_MANIFEST_FILENAMES = exports.QUARTO_ADD_COMMAND_TEMPLATE = exports.QUARTO_VERSION_COMMAND = exports.LABEL_SEPARATOR = exports.DEFAULT_PR_LABELS = exports.DEFAULT_COMMIT_MESSAGE_PREFIX = exports.DEFAULT_PR_TITLE_PREFIX = exports.DEFAULT_BRANCH_PREFIX = exports.DEFAULT_BASE_BRANCH = exports.GIT_FILE_MODE_REGULAR = exports.HTTP_USER_AGENT = exports.HTTP_HEADER_ACCEPT_JSON = exports.DEFAULT_FETCH_TIMEOUT_MS = exports.HTTP_UNPROCESSABLE_ENTITY = exports.HTTP_NOT_FOUND = void 0;
+exports.LOG_SEPARATOR_CHAR = exports.LOG_SEPARATOR_LENGTH = exports.AUTO_MERGE_RETRY_DELAY_MS = exports.AUTO_MERGE_INITIAL_DELAY_MS = exports.INVALID_GIT_REF_CHARS = exports.HTTPS_PROTOCOL = exports.VALID_UPDATE_STRATEGIES = exports.VALID_AUTO_MERGE_STRATEGIES = exports.VALID_MERGE_METHODS = exports.QUARTO_SETUP_INSTRUCTIONS = exports.PR_FOOTER_TEXT = exports.ACTION_REPOSITORY_URL = exports.GITHUB_BASE_URL = exports.DEFAULT_REGISTRY_URL = exports.QUARTO_EXTENSIONS_DIR = exports.QUARTO_MANIFEST_FILENAMES = exports.QUARTO_ADD_COMMAND_TEMPLATE = exports.QUARTO_VERSION_COMMAND = exports.LABEL_SEPARATOR = exports.DEFAULT_PR_LABELS = exports.DEFAULT_COMMIT_MESSAGE_PREFIX = exports.DEFAULT_PR_TITLE_PREFIX = exports.DEFAULT_BRANCH_PREFIX = exports.DEFAULT_BASE_BRANCH = exports.GIT_FILE_MODE_REGULAR = exports.HTTP_USER_AGENT = exports.HTTP_HEADER_ACCEPT_JSON = exports.DEFAULT_FETCH_TIMEOUT_MS = exports.HTTP_UNPROCESSABLE_ENTITY = exports.HTTP_NOT_FOUND = void 0;
 // ============================================================================
 // HTTP and Network Constants
 // ============================================================================
@@ -37142,6 +37181,13 @@ exports.VALID_UPDATE_STRATEGIES = ["patch", "minor", "all"];
 exports.HTTPS_PROTOCOL = "https://";
 /** Invalid Git ref characters pattern */
 exports.INVALID_GIT_REF_CHARS = /[~^:?*[\]\\]/;
+// ============================================================================
+// Auto-Merge Constants
+// ============================================================================
+/** Delay in milliseconds before attempting to enable auto-merge (allows GitHub to compute mergeable state) */
+exports.AUTO_MERGE_INITIAL_DELAY_MS = 3000; // 3 seconds
+/** Delay in milliseconds before retrying auto-merge after a "clean status" error */
+exports.AUTO_MERGE_RETRY_DELAY_MS = 3000; // 3 seconds
 // ============================================================================
 // Output and Logging Constants
 // ============================================================================
@@ -39041,6 +39087,28 @@ function groupUpdatesByType(updates) {
         }
     }
     return grouped;
+}
+
+
+/***/ }),
+
+/***/ 1798:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Utility functions for the application
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.sleep = sleep;
+/**
+ * Delays execution for a specified number of milliseconds
+ * @param ms Number of milliseconds to wait
+ * @returns Promise that resolves after the delay
+ */
+async function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 

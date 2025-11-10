@@ -113,6 +113,16 @@ export const HTTPS_PROTOCOL = "https://";
 export const INVALID_GIT_REF_CHARS = /[~^:?*[\]\\]/;
 
 // ============================================================================
+// Auto-Merge Constants
+// ============================================================================
+
+/** Delay in milliseconds before attempting to enable auto-merge (allows GitHub to compute mergeable state) */
+export const AUTO_MERGE_INITIAL_DELAY_MS = 3000; // 3 seconds
+
+/** Delay in milliseconds before retrying auto-merge after a "clean status" error */
+export const AUTO_MERGE_RETRY_DELAY_MS = 3000; // 3 seconds
+
+// ============================================================================
 // Output and Logging Constants
 // ============================================================================
 

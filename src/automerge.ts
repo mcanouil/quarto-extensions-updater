@@ -2,6 +2,8 @@ import * as core from "@actions/core";
 import * as semver from "semver";
 import type { OctokitClient } from "./github";
 import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "./types";
+import { sleep } from "./utils";
+import { AUTO_MERGE_INITIAL_DELAY_MS, AUTO_MERGE_RETRY_DELAY_MS } from "./constants";
 
 /**
  * Determines the type of version update based on semver
@@ -55,7 +57,48 @@ export function shouldAutoMerge(update: ExtensionUpdate, config: AutoMergeConfig
 }
 
 /**
- * Enables auto-merge on a pull request
+ * Checks if an error is the "clean status" error from GitHub
+ */
+function isCleanStatusError(error: unknown): boolean {
+	return error instanceof Error && error.message.toLowerCase().includes("pull request is in clean status");
+}
+
+/**
+ * Attempts to enable auto-merge with the GraphQL API
+ */
+async function attemptEnableAutoMerge(
+	octokit: OctokitClient,
+	pullRequestId: string,
+	mergeMethod: string,
+): Promise<void> {
+	const mutation = `
+		mutation EnableAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+			enablePullRequestAutoMerge(input: {
+				pullRequestId: $pullRequestId
+				mergeMethod: $mergeMethod
+			}) {
+				pullRequest {
+					id
+					number
+					autoMergeRequest {
+						enabledAt
+						enabledBy {
+							login
+						}
+					}
+				}
+			}
+		}
+	`;
+
+	await octokit.graphql(mutation, {
+		pullRequestId,
+		mergeMethod,
+	});
+}
+
+/**
+ * Enables auto-merge on a pull request with delay and retry logic
  */
 export async function enableAutoMerge(
 	octokit: OctokitClient,
@@ -67,29 +110,7 @@ export async function enableAutoMerge(
 	try {
 		core.info(`Enabling auto-merge for PR #${prNumber} with ${mergeMethod} method`);
 
-		// Use GraphQL API to enable auto-merge
-		// The REST API doesn't support auto-merge directly
-		const mutation = `
-			mutation EnableAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
-				enablePullRequestAutoMerge(input: {
-					pullRequestId: $pullRequestId
-					mergeMethod: $mergeMethod
-				}) {
-					pullRequest {
-						id
-						number
-						autoMergeRequest {
-							enabledAt
-							enabledBy {
-								login
-							}
-						}
-					}
-				}
-			}
-		`;
-
-		// First, get the PR node ID
+		// Get the PR node ID
 		const prData = await octokit.rest.pulls.get({
 			owner,
 			repo,
@@ -97,17 +118,42 @@ export async function enableAutoMerge(
 		});
 
 		const pullRequestId = prData.data.node_id;
-
-		// Convert merge method to GraphQL enum format
 		const mergeMethodEnum = mergeMethod.toUpperCase();
 
-		// Enable auto-merge using GraphQL
-		await octokit.graphql(mutation, {
-			pullRequestId,
-			mergeMethod: mergeMethodEnum,
-		});
+		// Wait before attempting to enable auto-merge
+		// This gives GitHub time to compute the PR's mergeable state
+		core.debug(`Waiting ${AUTO_MERGE_INITIAL_DELAY_MS}ms before enabling auto-merge...`);
+		await sleep(AUTO_MERGE_INITIAL_DELAY_MS);
 
-		core.info(`Successfully enabled auto-merge for PR #${prNumber}`);
+		try {
+			// First attempt to enable auto-merge
+			await attemptEnableAutoMerge(octokit, pullRequestId, mergeMethodEnum);
+			core.info(`✅ Successfully enabled auto-merge for PR #${prNumber}`);
+		} catch (firstError) {
+			// Check if this is the "clean status" error
+			if (isCleanStatusError(firstError)) {
+				core.info(`PR #${prNumber} is in clean status, waiting ${AUTO_MERGE_RETRY_DELAY_MS}ms before retrying...`);
+				await sleep(AUTO_MERGE_RETRY_DELAY_MS);
+
+				try {
+					// Retry once
+					await attemptEnableAutoMerge(octokit, pullRequestId, mergeMethodEnum);
+					core.info(`✅ Successfully enabled auto-merge for PR #${prNumber} on retry`);
+				} catch (retryError) {
+					// Still failed after retry
+					core.warning(
+						`Failed to enable auto-merge for PR #${prNumber} after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
+					);
+					core.warning(
+						"This may occur if the repository has no required status checks configured. " +
+							"Auto-merge requires at least one required status check or branch protection rule.",
+					);
+				}
+			} else {
+				// Different error - rethrow to be caught by outer catch
+				throw firstError;
+			}
+		}
 	} catch (error) {
 		// Log the error but don't fail the action
 		core.warning(

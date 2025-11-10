@@ -5,6 +5,9 @@ import * as github from "@actions/github";
 import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
 
 jest.mock("@actions/core");
+jest.mock("../src/utils", () => ({
+	sleep: jest.fn().mockResolvedValue(undefined),
+}));
 
 type MockOctokit = ReturnType<typeof github.getOctokit>;
 
@@ -171,7 +174,7 @@ describe("enableAutoMerge", () => {
 		});
 
 		expect(core.info).toHaveBeenCalledWith("Enabling auto-merge for PR #42 with squash method");
-		expect(core.info).toHaveBeenCalledWith("Successfully enabled auto-merge for PR #42");
+		expect(core.info).toHaveBeenCalledWith("✅ Successfully enabled auto-merge for PR #42");
 	});
 
 	it("should handle different merge methods", async () => {
@@ -211,6 +214,59 @@ describe("enableAutoMerge", () => {
 
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("permissions"));
 		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("pull-requests: write"));
+	});
+
+	it("should retry on clean status error and succeed", async () => {
+		const prNodeId = "PR_test123";
+		mockOctokit.rest.pulls.get.mockResolvedValue({
+			data: { node_id: prNodeId },
+		});
+
+		// First attempt fails with clean status error, second succeeds
+		mockOctokit.graphql
+			.mockRejectedValueOnce(new Error("Pull request Pull request is in clean status"))
+			.mockResolvedValueOnce({});
+
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
+
+		// Should be called twice (initial attempt + retry)
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(2);
+		expect(core.info).toHaveBeenCalledWith(expect.stringContaining("clean status"));
+		expect(core.info).toHaveBeenCalledWith(expect.stringContaining("on retry"));
+	});
+
+	it("should log warning after retry fails on clean status error", async () => {
+		const prNodeId = "PR_test123";
+		mockOctokit.rest.pulls.get.mockResolvedValue({
+			data: { node_id: prNodeId },
+		});
+
+		// Both attempts fail with clean status error
+		const cleanStatusError = new Error("Pull request Pull request is in clean status");
+		mockOctokit.graphql.mockRejectedValue(cleanStatusError);
+
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
+
+		// Should be called twice (initial attempt + retry)
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(2);
+		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("after retry"));
+		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("required status checks"));
+	});
+
+	it("should not retry on non-clean-status errors", async () => {
+		const prNodeId = "PR_test123";
+		mockOctokit.rest.pulls.get.mockResolvedValue({
+			data: { node_id: prNodeId },
+		});
+
+		// Fails with different error
+		mockOctokit.graphql.mockRejectedValue(new Error("Some other error"));
+
+		await enableAutoMerge(mockOctokit as unknown as MockOctokit, "owner", "repo", 42, "squash");
+
+		// Should only be called once (no retry)
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(1);
+		expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Some other error"));
 	});
 });
 
