@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2025-11-10)
 
 - fix: resolve auto-merge "clean status" error by implementing 3-second delay before enabling auto-merge and retry logic to handle timing issues when GitHub hasn't computed PR mergeable state.
 - refactor: relocate all test files from `src/` to top-level `tests/` directory for better organisation.
