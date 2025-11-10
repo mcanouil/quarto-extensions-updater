@@ -1,11 +1,11 @@
 // Mock @actions/core before importing
 jest.mock("@actions/core");
-jest.mock("./automerge");
+jest.mock("../src/automerge");
 
 import * as core from "@actions/core";
-import { shouldAutoMerge } from "./automerge";
-import { generateDryRunSummary, generateCompletedSummary, generateDryRunMarkdown } from "./summary";
-import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "./types";
+import { shouldAutoMerge } from "../src/automerge";
+import { generateDryRunSummary, generateCompletedSummary, generateDryRunMarkdown } from "../src/summary";
+import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types";
 import { createMockUpdate, createMockSummary } from "./__test-utils__/mockFactories";
 
 const mockCore = jest.mocked(core);

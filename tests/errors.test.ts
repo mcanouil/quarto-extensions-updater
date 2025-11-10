@@ -6,7 +6,7 @@ import {
 	GitHubAPIError,
 	isQuartoError,
 	formatError,
-} from "./errors";
+} from "../src/errors";
 
 describe("QuartoExtensionUpdaterError", () => {
 	it("should create error with message and code", () => {

@@ -6,7 +6,7 @@ import {
 	validateRegistryUrl,
 	validateBranchPrefix,
 	parseCommaSeparatedList,
-} from "./validation";
+} from "../src/validation";
 
 describe("validateMergeMethod", () => {
 	it("should accept valid merge methods", () => {

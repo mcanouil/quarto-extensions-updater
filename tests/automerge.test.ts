@@ -1,5 +1,5 @@
-import { getUpdateType, shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig } from "./types";
+import { getUpdateType, shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "../src/automerge";
+import type { ExtensionUpdate, AutoMergeConfig } from "../src/types";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";

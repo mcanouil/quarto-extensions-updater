@@ -4,20 +4,20 @@ jest.mock("fs", () => ({
 	...jest.requireActual("fs"),
 	readFileSync: jest.fn(),
 }));
-jest.mock("./git");
-jest.mock("./pr");
-jest.mock("./github");
-jest.mock("./automerge");
+jest.mock("../src/git");
+jest.mock("../src/pr");
+jest.mock("../src/github");
+jest.mock("../src/automerge");
 
 import * as core from "@actions/core";
 import * as fs from "fs";
 import * as github from "@actions/github";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
-import { generatePRTitle, generatePRBody } from "./pr";
-import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "./github";
-import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import { processPRForUpdateGroup, processAllPRs, type PRProcessingConfig } from "./prProcessor";
-import type { ExtensionUpdate } from "./types";
+import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "../src/git";
+import { generatePRTitle, generatePRBody } from "../src/pr";
+import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "../src/github";
+import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "../src/automerge";
+import { processPRForUpdateGroup, processAllPRs, type PRProcessingConfig } from "../src/prProcessor";
+import type { ExtensionUpdate } from "../src/types";
 import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
 
 const mockCore = jest.mocked(core);

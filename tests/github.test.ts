@@ -5,10 +5,10 @@ import {
 	createCommit,
 	requestReviewersAndAssignees,
 	createIssueForUpdates,
-} from "./github";
-import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "./types";
+} from "../src/github";
+import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types";
 import { createMockUpdate } from "./__test-utils__/mockFactories";
-import { HTTP_UNPROCESSABLE_ENTITY } from "./constants";
+import { HTTP_UNPROCESSABLE_ENTITY } from "../src/constants";
 import * as core from "@actions/core";
 
 // Mock modules
