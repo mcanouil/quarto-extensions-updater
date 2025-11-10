@@ -1,6 +1,6 @@
 {
 	"name": "quarto-extensions-updater",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "GitHub Action to automatically update Quarto extensions similar to Dependabot",
 	"main": "dist/index.js",
 	"scripts": {

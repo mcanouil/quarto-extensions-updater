@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2025-11-10)
 
 - refactor: relocate all test files from `src/` to top-level `tests/` directory for better organisation.
 
