@@ -288,9 +288,8 @@ jobs:
 
 ### Important Notes
 
-- Auto-merge requires branch protection rules to be configured if you want to enforce checks before merging.
 - The PR will only merge automatically after all required status checks pass.
-- If auto-merge fails (*e.g.*, due to permission issues), the PR will still be created but will not auto-merge.
+- If auto-merge fails (*e.g.*, due to permission issues or missing status checks), the PR will still be created but will not auto-merge.
 - The action logs a warning if auto-merge fails but continues normal operation.
 
 ## Grouped Updates
