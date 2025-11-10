@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (2025-11-10)
 
 - docs: clarify auto-merge requirements in README with prominent note that at least one required status check or branch protection rule must be configured on the base branch.
 
