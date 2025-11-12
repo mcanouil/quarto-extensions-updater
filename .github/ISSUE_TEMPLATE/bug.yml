@@ -1,0 +1,51 @@
+name: Bug report
+description: Report an error or unexpected behaviour
+labels:
+  - "Type: Bug :bug:"
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Welcome!
+
+  - type: checkboxes
+    attributes:
+      label: "I Have checked the following"
+      options:
+        - label: I have searched the issue tracker for similar issues
+          required: true
+        - label: I have the latest version of the GitHub Actions
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Bug description
+      description: Description of the bug.
+      placeholder: Please describe the bug here.
+
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Tell us how to reproduce this bug.
+
+  - type: textarea
+    attributes:
+      label: Actual behaviour
+      description: Tell us what happens instead.
+
+  - type: textarea
+    attributes:
+      label: Expected behaviour
+      description: Tell us what should happen.
+
+  - type: textarea
+    attributes:
+      label: Your environment
+      description: |
+        Please document the CI/CD environment.
+
+  - type: markdown
+    attributes:
+      value: "_Thanks for submitting this bug report!_"
