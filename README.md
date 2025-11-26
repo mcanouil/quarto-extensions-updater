@@ -47,7 +47,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -263,7 +263,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
