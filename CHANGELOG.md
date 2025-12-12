@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2025-12-12)
 
 Release of 1.0.0! 🎉
 
