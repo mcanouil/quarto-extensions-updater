@@ -58,7 +58,7 @@ jobs:
 
       - name: Upload dist for inspection
         if: failure() && steps.diff.conclusion == 'failure'
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: dist
           path: dist/
