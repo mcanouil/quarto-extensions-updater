@@ -26,8 +26,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to update to (e.g., 2.1.0)"
-        required: true
+        description: "Version to update to (e.g., 2.1.0 or 'latest')"
+        required: false
+        default: "latest"
         type: string
   # repository_dispatch:
   #   types: [quarto-wizard-core-release]
@@ -68,12 +69,21 @@ jobs:
 
       - name: Set version
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             VERSION="${{ github.event.client_payload.version }}"
           else
             VERSION="${{ inputs.version }}"
           fi
+
+          # Resolve "latest" to actual version tag
+          if [ "${VERSION}" = "latest" ]; then
+            VERSION=$(gh api repos/mcanouil/quarto-wizard/releases/latest --jq '.tag_name')
+            echo "Resolved 'latest' to version: ${VERSION}"
+          fi
+
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "Updating to version: ${VERSION}"
 
