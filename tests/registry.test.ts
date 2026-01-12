@@ -1,43 +1,47 @@
 import { fetchExtensionsRegistry } from "../src/registry";
 import { RegistryError } from "../src/errors";
 import * as core from "@actions/core";
+import type { Registry } from "@quarto-wizard/core";
 
 // Mock @actions/core
 jest.mock("@actions/core");
 
-// Mock global fetch
-global.fetch = jest.fn();
+// Mock @quarto-wizard/core
+jest.mock("@quarto-wizard/core", () => ({
+	fetchRegistry: jest.fn(),
+}));
+
+import { fetchRegistry as mockFetchRegistry } from "@quarto-wizard/core";
 
 describe("fetchExtensionsRegistry", () => {
-	const mockRegistry = {
+	const mockRegistry: Registry = {
 		"owner/extension": {
-			description: "Test extension",
-			latestRelease: "1.0.0",
-			latestReleaseUrl: "https://github.com/owner/extension/releases/tag/1.0.0",
-			nameWithOwner: "owner/extension",
+			id: "owner/extension",
 			owner: "owner",
-			url: "https://github.com/owner/extension",
-			defaultBranchRef: "main",
 			name: "extension",
-			repositoryTopics: ["quarto"],
+			fullName: "owner/extension",
+			description: "Test extension",
+			topics: ["quarto"],
+			contributes: ["filters"],
+			latestVersion: "1.0.0",
+			latestTag: "v1.0.0",
+			latestReleaseUrl: "https://github.com/owner/extension/releases/tag/v1.0.0",
+			stars: 10,
+			licence: "MIT",
+			htmlUrl: "https://github.com/owner/extension",
+			template: false,
+			defaultBranchRef: "main",
+			latestCommit: "abc123",
 		},
 	};
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		(global.fetch as jest.Mock).mockReset();
-	});
-
-	afterEach(() => {
-		jest.clearAllTimers();
+		(mockFetchRegistry as jest.Mock).mockReset();
 	});
 
 	it("should successfully fetch and parse registry", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => mockRegistry,
-		});
+		(mockFetchRegistry as jest.Mock).mockResolvedValue(mockRegistry);
 
 		const result = await fetchExtensionsRegistry();
 
@@ -49,112 +53,71 @@ describe("fetchExtensionsRegistry", () => {
 	it("should use custom registry URL when provided", async () => {
 		const customUrl = "https://example.com/custom-registry.json";
 
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => mockRegistry,
-		});
+		(mockFetchRegistry as jest.Mock).mockResolvedValue(mockRegistry);
 
 		await fetchExtensionsRegistry(customUrl);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			customUrl,
+		expect(mockFetchRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				headers: expect.any(Object),
+				registryUrl: customUrl,
 			}),
 		);
 	});
 
-	it("should throw RegistryError on HTTP error", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: false,
-			status: 404,
-			statusText: "Not Found",
-		});
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-		await expect(fetchExtensionsRegistry()).rejects.toThrow("Failed to fetch registry: 404 Not Found");
-	});
-
-	it("should throw RegistryError on JSON parse error", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => {
-				throw new Error("Invalid JSON");
-			},
-		});
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-		await expect(fetchExtensionsRegistry()).rejects.toThrow("Failed to parse registry JSON");
-	});
-
-	it("should throw RegistryError when registry is not an object", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => null,
-		});
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-		await expect(fetchExtensionsRegistry()).rejects.toThrow("Registry response is not a valid object");
-	});
-
-	it("should throw RegistryError when registry is an array instead of object", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => [],
-		});
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-	});
-
-	it("should handle timeout errors", async () => {
-		const abortError = new Error("The operation was aborted");
-		abortError.name = "AbortError";
-
-		(global.fetch as jest.Mock).mockRejectedValue(abortError);
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-		await expect(fetchExtensionsRegistry()).rejects.toThrow("Registry fetch timed out after 30 seconds");
-	});
-
-	it("should wrap unexpected errors in RegistryError", async () => {
-		(global.fetch as jest.Mock).mockRejectedValue(new TypeError("Network error"));
-
-		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
-		await expect(fetchExtensionsRegistry()).rejects.toThrow("Unexpected error fetching registry");
-	});
-
-	it("should include correct headers in request", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: true,
-			status: 200,
-			json: async () => mockRegistry,
-		});
+	it("should use default registry URL when not provided", async () => {
+		(mockFetchRegistry as jest.Mock).mockResolvedValue(mockRegistry);
 
 		await fetchExtensionsRegistry();
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			expect.any(String),
+		expect(mockFetchRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				headers: {
-					Accept: "application/json",
-					"User-Agent": "quarto-extensions-updater",
-				},
+				registryUrl: "https://m.canouil.dev/quarto-extensions/extensions.json",
 			}),
 		);
 	});
 
+	it("should throw RegistryError on fetch error", async () => {
+		(mockFetchRegistry as jest.Mock).mockRejectedValue(new Error("Network error"));
+
+		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
+		await expect(fetchExtensionsRegistry()).rejects.toThrow("Failed to fetch registry");
+	});
+
+	it("should wrap unexpected errors in RegistryError", async () => {
+		(mockFetchRegistry as jest.Mock).mockRejectedValue(new TypeError("Network error"));
+
+		await expect(fetchExtensionsRegistry()).rejects.toThrow(RegistryError);
+		await expect(fetchExtensionsRegistry()).rejects.toThrow("Failed to fetch registry");
+	});
+
 	it("should log errors to core.error", async () => {
-		(global.fetch as jest.Mock).mockResolvedValue({
-			ok: false,
-			status: 500,
-			statusText: "Internal Server Error",
-		});
+		(mockFetchRegistry as jest.Mock).mockRejectedValue(new Error("Test error"));
 
 		await expect(fetchExtensionsRegistry()).rejects.toThrow();
 		expect(core.error).toHaveBeenCalled();
+	});
+
+	it("should pass forceRefresh option to core library", async () => {
+		(mockFetchRegistry as jest.Mock).mockResolvedValue(mockRegistry);
+
+		await fetchExtensionsRegistry();
+
+		expect(mockFetchRegistry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				forceRefresh: true,
+			}),
+		);
+	});
+
+	it("should pass timeout option to core library", async () => {
+		(mockFetchRegistry as jest.Mock).mockResolvedValue(mockRegistry);
+
+		await fetchExtensionsRegistry();
+
+		expect(mockFetchRegistry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				timeout: 30000,
+			}),
+		);
 	});
 });

@@ -1,5 +1,9 @@
+// Re-export core types
+export type { Registry, RegistryEntry } from "@quarto-wizard/core";
+
 /**
  * Represents details of a Quarto extension from the registry
+ * @deprecated Use RegistryEntry from @quarto-wizard/core instead
  */
 export interface ExtensionDetails {
 	createdAt: string;
@@ -50,6 +54,7 @@ export interface ExtensionUpdate {
 
 /**
  * Registry of all available extensions
+ * @deprecated Use Registry from @quarto-wizard/core instead
  */
 export type ExtensionRegistry = Record<string, ExtensionDetails>;
 

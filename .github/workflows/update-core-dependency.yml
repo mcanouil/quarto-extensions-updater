@@ -1,0 +1,146 @@
+# MIT License
+#
+# Copyright (c) 2026 Mickaël CANOUIL
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+name: Update @quarto-wizard/core Dependency
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to update to (e.g., 2.1.0)"
+        required: true
+        type: string
+  # repository_dispatch:
+  #   types: [quarto-wizard-core-release]
+
+# Quarto-Wizard core release trigger step
+# - name: Trigger dependency update in quarto-extensions-updater
+#   env:
+#     GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+#     VERSION: ${{ env.VERSION }}
+#   run: |
+#     curl -X POST \
+#       -H "Accept: application/vnd.github+json" \
+#       -H "Authorization: Bearer ${GH_TOKEN}" \
+#       https://api.github.com/repos/mcanouil/quarto-extensions-updater/dispatches \
+#       -d "{\"event_type\":\"quarto-wizard-core-release\",\"client_payload\":{\"version\":\"${VERSION}\"}}"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-dependency:
+    runs-on: ubuntu-latest
+
+    env:
+      BRANCH: chore/update-quarto-wizard-core
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Updating to version: ${VERSION}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Delete existing branch if exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git show-ref --quiet refs/heads/${BRANCH}; then
+            echo "Branch ${BRANCH} already exists."
+            git branch -D "${BRANCH}" || true
+            git push origin --delete "${BRANCH}" || true
+          fi
+
+      - name: Create update branch
+        run: git checkout -b "${BRANCH}"
+
+      - name: Update package.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i 's|"@quarto-wizard/core": "https://github.com/mcanouil/quarto-wizard/releases/download/[^"]*"|"@quarto-wizard/core": "https://github.com/mcanouil/quarto-wizard/releases/download/'"${VERSION}"'/quarto-wizard-core-'"${VERSION}"'.tgz"|' package.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build action
+        run: npm run build
+
+      - name: Commit and push changes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git add package.json package-lock.json dist/
+          git commit -m "chore(deps): update @quarto-wizard/core to ${VERSION}"
+          git push --force origin "${BRANCH}"
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sleep 5
+          gh pr create \
+            --title "chore(deps): update @quarto-wizard/core to ${VERSION}" \
+            --body "$(cat <<EOF
+          ## Summary
+
+          - Updated \`@quarto-wizard/core\` to version ${VERSION}.
+
+          ## Release Notes
+
+          See: https://github.com/mcanouil/quarto-wizard/releases/tag/${VERSION}
+
+          ---
+
+          This PR was automatically generated.
+          EOF
+          )" \
+            --base main \
+            --head "${BRANCH}" \
+            --label "Type: Dependencies :arrow_up:"

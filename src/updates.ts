@@ -1,12 +1,7 @@
 import * as core from "@actions/core";
 import * as semver from "semver";
-import type {
-	ExtensionUpdate,
-	ExtensionRegistry,
-	ExtensionDetails,
-	ExtensionFilterConfig,
-	UpdateStrategy,
-} from "./types";
+import type { Registry, RegistryEntry } from "@quarto-wizard/core";
+import type { ExtensionUpdate, ExtensionFilterConfig, UpdateStrategy } from "./types";
 import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
 
 /**
@@ -51,7 +46,7 @@ function shouldApplyUpdate(currentVersion: string, latestVersion: string, strate
  */
 export function checkForUpdates(
 	workspacePath: string,
-	registry: ExtensionRegistry,
+	registry: Registry,
 	filterConfig?: ExtensionFilterConfig,
 	updateStrategy: UpdateStrategy = "all",
 ): ExtensionUpdate[] {
@@ -101,7 +96,8 @@ export function checkForUpdates(
 			continue;
 		}
 
-		const latestVersion = registryEntry.latestRelease;
+		// Use latestTag (with 'v' prefix) or latestVersion (without prefix)
+		const latestVersion = registryEntry.latestTag || registryEntry.latestVersion;
 		if (!latestVersion || latestVersion === "none") {
 			core.info(`Skipping ${nameWithOwner}: no release version in registry`);
 			continue;
@@ -133,13 +129,13 @@ export function checkForUpdates(
 				name,
 				owner,
 				nameWithOwner,
-				repositoryName: registryEntry.nameWithOwner,
+				repositoryName: registryEntry.fullName,
 				currentVersion: extensionData.version,
 				latestVersion,
 				manifestPath,
-				url: registryEntry.url,
-				releaseUrl: registryEntry.latestReleaseUrl,
-				description: registryEntry.description,
+				url: registryEntry.htmlUrl,
+				releaseUrl: registryEntry.latestReleaseUrl || "",
+				description: registryEntry.description || "",
 			});
 		} else {
 			core.info(`${nameWithOwner} is up to date (${extensionData.version})`);
@@ -156,11 +152,7 @@ export function checkForUpdates(
  * @param repository Optional repository URL from the extension manifest
  * @returns The matching registry entry or null
  */
-function findRegistryEntry(
-	registry: ExtensionRegistry,
-	nameWithOwner: string,
-	repository?: string,
-): ExtensionDetails | null {
+function findRegistryEntry(registry: Registry, nameWithOwner: string, repository?: string): RegistryEntry | null {
 	if (registry[nameWithOwner]) {
 		return registry[nameWithOwner];
 	}
