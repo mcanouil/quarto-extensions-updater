@@ -97,10 +97,14 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 			const source = `${update.repositoryName}@${update.latestVersion}`;
 			core.info(`Running: quarto add ${source} --no-prompt`);
 
-			execSync(`quarto add ${source} --no-prompt`, {
-				stdio: "inherit",
+			const output = execSync(`quarto add ${source} --no-prompt`, {
+				stdio: "pipe",
 				encoding: "utf-8",
 			});
+
+			if (output) {
+				core.info(output.trim());
+			}
 
 			core.info(`Successfully updated ${update.nameWithOwner} to ${update.latestVersion}`);
 
@@ -125,7 +129,14 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 
 			core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
 		} catch (error) {
-			const reason = `Failed to update: ${error instanceof Error ? error.message : String(error)}`;
+			let reason: string;
+			if (error instanceof Error && "stderr" in error) {
+				const stderr = String((error as NodeJS.ErrnoException & { stderr: unknown }).stderr).trim();
+				reason = stderr || error.message;
+			} else {
+				reason = error instanceof Error ? error.message : String(error);
+			}
+			reason = `Failed to update: ${reason}`;
 			core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
 			skippedUpdates.push({ update, reason });
 		}

@@ -117,7 +117,7 @@ describe("git.ts", () => {
 			const result = applyUpdates([update]);
 
 			expect(mockExecSync).toHaveBeenCalledWith("quarto add test-owner/test-test-ext@1.1.0 --no-prompt", {
-				stdio: "inherit",
+				stdio: "pipe",
 				encoding: "utf-8",
 			});
 			expect(mockUpdateManifestSource).toHaveBeenCalledWith(
@@ -157,6 +157,27 @@ describe("git.ts", () => {
 			expect(result.skippedUpdates[0].update).toBe(update);
 			expect(result.skippedUpdates[0].reason).toContain("Failed to update");
 			expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Skipping test-owner/test-ext"));
+		});
+
+		it("should use stderr from quarto add failure for a more informative reason", () => {
+			mockExecSync.mockImplementation((cmd) => {
+				if (cmd === "quarto --version") {
+					return "1.4.0\n" as unknown as Buffer;
+				}
+				const error = new Error("Command failed: quarto add test-owner/test-test-ext@1.1.0 --no-prompt");
+				(error as Error & { stderr: string }).stderr =
+					"ERROR: Extension requires Quarto version >=99.0.0 (you have 1.4.0)\n";
+				throw error;
+			});
+
+			const update = createUpdate();
+
+			const result = applyUpdates([update]);
+
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].reason).toBe(
+				"Failed to update: ERROR: Extension requires Quarto version >=99.0.0 (you have 1.4.0)",
+			);
 		});
 
 		it("should skip extension when quarto-required exceeds installed version", () => {
