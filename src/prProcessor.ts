@@ -18,6 +18,14 @@ export interface PRProcessingResult {
 }
 
 /**
+ * Result of processing all PRs, including skipped updates from groups that produced no PR
+ */
+export interface ProcessAllPRsResult {
+	createdPRs: PRProcessingResult[];
+	skippedUpdates: SkippedUpdate[];
+}
+
+/**
  * Configuration for PR processing
  */
 export interface PRProcessingConfig {
@@ -109,7 +117,7 @@ export async function processPRForUpdateGroup(
 	repo: string,
 	updateGroup: ExtensionUpdate[],
 	config: PRProcessingConfig,
-): Promise<PRProcessingResult | null> {
+): Promise<PRProcessingResult> {
 	const groupDesc = describeUpdateGroup(updateGroup);
 	const branchName = createBranchName(updateGroup, config.branchPrefix);
 	const prTitle = generatePRTitle(updateGroup, config.prTitlePrefix);
@@ -140,7 +148,7 @@ export async function processPRForUpdateGroup(
 
 	if (modifiedFiles.length === 0) {
 		core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
-		return null;
+		return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
 	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
@@ -197,8 +205,9 @@ export async function processAllPRs(
 	updates: ExtensionUpdate[],
 	groupUpdates: boolean,
 	config: PRProcessingConfig,
-): Promise<PRProcessingResult[]> {
+): Promise<ProcessAllPRsResult> {
 	const createdPRs: PRProcessingResult[] = [];
+	const allSkippedUpdates: SkippedUpdate[] = [];
 
 	// Determine whether to create one PR for all updates or one PR per extension
 	const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
@@ -209,9 +218,14 @@ export async function processAllPRs(
 		core.startGroup(`📝 Processing ${groupDescription}`);
 
 		try {
-			const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
-			if (pr) {
-				createdPRs.push(pr);
+			const result = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
+
+			if (result.skippedUpdates && result.skippedUpdates.length > 0) {
+				allSkippedUpdates.push(...result.skippedUpdates);
+			}
+
+			if (result.number > 0) {
+				createdPRs.push(result);
 			}
 		} catch (error) {
 			core.error(`Failed to process ${groupDescription}: ${error}`);
@@ -221,5 +235,5 @@ export async function processAllPRs(
 		}
 	}
 
-	return createdPRs;
+	return { createdPRs, skippedUpdates: allSkippedUpdates };
 }

@@ -8,7 +8,7 @@ import { parseInputs } from "./config";
 import { generateDryRunSummary, generateCompletedSummary } from "./summary";
 import { processAllPRs } from "./prProcessor";
 import { createIssueForUpdates } from "./github";
-import type { ExtensionUpdate, SkippedUpdate } from "./types";
+import type { ExtensionUpdate } from "./types";
 
 /**
  * Validates that the workspace path exists
@@ -143,20 +143,24 @@ async function run(): Promise<void> {
 		const baseSha = refData.object.sha;
 
 		// Process all PRs
-		const createdPRs = await processAllPRs(octokit, owner, repo, updates, config.groupUpdates, {
-			workspacePath: config.workspacePath,
-			baseBranch: config.baseBranch,
-			baseSha,
-			branchPrefix: config.branchPrefix,
-			prTitlePrefix: config.prTitlePrefix,
-			commitMessagePrefix: config.commitMessagePrefix,
-			prLabels: config.prLabels,
-			autoMergeConfig: config.autoMergeConfig,
-			assignmentConfig: config.assignmentConfig,
-		});
-
-		// Collect skipped updates from all PR results
-		const allSkippedUpdates: SkippedUpdate[] = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
+		const { createdPRs, skippedUpdates: allSkippedUpdates } = await processAllPRs(
+			octokit,
+			owner,
+			repo,
+			updates,
+			config.groupUpdates,
+			{
+				workspacePath: config.workspacePath,
+				baseBranch: config.baseBranch,
+				baseSha,
+				branchPrefix: config.branchPrefix,
+				prTitlePrefix: config.prTitlePrefix,
+				commitMessagePrefix: config.commitMessagePrefix,
+				prLabels: config.prLabels,
+				autoMergeConfig: config.autoMergeConfig,
+				assignmentConfig: config.assignmentConfig,
+			},
+		);
 
 		// Filter updates to only those that were successfully applied
 		const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));

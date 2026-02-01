@@ -91057,7 +91057,7 @@ async function run() {
         });
         const baseSha = refData.object.sha;
         // Process all PRs
-        const createdPRs = await (0, prProcessor_1.processAllPRs)(octokit, owner, repo, updates, config.groupUpdates, {
+        const { createdPRs, skippedUpdates: allSkippedUpdates } = await (0, prProcessor_1.processAllPRs)(octokit, owner, repo, updates, config.groupUpdates, {
             workspacePath: config.workspacePath,
             baseBranch: config.baseBranch,
             baseSha,
@@ -91068,8 +91068,6 @@ async function run() {
             autoMergeConfig: config.autoMergeConfig,
             assignmentConfig: config.assignmentConfig,
         });
-        // Collect skipped updates from all PR results
-        const allSkippedUpdates = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
         // Filter updates to only those that were successfully applied
         const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
         const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
@@ -91470,7 +91468,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     }
     if (modifiedFiles.length === 0) {
         core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
-        return null;
+        return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
     }
     if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
         throw new Error(`Failed to validate modified files for ${groupDesc}`);
@@ -91502,15 +91500,19 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
  */
 async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config) {
     const createdPRs = [];
+    const allSkippedUpdates = [];
     // Determine whether to create one PR for all updates or one PR per extension
     const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
     for (const updateGroup of updateGroups) {
         const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
         core.startGroup(`📝 Processing ${groupDescription}`);
         try {
-            const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
-            if (pr) {
-                createdPRs.push(pr);
+            const result = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
+            if (result.skippedUpdates && result.skippedUpdates.length > 0) {
+                allSkippedUpdates.push(...result.skippedUpdates);
+            }
+            if (result.number > 0) {
+                createdPRs.push(result);
             }
         }
         catch (error) {
@@ -91521,7 +91523,7 @@ async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config
             core.endGroup();
         }
     }
-    return createdPRs;
+    return { createdPRs, skippedUpdates: allSkippedUpdates };
 }
 
 

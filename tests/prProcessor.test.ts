@@ -351,13 +351,13 @@ describe("processAllPRs", () => {
 			.mockResolvedValueOnce({ number: 123, url: "https://github.com/owner/repo/pull/123" })
 			.mockResolvedValueOnce({ number: 124, url: "https://github.com/owner/repo/pull/124" });
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
 
-		expect(results).toHaveLength(2);
-		expect(results[0].number).toBe(123);
-		expect(results[0].url).toBe("https://github.com/owner/repo/pull/123");
-		expect(results[1].number).toBe(124);
-		expect(results[1].url).toBe("https://github.com/owner/repo/pull/124");
+		expect(createdPRs).toHaveLength(2);
+		expect(createdPRs[0].number).toBe(123);
+		expect(createdPRs[0].url).toBe("https://github.com/owner/repo/pull/123");
+		expect(createdPRs[1].number).toBe(124);
+		expect(createdPRs[1].url).toBe("https://github.com/owner/repo/pull/124");
 		expect(mockCore.startGroup).toHaveBeenCalledTimes(2);
 	});
 
@@ -372,11 +372,11 @@ describe("processAllPRs", () => {
 			skippedUpdates: [],
 		});
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, true, baseConfig);
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", updates, true, baseConfig);
 
-		expect(results).toHaveLength(1);
-		expect(results[0].number).toBe(123);
-		expect(results[0].url).toBe("https://github.com/owner/repo/pull/123");
+		expect(createdPRs).toHaveLength(1);
+		expect(createdPRs[0].number).toBe(123);
+		expect(createdPRs[0].url).toBe("https://github.com/owner/repo/pull/123");
 		expect(mockCore.startGroup).toHaveBeenCalledTimes(1);
 		expect(mockCore.startGroup).toHaveBeenCalledWith(expect.stringContaining("2 extensions"));
 	});
@@ -403,9 +403,17 @@ describe("processAllPRs", () => {
 	it("should process empty updates array", async () => {
 		const updates: ExtensionUpdate[] = [];
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
+		const { createdPRs, skippedUpdates } = await processAllPRs(
+			mockOctokit,
+			"owner",
+			"repo",
+			updates,
+			false,
+			baseConfig,
+		);
 
-		expect(results).toEqual([]);
+		expect(createdPRs).toEqual([]);
+		expect(skippedUpdates).toEqual([]);
 		expect(mockCore.startGroup).not.toHaveBeenCalled();
 	});
 });
