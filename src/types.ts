@@ -2,29 +2,6 @@
 export type { Registry, RegistryEntry } from "@quarto-wizard/core";
 
 /**
- * Represents details of a Quarto extension from the registry
- * @deprecated Use RegistryEntry from @quarto-wizard/core instead
- */
-export interface ExtensionDetails {
-	createdAt: string;
-	defaultBranchRef: string;
-	description: string;
-	latestRelease: string;
-	latestReleaseUrl: string;
-	licenseInfo: string;
-	name: string;
-	nameWithOwner: string;
-	owner: string;
-	repositoryTopics: string[];
-	stargazerCount: number;
-	title: string;
-	url: string;
-	author: string;
-	template: boolean;
-	templateContent: string | null;
-}
-
-/**
  * Represents data from an installed extension's manifest
  */
 export interface ExtensionData {
@@ -68,12 +45,6 @@ export interface ExtensionUpdate {
 	releaseUrl: string;
 	description: string;
 }
-
-/**
- * Registry of all available extensions
- * @deprecated Use Registry from @quarto-wizard/core instead
- */
-export type ExtensionRegistry = Record<string, ExtensionDetails>;
 
 /**
  * Update strategy - controls which types of updates to apply

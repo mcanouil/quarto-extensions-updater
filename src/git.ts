@@ -89,11 +89,11 @@ function extractExecError(error: unknown): string {
 }
 
 /**
- * Applies extension updates using Quarto CLI
- * @param updates Array of updates to apply
- * @returns Result containing modified files and any skipped updates
+ * Ensures Quarto CLI is available and returns its version
+ * @returns The installed Quarto version string
+ * @throws Error if Quarto CLI is not available
  */
-export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
+function requireQuartoVersion(): string {
 	const quartoVersion = getQuartoVersion();
 
 	if (!quartoVersion) {
@@ -109,6 +109,16 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 	}
 
 	core.info(`Installed Quarto version: ${quartoVersion}`);
+	return quartoVersion;
+}
+
+/**
+ * Applies extension updates using Quarto CLI
+ * @param updates Array of updates to apply
+ * @returns Result containing modified files and any skipped updates
+ */
+export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
+	const quartoVersion = requireQuartoVersion();
 
 	const modifiedFiles: string[] = [];
 	const skippedUpdates: ApplyUpdatesResult["skippedUpdates"] = [];

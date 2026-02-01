@@ -110,31 +110,25 @@ describe("validateBranchPrefix", () => {
 
 describe("parseCommaSeparatedList", () => {
 	it("should parse valid comma-separated lists", () => {
-		expect(parseCommaSeparatedList("item1,item2,item3", "test")).toEqual(["item1", "item2", "item3"]);
-		expect(parseCommaSeparatedList("single", "test")).toEqual(["single"]);
+		expect(parseCommaSeparatedList("item1,item2,item3")).toEqual(["item1", "item2", "item3"]);
+		expect(parseCommaSeparatedList("single")).toEqual(["single"]);
 	});
 
 	it("should trim whitespace from items", () => {
-		expect(parseCommaSeparatedList("item1 , item2 , item3", "test")).toEqual(["item1", "item2", "item3"]);
-		expect(parseCommaSeparatedList("  item1  ,  item2  ", "test")).toEqual(["item1", "item2"]);
+		expect(parseCommaSeparatedList("item1 , item2 , item3")).toEqual(["item1", "item2", "item3"]);
+		expect(parseCommaSeparatedList("  item1  ,  item2  ")).toEqual(["item1", "item2"]);
 	});
 
 	it("should return empty array for empty input", () => {
-		expect(parseCommaSeparatedList("", "test")).toEqual([]);
-		expect(parseCommaSeparatedList("   ", "test")).toEqual([]);
+		expect(parseCommaSeparatedList("")).toEqual([]);
+		expect(parseCommaSeparatedList("   ")).toEqual([]);
 	});
 
-	it("should handle lists with empty items after trimming", () => {
-		// When there are truly empty items (consecutive commas), it should throw
-		expect(() => parseCommaSeparatedList("item1,,item2", "test")).toThrow(
-			"Invalid test format: contains empty values after comma separation",
-		);
+	it("should filter out empty items after trimming", () => {
+		expect(parseCommaSeparatedList("item1,,item2")).toEqual(["item1", "item2"]);
 	});
 
-	it("should preserve items that become empty only after parsing", () => {
-		// Single comma with spaces should be treated as attempt to have empty items
-		expect(() => parseCommaSeparatedList("item1, ,item2", "test")).toThrow(
-			"Invalid test format: contains empty values after comma separation",
-		);
+	it("should filter out whitespace-only items", () => {
+		expect(parseCommaSeparatedList("item1, ,item2")).toEqual(["item1", "item2"]);
 	});
 });

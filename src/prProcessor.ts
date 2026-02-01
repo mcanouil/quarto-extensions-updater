@@ -83,6 +83,24 @@ async function handleAutoMerge(
 }
 
 /**
+ * Returns a human-readable description of an update group
+ */
+function describeUpdateGroup(updateGroup: ExtensionUpdate[]): string {
+	return updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+}
+
+/**
+ * Prepares files for a Git commit by stripping the workspace prefix and reading contents
+ */
+function prepareCommitFiles(modifiedFiles: string[], workspacePath: string): { path: string; content: Buffer }[] {
+	const workspacePrefix = `${workspacePath}${path.sep}`;
+	return modifiedFiles.map((filePath) => ({
+		path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+		content: fs.readFileSync(filePath),
+	}));
+}
+
+/**
  * Processes a single update group (either a single extension or multiple grouped extensions)
  */
 export async function processPRForUpdateGroup(
@@ -91,7 +109,8 @@ export async function processPRForUpdateGroup(
 	repo: string,
 	updateGroup: ExtensionUpdate[],
 	config: PRProcessingConfig,
-): Promise<PRProcessingResult> {
+): Promise<PRProcessingResult | null> {
+	const groupDesc = describeUpdateGroup(updateGroup);
 	const branchName = createBranchName(updateGroup, config.branchPrefix);
 	const prTitle = generatePRTitle(updateGroup, config.prTitlePrefix);
 
@@ -120,14 +139,12 @@ export async function processPRForUpdateGroup(
 	}
 
 	if (modifiedFiles.length === 0) {
-		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-		core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
-		return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
+		core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
+		return null;
 	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
-		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-		throw new Error(`Failed to validate modified files for ${errorDesc}`);
+		throw new Error(`Failed to validate modified files for ${groupDesc}`);
 	}
 
 	core.info(`Modified ${modifiedFiles.length} file(s)`);
@@ -139,12 +156,7 @@ export async function processPRForUpdateGroup(
 
 	await createOrUpdateBranch(octokit, owner, repo, branchName, config.baseSha);
 
-	const workspacePrefix = `${config.workspacePath}${path.sep}`;
-	const files = modifiedFiles.map((filePath) => ({
-		path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
-		content: fs.readFileSync(filePath),
-	}));
-
+	const files = prepareCommitFiles(modifiedFiles, config.workspacePath);
 	const commitSha = await createCommit(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
 
 	core.info(`✅ Created commit: ${commitSha}`);
@@ -170,8 +182,7 @@ export async function processPRForUpdateGroup(
 
 		return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
 	} catch (error) {
-		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-		core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
+		core.error(`Failed to create/update PR for ${groupDesc}: ${error}`);
 		throw error;
 	}
 }
@@ -199,7 +210,9 @@ export async function processAllPRs(
 
 		try {
 			const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
-			createdPRs.push(pr);
+			if (pr) {
+				createdPRs.push(pr);
+			}
 		} catch (error) {
 			core.error(`Failed to process ${groupDescription}: ${error}`);
 			throw error;

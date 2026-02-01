@@ -3,6 +3,7 @@ import * as semver from "semver";
 import type { Registry, RegistryEntry } from "@quarto-wizard/core";
 import type { ExtensionUpdate, ExtensionFilterConfig, UpdateStrategy } from "./types";
 import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
+import { getUpdateType } from "./automerge";
 
 /**
  * Determines if an update should be applied based on the update strategy
@@ -173,7 +174,7 @@ function findRegistryEntry(registry: Registry, nameWithOwner: string, repository
  * @param version The version string to normalise
  * @returns Normalised version string
  */
-function normaliseVersion(version: string): string {
+export function normaliseVersion(version: string): string {
 	let normalised = version.trim();
 
 	if (normalised.startsWith("v")) {
@@ -200,22 +201,13 @@ export function groupUpdatesByType(updates: ExtensionUpdate[]): {
 	};
 
 	for (const update of updates) {
-		const current = normaliseVersion(update.currentVersion);
-		const latest = normaliseVersion(update.latestVersion);
+		const type = getUpdateType(update.currentVersion, update.latestVersion);
 
-		if (!semver.valid(current) || !semver.valid(latest)) {
-			continue;
-		}
-
-		const diff = semver.diff(current, latest);
-
-		if (diff === "major" || diff === "premajor") {
+		if (type === "major") {
 			grouped.major.push(update);
-		} else if (diff === "minor" || diff === "preminor") {
+		} else if (type === "minor") {
 			grouped.minor.push(update);
-		} else if (diff === "patch" || diff === "prepatch") {
-			grouped.patch.push(update);
-		} else {
+		} else if (type === "patch") {
 			grouped.patch.push(update);
 		}
 	}

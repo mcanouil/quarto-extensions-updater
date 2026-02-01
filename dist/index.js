@@ -89912,17 +89912,6 @@ const core = __importStar(__nccwpck_require__(37484));
 const validation_1 = __nccwpck_require__(24344);
 const constants_1 = __nccwpck_require__(27242);
 /**
- * Parses a comma-separated string input into a filtered array
- * @param input Comma-separated string to parse
- * @returns Array of trimmed non-empty strings
- */
-function parseCommaSeparatedInput(input) {
-    return input
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
-}
-/**
  * Parses all GitHub Actions inputs and returns validated configuration
  * @returns Validated application configuration object
  * @throws ValidationError if any input validation fails
@@ -89941,7 +89930,7 @@ function parseInputs() {
     const commitMessagePrefix = core.getInput("commit-message-prefix") || constants_1.DEFAULT_COMMIT_MESSAGE_PREFIX;
     // PR labels
     const prLabelsInput = core.getInput("pr-labels") || constants_1.DEFAULT_PR_LABELS.join(constants_1.LABEL_SEPARATOR);
-    const prLabels = parseCommaSeparatedInput(prLabelsInput);
+    const prLabels = (0, validation_1.parseCommaSeparatedList)(prLabelsInput);
     // Auto-merge configuration
     const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
     const autoMergeStrategyInput = core.getInput("auto-merge-strategy") || "patch";
@@ -89958,8 +89947,8 @@ function parseInputs() {
     const includeExtensionsInput = core.getInput("include-extensions") || "";
     const excludeExtensionsInput = core.getInput("exclude-extensions") || "";
     const filterConfig = {
-        include: parseCommaSeparatedInput(includeExtensionsInput),
-        exclude: parseCommaSeparatedInput(excludeExtensionsInput),
+        include: (0, validation_1.parseCommaSeparatedList)(includeExtensionsInput),
+        exclude: (0, validation_1.parseCommaSeparatedList)(excludeExtensionsInput),
     };
     // Update configuration
     const groupUpdates = core.getBooleanInput("group-updates") === true;
@@ -89974,9 +89963,9 @@ function parseInputs() {
     const prTeamReviewersInput = core.getInput("pr-team-reviewers") || "";
     const prAssigneesInput = core.getInput("pr-assignees") || "";
     const assignmentConfig = {
-        reviewers: parseCommaSeparatedInput(prReviewersInput),
-        teamReviewers: parseCommaSeparatedInput(prTeamReviewersInput),
-        assignees: parseCommaSeparatedInput(prAssigneesInput),
+        reviewers: (0, validation_1.parseCommaSeparatedList)(prReviewersInput),
+        teamReviewers: (0, validation_1.parseCommaSeparatedList)(prTeamReviewersInput),
+        assignees: (0, validation_1.parseCommaSeparatedList)(prAssigneesInput),
     };
     // Validate configuration
     if (registryUrl) {
@@ -90505,11 +90494,11 @@ function extractExecError(error) {
     return error instanceof Error ? error.message : String(error);
 }
 /**
- * Applies extension updates using Quarto CLI
- * @param updates Array of updates to apply
- * @returns Result containing modified files and any skipped updates
+ * Ensures Quarto CLI is available and returns its version
+ * @returns The installed Quarto version string
+ * @throws Error if Quarto CLI is not available
  */
-function applyUpdates(updates) {
+function requireQuartoVersion() {
     const quartoVersion = getQuartoVersion();
     if (!quartoVersion) {
         const errorMessage = "Quarto CLI is not available. Please install Quarto before running this action.\n" +
@@ -90522,6 +90511,15 @@ function applyUpdates(updates) {
         throw new Error("Quarto CLI is not available");
     }
     core.info(`Installed Quarto version: ${quartoVersion}`);
+    return quartoVersion;
+}
+/**
+ * Applies extension updates using Quarto CLI
+ * @param updates Array of updates to apply
+ * @returns Result containing modified files and any skipped updates
+ */
+function applyUpdates(updates) {
+    const quartoVersion = requireQuartoVersion();
     const modifiedFiles = [];
     const skippedUpdates = [];
     for (const update of updates) {
@@ -90793,29 +90791,22 @@ async function requestReviewersAndAssignees(octokit, owner, repo, prNumber, assi
  * @param assignmentConfig Optional reviewer and assignee configuration
  * @returns PR number and URL
  */
-async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig) {
-    const existingPRs = await octokit.rest.pulls.list({
-        owner,
-        repo,
-        head: `${owner}:${branchName}`,
-        state: "open",
-    });
+async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, prTitle, prBody, prLabels, assignmentConfig, existingPRNumber) {
     let prNumber;
     let prUrl;
-    if (existingPRs.data.length > 0) {
-        const existingPR = existingPRs.data[0];
-        core.info(`Updating existing PR #${existingPR.number}`);
+    if (existingPRNumber) {
+        core.info(`Updating existing PR #${existingPRNumber}`);
         const { data: updatedPR } = await octokit.rest.pulls.update({
             owner,
             repo,
-            pull_number: existingPR.number,
+            pull_number: existingPRNumber,
             title: prTitle,
             body: prBody,
         });
         await octokit.rest.issues.setLabels({
             owner,
             repo,
-            issue_number: existingPR.number,
+            issue_number: existingPRNumber,
             labels: prLabels,
         });
         prNumber = updatedPR.number;
@@ -90859,11 +90850,6 @@ async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, pr
  * @returns Commit SHA
  */
 async function createCommit(octokit, owner, repo, branchName, baseSha, message, files) {
-    const { data: baseTree } = await octokit.rest.git.getTree({
-        owner,
-        repo,
-        tree_sha: baseSha,
-    });
     const tree = await Promise.all(files.map(async (file) => {
         const { data: blob } = await octokit.rest.git.createBlob({
             owner,
@@ -90881,7 +90867,7 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
     const { data: newTree } = await octokit.rest.git.createTree({
         owner,
         repo,
-        base_tree: baseTree.sha,
+        base_tree: baseSha,
         tree,
     });
     const { data: commit } = await octokit.rest.git.createCommit({
@@ -91084,16 +91070,14 @@ async function run() {
         });
         // Collect skipped updates from all PR results
         const allSkippedUpdates = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
-        // Filter out PRs with no actual changes (number === 0)
-        const actualPRs = createdPRs.filter((pr) => pr.number > 0);
         // Filter updates to only those that were successfully applied
         const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
         const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
         // Set outputs and generate summary
-        if (actualPRs.length > 0) {
-            setPROutputs(actualPRs);
+        if (createdPRs.length > 0) {
+            setPROutputs(createdPRs);
             core.startGroup("📋 Generating Job Summary");
-            await (0, summary_1.generateCompletedSummary)(appliedUpdates, actualPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, allSkippedUpdates);
+            await (0, summary_1.generateCompletedSummary)(appliedUpdates, createdPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, allSkippedUpdates);
             core.endGroup();
         }
         if (allSkippedUpdates.length > 0) {
@@ -91230,6 +91214,26 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
     }
     sections.push("---");
     sections.push("");
+    // Fetch all release notes in parallel
+    const releaseNotesMap = new Map();
+    const releaseNotesEntries = updates
+        .map((update) => {
+        const parts = update.repositoryName.split("/");
+        if (parts.length !== 2) {
+            core.warning(`Invalid repository name format: ${update.repositoryName}`);
+            return null;
+        }
+        const [owner, repo] = parts;
+        return {
+            key: update.nameWithOwner,
+            promise: fetchReleaseNotes(octokit, owner, repo, update.latestVersion),
+        };
+    })
+        .filter((entry) => entry !== null);
+    const releaseNotesResults = await Promise.all(releaseNotesEntries.map((e) => e.promise));
+    for (let i = 0; i < releaseNotesEntries.length; i++) {
+        releaseNotesMap.set(releaseNotesEntries[i].key, releaseNotesResults[i]);
+    }
     for (const update of updates) {
         if (updates.length > 1) {
             sections.push(`### ${update.nameWithOwner}`);
@@ -91239,13 +91243,7 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
             sections.push("### Release Notes");
             sections.push("");
         }
-        const parts = update.repositoryName.split("/");
-        if (parts.length !== 2) {
-            core.warning(`Invalid repository name format: ${update.repositoryName}`);
-            continue;
-        }
-        const [owner, repo] = parts;
-        const releaseBody = await fetchReleaseNotes(octokit, owner, repo, update.latestVersion);
+        const releaseBody = releaseNotesMap.get(update.nameWithOwner) ?? null;
         sections.push("<details>");
         sections.push(`<summary>Release ${update.latestVersion}</summary>`);
         sections.push("");
@@ -91307,14 +91305,7 @@ function formatUpdateList(updates) {
  * and add the updates parameter back to the function signature.
  */
 function generatePRLabels() {
-    const labels = [...constants_1.DEFAULT_PR_LABELS];
-    // Uncomment to add type-specific labels (and add updates: ExtensionUpdate[] parameter):
-    // const grouped = groupUpdatesByType(updates);
-    // if (grouped.major.length > 0) labels.push("major-update");
-    // if (grouped.minor.length > 0) labels.push("minor-update");
-    // if (grouped.patch.length > 0) labels.push("patch-update");
-    // if (updates.length > 1) labels.push("multiple-updates");
-    return labels;
+    return [...constants_1.DEFAULT_PR_LABELS];
 }
 /**
  * Logs a summary of the updates
@@ -91435,9 +91426,26 @@ async function handleAutoMerge(octokit, owner, repo, prNumber, updateGroup, auto
     }
 }
 /**
+ * Returns a human-readable description of an update group
+ */
+function describeUpdateGroup(updateGroup) {
+    return updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+}
+/**
+ * Prepares files for a Git commit by stripping the workspace prefix and reading contents
+ */
+function prepareCommitFiles(modifiedFiles, workspacePath) {
+    const workspacePrefix = `${workspacePath}${path.sep}`;
+    return modifiedFiles.map((filePath) => ({
+        path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+        content: fs.readFileSync(filePath),
+    }));
+}
+/**
  * Processes a single update group (either a single extension or multiple grouped extensions)
  */
 async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config) {
+    const groupDesc = describeUpdateGroup(updateGroup);
     const branchName = (0, git_1.createBranchName)(updateGroup, config.branchPrefix);
     const prTitle = (0, pr_1.generatePRTitle)(updateGroup, config.prTitlePrefix);
     // Check for existing PR
@@ -91461,13 +91469,11 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
         }
     }
     if (modifiedFiles.length === 0) {
-        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-        core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
-        return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
+        core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
+        return null;
     }
     if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
-        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-        throw new Error(`Failed to validate modified files for ${errorDesc}`);
+        throw new Error(`Failed to validate modified files for ${groupDesc}`);
     }
     core.info(`Modified ${modifiedFiles.length} file(s)`);
     // Create commit
@@ -91475,11 +91481,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     core.info(`Branch: ${branchName}`);
     core.info(`Commit message: ${commitMessage.split("\n")[0]}`);
     await (0, github_1.createOrUpdateBranch)(octokit, owner, repo, branchName, config.baseSha);
-    const workspacePrefix = `${config.workspacePath}${path.sep}`;
-    const files = modifiedFiles.map((filePath) => ({
-        path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
-        content: fs.readFileSync(filePath),
-    }));
+    const files = prepareCommitFiles(modifiedFiles, config.workspacePath);
     const commitSha = await (0, github_1.createCommit)(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
     core.info(`✅ Created commit: ${commitSha}`);
     // Create or update PR
@@ -91491,8 +91493,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
         return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
     }
     catch (error) {
-        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-        core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
+        core.error(`Failed to create/update PR for ${groupDesc}: ${error}`);
         throw error;
     }
 }
@@ -91508,7 +91509,9 @@ async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config
         core.startGroup(`📝 Processing ${groupDescription}`);
         try {
             const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
-            createdPRs.push(pr);
+            if (pr) {
+                createdPRs.push(pr);
+            }
         }
         catch (error) {
             core.error(`Failed to process ${groupDescription}: ${error}`);
@@ -91643,6 +91646,41 @@ exports.generateCompletedSummary = generateCompletedSummary;
 const core = __importStar(__nccwpck_require__(37484));
 const automerge_1 = __nccwpck_require__(89270);
 /**
+ * Builds a normalised list of configuration rows from the current settings
+ */
+function getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+    const rows = [
+        {
+            label: "Mode",
+            value: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)",
+            isNonDefault: groupUpdates,
+        },
+        {
+            label: "Update Strategy",
+            value: updateStrategy,
+            isNonDefault: updateStrategy !== "all",
+        },
+        {
+            label: "Include Filter",
+            value: filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*",
+            isNonDefault: filterConfig.include.length > 0,
+        },
+        {
+            label: "Exclude Filter",
+            value: filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*",
+            isNonDefault: filterConfig.exclude.length > 0,
+        },
+        {
+            label: "Auto-Merge",
+            value: autoMergeConfig.enabled
+                ? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
+                : "Disabled",
+            isNonDefault: autoMergeConfig.enabled,
+        },
+    ];
+    return rows;
+}
+/**
  * Generates markdown content for dry-run summary
  * @param updates Array of extension updates that would be applied
  * @param groupUpdates Whether updates are grouped in a single PR
@@ -91658,27 +91696,13 @@ function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterCon
     markdown += "### Configuration\n\n";
     markdown += "Settings marked with ⚙️ are non-default values.\n\n";
     markdown += "| Setting | Value | Default |\n|---------|-------|----------|\n";
-    // Mode (group-updates)
-    const modeValue = groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)";
-    const modeIndicator = groupUpdates ? "⚙️ " : "";
-    markdown += `| ${modeIndicator}Mode | ${modeValue} | Individual PRs |\n`;
-    // Update Strategy
-    const updateStrategyIndicator = updateStrategy !== "all" ? "⚙️ " : "";
-    markdown += `| ${updateStrategyIndicator}Update Strategy | ${updateStrategy} | all |\n`;
-    // Include Filter
-    const includeValue = filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*";
-    const includeIndicator = filterConfig.include.length > 0 ? "⚙️ " : "";
-    markdown += `| ${includeIndicator}Include Filter | ${includeValue} | *(all)* |\n`;
-    // Exclude Filter
-    const excludeValue = filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*";
-    const excludeIndicator = filterConfig.exclude.length > 0 ? "⚙️ " : "";
-    markdown += `| ${excludeIndicator}Exclude Filter | ${excludeValue} | *(none)* |\n`;
-    // Auto-Merge
-    const autoMergeValue = autoMergeConfig.enabled
-        ? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
-        : "Disabled";
-    const autoMergeIndicator = autoMergeConfig.enabled ? "⚙️ " : "";
-    markdown += `| ${autoMergeIndicator}Auto-Merge | ${autoMergeValue} | Disabled |\n`;
+    const configRows = getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    const defaults = ["Individual PRs", "all", "*(all)*", "*(none)*", "Disabled"];
+    for (let i = 0; i < configRows.length; i++) {
+        const row = configRows[i];
+        const indicator = row.isNonDefault ? "⚙️ " : "";
+        markdown += `| ${indicator}${row.label} | ${row.value} | ${defaults[i]} |\n`;
+    }
     markdown += "\n";
     // Planned actions section
     markdown += "### Planned Actions\n\n";
@@ -91702,54 +91726,22 @@ function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterCon
     return markdown;
 }
 /**
- * Generates configuration table for job summaries
+ * Converts normalised config rows into the GitHub Actions summary table format
  */
-function generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
-    const configTable = [
+function configRowsToTable(rows) {
+    const table = [
         [
             { data: "Setting", header: true },
             { data: "Value", header: true },
         ],
-        [
-            { data: "Mode", header: false },
-            {
-                data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)",
-                header: false,
-            },
-        ],
-        [
-            { data: "Update Strategy", header: false },
-            { data: updateStrategy, header: false },
-        ],
     ];
-    if (filterConfig.include.length > 0) {
-        configTable.push([
-            { data: "Include Filter", header: false },
-            { data: filterConfig.include.join(", "), header: false },
+    for (const row of rows) {
+        table.push([
+            { data: row.label, header: false },
+            { data: row.value, header: false },
         ]);
     }
-    if (filterConfig.exclude.length > 0) {
-        configTable.push([
-            { data: "Exclude Filter", header: false },
-            { data: filterConfig.exclude.join(", "), header: false },
-        ]);
-    }
-    if (autoMergeConfig.enabled) {
-        configTable.push([
-            { data: "Auto-Merge", header: false },
-            {
-                data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
-                header: false,
-            },
-        ]);
-    }
-    else {
-        configTable.push([
-            { data: "Auto-Merge", header: false },
-            { data: "Disabled", header: false },
-        ]);
-    }
-    return configTable;
+    return table;
 }
 /**
  * Generates dry-run job summary for GitHub Actions
@@ -91787,8 +91779,8 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
     core.summary.addBreak();
     // Configuration section
     core.summary.addHeading("Configuration", 3);
-    const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
-    core.summary.addTable(configTable);
+    const configRows = getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+    core.summary.addTable(configRowsToTable(configRows));
     core.summary.addBreak();
     // Updates section
     core.summary.addHeading("Applied Updates", 3);
@@ -91900,10 +91892,12 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.checkForUpdates = checkForUpdates;
+exports.normaliseVersion = normaliseVersion;
 exports.groupUpdatesByType = groupUpdatesByType;
 const core = __importStar(__nccwpck_require__(37484));
 const semver = __importStar(__nccwpck_require__(62088));
 const extensions_1 = __nccwpck_require__(19233);
+const automerge_1 = __nccwpck_require__(89270);
 /**
  * Determines if an update should be applied based on the update strategy
  * @param currentVersion The current version
@@ -92056,22 +92050,14 @@ function groupUpdatesByType(updates) {
         patch: [],
     };
     for (const update of updates) {
-        const current = normaliseVersion(update.currentVersion);
-        const latest = normaliseVersion(update.latestVersion);
-        if (!semver.valid(current) || !semver.valid(latest)) {
-            continue;
-        }
-        const diff = semver.diff(current, latest);
-        if (diff === "major" || diff === "premajor") {
+        const type = (0, automerge_1.getUpdateType)(update.currentVersion, update.latestVersion);
+        if (type === "major") {
             grouped.major.push(update);
         }
-        else if (diff === "minor" || diff === "preminor") {
+        else if (type === "minor") {
             grouped.minor.push(update);
         }
-        else if (diff === "patch" || diff === "prepatch") {
-            grouped.patch.push(update);
-        }
-        else {
+        else if (type === "patch") {
             grouped.patch.push(update);
         }
     }
@@ -92170,26 +92156,18 @@ function validateBranchPrefix(branchPrefix) {
     }
 }
 /**
- * Parses and validates a comma-separated list input
+ * Parses a comma-separated list input into trimmed, non-empty strings
  * @param input The comma-separated input string
- * @param fieldName The name of the field (for error messages)
  * @returns Array of trimmed, non-empty strings
- * @throws ValidationError if the list format is invalid
  */
-function parseCommaSeparatedList(input, fieldName) {
+function parseCommaSeparatedList(input) {
     if (!input || input.trim().length === 0) {
         return [];
     }
-    const items = input
+    return input
         .split(",")
         .map((item) => item.trim())
         .filter((item) => item.length > 0);
-    // Validate no empty items after trimming
-    const originalCount = input.split(",").length;
-    if (items.length !== originalCount && items.length > 0) {
-        throw new errors_1.ValidationError(`Invalid ${fieldName} format: contains empty values after comma separation`, fieldName, input);
-    }
-    return items;
 }
 
 

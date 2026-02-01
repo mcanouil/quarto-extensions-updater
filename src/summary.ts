@@ -3,6 +3,65 @@ import { shouldAutoMerge } from "./automerge";
 import type { ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig, SkippedUpdate } from "./types";
 
 /**
+ * Raw configuration row with label, value, and whether it differs from the default
+ */
+interface ConfigRow {
+	label: string;
+	value: string;
+	isNonDefault: boolean;
+}
+
+/**
+ * Configuration table row data (used by GitHub Actions summary API)
+ */
+interface ConfigTableRow {
+	data: string;
+	header: boolean;
+}
+
+/**
+ * Builds a normalised list of configuration rows from the current settings
+ */
+function getConfigRows(
+	groupUpdates: boolean,
+	updateStrategy: UpdateStrategy,
+	filterConfig: ExtensionFilterConfig,
+	autoMergeConfig: AutoMergeConfig,
+): ConfigRow[] {
+	const rows: ConfigRow[] = [
+		{
+			label: "Mode",
+			value: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)",
+			isNonDefault: groupUpdates,
+		},
+		{
+			label: "Update Strategy",
+			value: updateStrategy,
+			isNonDefault: updateStrategy !== "all",
+		},
+		{
+			label: "Include Filter",
+			value: filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*",
+			isNonDefault: filterConfig.include.length > 0,
+		},
+		{
+			label: "Exclude Filter",
+			value: filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*",
+			isNonDefault: filterConfig.exclude.length > 0,
+		},
+		{
+			label: "Auto-Merge",
+			value: autoMergeConfig.enabled
+				? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
+				: "Disabled",
+			isNonDefault: autoMergeConfig.enabled,
+		},
+	];
+
+	return rows;
+}
+
+/**
  * Generates markdown content for dry-run summary
  * @param updates Array of extension updates that would be applied
  * @param groupUpdates Whether updates are grouped in a single PR
@@ -26,31 +85,14 @@ export function generateDryRunMarkdown(
 	markdown += "Settings marked with ⚙️ are non-default values.\n\n";
 	markdown += "| Setting | Value | Default |\n|---------|-------|----------|\n";
 
-	// Mode (group-updates)
-	const modeValue = groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)";
-	const modeIndicator = groupUpdates ? "⚙️ " : "";
-	markdown += `| ${modeIndicator}Mode | ${modeValue} | Individual PRs |\n`;
+	const configRows = getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+	const defaults = ["Individual PRs", "all", "*(all)*", "*(none)*", "Disabled"];
 
-	// Update Strategy
-	const updateStrategyIndicator = updateStrategy !== "all" ? "⚙️ " : "";
-	markdown += `| ${updateStrategyIndicator}Update Strategy | ${updateStrategy} | all |\n`;
-
-	// Include Filter
-	const includeValue = filterConfig.include.length > 0 ? filterConfig.include.join(", ") : "*(all)*";
-	const includeIndicator = filterConfig.include.length > 0 ? "⚙️ " : "";
-	markdown += `| ${includeIndicator}Include Filter | ${includeValue} | *(all)* |\n`;
-
-	// Exclude Filter
-	const excludeValue = filterConfig.exclude.length > 0 ? filterConfig.exclude.join(", ") : "*(none)*";
-	const excludeIndicator = filterConfig.exclude.length > 0 ? "⚙️ " : "";
-	markdown += `| ${excludeIndicator}Exclude Filter | ${excludeValue} | *(none)* |\n`;
-
-	// Auto-Merge
-	const autoMergeValue = autoMergeConfig.enabled
-		? `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`
-		: "Disabled";
-	const autoMergeIndicator = autoMergeConfig.enabled ? "⚙️ " : "";
-	markdown += `| ${autoMergeIndicator}Auto-Merge | ${autoMergeValue} | Disabled |\n`;
+	for (let i = 0; i < configRows.length; i++) {
+		const row = configRows[i];
+		const indicator = row.isNonDefault ? "⚙️ " : "";
+		markdown += `| ${indicator}${row.label} | ${row.value} | ${defaults[i]} |\n`;
+	}
 
 	markdown += "\n";
 
@@ -81,70 +123,24 @@ export function generateDryRunMarkdown(
 }
 
 /**
- * Configuration table row data
+ * Converts normalised config rows into the GitHub Actions summary table format
  */
-interface ConfigTableRow {
-	data: string;
-	header: boolean;
-}
-
-/**
- * Generates configuration table for job summaries
- */
-function generateConfigTable(
-	groupUpdates: boolean,
-	updateStrategy: UpdateStrategy,
-	filterConfig: ExtensionFilterConfig,
-	autoMergeConfig: AutoMergeConfig,
-): ConfigTableRow[][] {
-	const configTable: ConfigTableRow[][] = [
+function configRowsToTable(rows: ConfigRow[]): ConfigTableRow[][] {
+	const table: ConfigTableRow[][] = [
 		[
 			{ data: "Setting", header: true },
 			{ data: "Value", header: true },
 		],
-		[
-			{ data: "Mode", header: false },
-			{
-				data: groupUpdates ? "Grouped updates (single PR)" : "Individual PRs (one per extension)",
-				header: false,
-			},
-		],
-		[
-			{ data: "Update Strategy", header: false },
-			{ data: updateStrategy, header: false },
-		],
 	];
 
-	if (filterConfig.include.length > 0) {
-		configTable.push([
-			{ data: "Include Filter", header: false },
-			{ data: filterConfig.include.join(", "), header: false },
+	for (const row of rows) {
+		table.push([
+			{ data: row.label, header: false },
+			{ data: row.value, header: false },
 		]);
 	}
 
-	if (filterConfig.exclude.length > 0) {
-		configTable.push([
-			{ data: "Exclude Filter", header: false },
-			{ data: filterConfig.exclude.join(", "), header: false },
-		]);
-	}
-
-	if (autoMergeConfig.enabled) {
-		configTable.push([
-			{ data: "Auto-Merge", header: false },
-			{
-				data: `Enabled (${autoMergeConfig.strategy} updates, ${autoMergeConfig.mergeMethod} method)`,
-				header: false,
-			},
-		]);
-	} else {
-		configTable.push([
-			{ data: "Auto-Merge", header: false },
-			{ data: "Disabled", header: false },
-		]);
-	}
-
-	return configTable;
+	return table;
 }
 
 /**
@@ -203,8 +199,8 @@ export async function generateCompletedSummary(
 
 	// Configuration section
 	core.summary.addHeading("Configuration", 3);
-	const configTable = generateConfigTable(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
-	core.summary.addTable(configTable);
+	const configRows = getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConfig);
+	core.summary.addTable(configRowsToTable(configRows));
 	core.summary.addBreak();
 
 	// Updates section

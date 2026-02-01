@@ -93,6 +93,28 @@ export async function generatePRBody(
 	sections.push("---");
 	sections.push("");
 
+	// Fetch all release notes in parallel
+	const releaseNotesMap = new Map<string, string | null>();
+	const releaseNotesEntries = updates
+		.map((update) => {
+			const parts = update.repositoryName.split("/");
+			if (parts.length !== 2) {
+				core.warning(`Invalid repository name format: ${update.repositoryName}`);
+				return null;
+			}
+			const [owner, repo] = parts;
+			return {
+				key: update.nameWithOwner,
+				promise: fetchReleaseNotes(octokit, owner, repo, update.latestVersion),
+			};
+		})
+		.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+	const releaseNotesResults = await Promise.all(releaseNotesEntries.map((e) => e.promise));
+	for (let i = 0; i < releaseNotesEntries.length; i++) {
+		releaseNotesMap.set(releaseNotesEntries[i].key, releaseNotesResults[i]);
+	}
+
 	for (const update of updates) {
 		if (updates.length > 1) {
 			sections.push(`### ${update.nameWithOwner}`);
@@ -102,13 +124,7 @@ export async function generatePRBody(
 			sections.push("");
 		}
 
-		const parts = update.repositoryName.split("/");
-		if (parts.length !== 2) {
-			core.warning(`Invalid repository name format: ${update.repositoryName}`);
-			continue;
-		}
-		const [owner, repo] = parts;
-		const releaseBody = await fetchReleaseNotes(octokit, owner, repo, update.latestVersion);
+		const releaseBody = releaseNotesMap.get(update.nameWithOwner) ?? null;
 
 		sections.push("<details>");
 		sections.push(`<summary>Release ${update.latestVersion}</summary>`);
@@ -185,16 +201,7 @@ function formatUpdateList(updates: ExtensionUpdate[]): string[] {
  * and add the updates parameter back to the function signature.
  */
 export function generatePRLabels(): string[] {
-	const labels = [...DEFAULT_PR_LABELS];
-
-	// Uncomment to add type-specific labels (and add updates: ExtensionUpdate[] parameter):
-	// const grouped = groupUpdatesByType(updates);
-	// if (grouped.major.length > 0) labels.push("major-update");
-	// if (grouped.minor.length > 0) labels.push("minor-update");
-	// if (grouped.patch.length > 0) labels.push("patch-update");
-	// if (updates.length > 1) labels.push("multiple-updates");
-
-	return labels;
+	return [...DEFAULT_PR_LABELS];
 }
 
 /**
