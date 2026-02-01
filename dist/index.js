@@ -90322,6 +90322,7 @@ function readExtensionManifest(manifestPath) {
             title: typeof data.title === "string" ? data.title : undefined,
             author: typeof data.author === "string" ? data.author : undefined,
             version: typeof data.version === "string" ? data.version : undefined,
+            quartoRequired: typeof data["quarto-required"] === "string" ? data["quarto-required"] : undefined,
             contributes: data.contributes && typeof data.contributes === "object" ? Object.keys(data.contributes).join(", ") : undefined,
             source: typeof data.source === "string" ? data.source : undefined,
             repository: typeof data.source === "string" ? data.source.replace(/@.*$/, "") : undefined,
@@ -90419,6 +90420,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getQuartoVersion = getQuartoVersion;
 exports.applyUpdates = applyUpdates;
 exports.createBranchName = createBranchName;
 exports.createCommitMessage = createCommitMessage;
@@ -90427,23 +90429,38 @@ const core = __importStar(__nccwpck_require__(37484));
 const fs = __importStar(__nccwpck_require__(79896));
 const path = __importStar(__nccwpck_require__(16928));
 const child_process_1 = __nccwpck_require__(35317);
+const semver = __importStar(__nccwpck_require__(62088));
 const extensions_1 = __nccwpck_require__(19233);
 /**
- * Checks if Quarto CLI is available
- * @returns True if Quarto CLI is available, false otherwise
+ * Gets the installed Quarto CLI version
+ * @returns The Quarto version string or null if unavailable
  */
-function isQuartoAvailable() {
+function getQuartoVersion() {
     try {
-        (0, child_process_1.execSync)("quarto --version", {
+        const output = (0, child_process_1.execSync)("quarto --version", {
             stdio: "pipe",
             encoding: "utf-8",
         });
-        return true;
+        return output.trim();
     }
     catch (error) {
         core.error(`Quarto CLI is not available: ${error}`);
-        return false;
+        return null;
     }
+}
+/**
+ * Checks whether the installed Quarto version satisfies a required version
+ * @param quartoVersion The installed Quarto version
+ * @param requiredVersion The minimum required Quarto version from extension manifest
+ * @returns True if the installed version satisfies the requirement
+ */
+function satisfiesQuartoRequirement(quartoVersion, requiredVersion) {
+    const installed = semver.coerce(quartoVersion);
+    const required = semver.coerce(requiredVersion);
+    if (!installed || !required) {
+        return true;
+    }
+    return semver.gte(installed, required);
 }
 /**
  * Recursively gets all files in a directory
@@ -90470,19 +90487,23 @@ function getAllFilesInDirectory(dirPath) {
 /**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
- * @returns Array of file paths that were modified
+ * @returns Result containing modified files and any skipped updates
  */
 function applyUpdates(updates) {
-    // Check if Quarto CLI is available
-    if (!isQuartoAvailable()) {
+    const quartoVersion = getQuartoVersion();
+    if (!quartoVersion) {
         const errorMessage = "Quarto CLI is not available. Please install Quarto before running this action.\n" +
             "In GitHub Actions, add this step before using quarto-extensions-updater:\n" +
             "  - name: Setup Quarto\n" +
-            "    uses: quarto-dev/quarto-actions/setup@v2";
+            "    uses: quarto-dev/quarto-actions/setup@v2\n" +
+            "    with:\n" +
+            '      version: "release"';
         core.error(errorMessage);
         throw new Error("Quarto CLI is not available");
     }
+    core.info(`Installed Quarto version: ${quartoVersion}`);
     const modifiedFiles = [];
+    const skippedUpdates = [];
     for (const update of updates) {
         try {
             const source = `${update.repositoryName}@${update.latestVersion}`;
@@ -90492,6 +90513,17 @@ function applyUpdates(updates) {
                 encoding: "utf-8",
             });
             core.info(`Successfully updated ${update.nameWithOwner} to ${update.latestVersion}`);
+            // Check quarto-required in the updated manifest
+            const updatedManifest = (0, extensions_1.readExtensionManifest)(update.manifestPath);
+            if (updatedManifest?.quartoRequired) {
+                if (!satisfiesQuartoRequirement(quartoVersion, updatedManifest.quartoRequired)) {
+                    const reason = `Extension requires Quarto >= ${updatedManifest.quartoRequired} ` +
+                        `but installed version is ${quartoVersion}`;
+                    core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
+                    skippedUpdates.push({ update, reason });
+                    continue;
+                }
+            }
             (0, extensions_1.updateManifestSource)(update.manifestPath, source);
             const extensionDir = path.dirname(update.manifestPath);
             const extensionFiles = getAllFilesInDirectory(extensionDir);
@@ -90499,11 +90531,12 @@ function applyUpdates(updates) {
             core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
         }
         catch (error) {
-            core.error(`Failed to update ${update.nameWithOwner}: ${error}`);
-            throw error;
+            const reason = `Failed to update: ${error instanceof Error ? error.message : String(error)}`;
+            core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
+            skippedUpdates.push({ update, reason });
         }
     }
-    return modifiedFiles;
+    return { modifiedFiles, skippedUpdates };
 }
 /**
  * Creates a branch name for the update PR
@@ -91026,12 +91059,19 @@ async function run() {
             autoMergeConfig: config.autoMergeConfig,
             assignmentConfig: config.assignmentConfig,
         });
+        // Collect skipped updates from all PR results
+        const allSkippedUpdates = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
+        // Filter out PRs with no actual changes (number === 0)
+        const actualPRs = createdPRs.filter((pr) => pr.number > 0);
         // Set outputs and generate summary
-        if (createdPRs.length > 0) {
-            setPROutputs(createdPRs);
+        if (actualPRs.length > 0) {
+            setPROutputs(actualPRs);
             core.startGroup("📋 Generating Job Summary");
-            await (0, summary_1.generateCompletedSummary)(updates, createdPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig);
+            await (0, summary_1.generateCompletedSummary)(updates, actualPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, allSkippedUpdates);
             core.endGroup();
+        }
+        if (allSkippedUpdates.length > 0) {
+            core.warning(`${allSkippedUpdates.length} extension(s) were skipped during update. ` + "Check the job summary for details.");
         }
         core.info("🎉 Successfully completed!");
     }
@@ -91139,7 +91179,7 @@ function generatePRTitle(updates, prefix = "chore(deps):") {
  * @param octokit GitHub API client
  * @returns PR body in markdown format
  */
-async function generatePRBody(updates, octokit) {
+async function generatePRBody(updates, octokit, skippedUpdates = []) {
     const sections = [];
     sections.push("Updates the following Quarto extension(s):");
     sections.push("");
@@ -91203,6 +91243,16 @@ async function generatePRBody(updates, octokit) {
             sections.push("");
         }
         sections.push(`**Links**: [Repository](${update.url}) · [Release](${update.releaseUrl})`);
+        sections.push("");
+    }
+    if (skippedUpdates.length > 0) {
+        sections.push("## ⏭️ Skipped Extensions");
+        sections.push("");
+        sections.push("The following extension(s) were skipped during this update:");
+        sections.push("");
+        for (const skipped of skippedUpdates) {
+            sections.push(`- **${skipped.update.nameWithOwner}** (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`);
+        }
         sections.push("");
     }
     sections.push("---");
@@ -91377,7 +91427,18 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
         return { number: existingPR.prNumber, url: existingPR.prUrl };
     }
     // Apply updates and validate
-    const modifiedFiles = (0, git_1.applyUpdates)(updateGroup);
+    const { modifiedFiles, skippedUpdates } = (0, git_1.applyUpdates)(updateGroup);
+    if (skippedUpdates.length > 0) {
+        core.warning(`Skipped ${skippedUpdates.length} extension(s) during update`);
+        for (const skipped of skippedUpdates) {
+            core.warning(`  - ${skipped.update.nameWithOwner}: ${skipped.reason}`);
+        }
+    }
+    if (modifiedFiles.length === 0) {
+        const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+        core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
+        return { number: 0, url: "", skippedUpdates };
+    }
     if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
         const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
         throw new Error(`Failed to validate modified files for ${errorDesc}`);
@@ -91396,12 +91457,12 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     const commitSha = await (0, github_1.createCommit)(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
     core.info(`✅ Created commit: ${commitSha}`);
     // Create or update PR
-    const prBody = await (0, pr_1.generatePRBody)(updateGroup, octokit);
+    const prBody = await (0, pr_1.generatePRBody)(updateGroup, octokit, skippedUpdates);
     try {
         const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, config.baseBranch, prTitle, prBody, config.prLabels, config.assignmentConfig);
         // Handle auto-merge
         await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
-        return pr;
+        return { ...pr, skippedUpdates };
     }
     catch (error) {
         const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
@@ -91694,7 +91755,7 @@ async function generateDryRunSummary(updates, groupUpdates, updateStrategy, filt
  * @param filterConfig Extension filtering configuration
  * @param autoMergeConfig Auto-merge configuration
  */
-async function generateCompletedSummary(updates, createdPRs, groupUpdates, updateStrategy, filterConfig, autoMergeConfig) {
+async function generateCompletedSummary(updates, createdPRs, groupUpdates, updateStrategy, filterConfig, autoMergeConfig, skippedUpdates = []) {
     core.summary.addHeading("Extension Updates Summary", 2);
     core.summary.addRaw(`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`, true);
     core.summary.addBreak();
@@ -91743,6 +91804,28 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
     }
     core.summary.addTable(updatesTable);
     core.summary.addBreak();
+    if (skippedUpdates.length > 0) {
+        core.summary.addHeading("Skipped Extensions", 3);
+        core.summary.addRaw("The following extension(s) were skipped during this update:", true);
+        const skippedTable = [
+            [
+                { data: "Extension", header: true },
+                { data: "Current", header: true },
+                { data: "Latest", header: true },
+                { data: "Reason", header: true },
+            ],
+        ];
+        for (const skipped of skippedUpdates) {
+            skippedTable.push([
+                { data: skipped.update.nameWithOwner, header: false },
+                { data: skipped.update.currentVersion, header: false },
+                { data: skipped.update.latestVersion, header: false },
+                { data: skipped.reason, header: false },
+            ]);
+        }
+        core.summary.addTable(skippedTable);
+        core.summary.addBreak();
+    }
     await core.summary.write();
 }
 
@@ -103617,13 +103700,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -103742,13 +103835,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Header = void 0;
 const node_path_1 = __nccwpck_require__(76760);
@@ -104063,13 +104166,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.u = exports.types = exports.r = exports.t = exports.x = exports.c = void 0;
 __exportStar(__nccwpck_require__(84146), exports);
@@ -104227,13 +104340,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -104669,7 +104792,11 @@ const MAX = 10000;
 const cache = new Set();
 const normalizeUnicode = (s) => {
     if (!cache.has(s)) {
-        normalizeCache[s] = s.normalize('NFD');
+        // shake out identical accents and ligatures
+        normalizeCache[s] = s
+            .normalize('NFD')
+            .toLocaleLowerCase('en')
+            .toLocaleUpperCase('en');
     }
     else {
         cache.delete(s);
@@ -104814,13 +104941,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -104872,6 +105009,7 @@ const ONDRAIN = Symbol('ondrain');
 const path_1 = __importDefault(__nccwpck_require__(16928));
 const normalize_windows_path_js_1 = __nccwpck_require__(7867);
 class Pack extends minipass_1.Minipass {
+    sync = false;
     opt;
     cwd;
     maxReadSize;
@@ -105059,6 +105197,17 @@ class Pack extends minipass_1.Minipass {
         // now we have the stat, we can filter it.
         if (!this.filter(job.path, stat)) {
             job.ignore = true;
+        }
+        else if (stat.isFile() &&
+            stat.nlink > 1 &&
+            job === this[CURRENT] &&
+            !this.linkCache.get(`${stat.dev}:${stat.ino}`) &&
+            !this.sync) {
+            // if it's not filtered, and it's a new File entry,
+            // jump the queue in case any pending Link entries are about
+            // to try to link to it. This prevents a hardlink from coming ahead
+            // of its target in the archive.
+            this[PROCESSJOB](job);
         }
         this[PROCESS]();
     }
@@ -105963,7 +106112,7 @@ class PathReservations {
                 ['win32 parallelization disabled']
                 : paths.map(p => {
                     // don't need normPath, because we skip this entirely for windows
-                    return (0, strip_trailing_slashes_js_1.stripTrailingSlashes)((0, node_path_1.join)((0, normalize_unicode_js_1.normalizeUnicode)(p))).toLowerCase();
+                    return (0, strip_trailing_slashes_js_1.stripTrailingSlashes)((0, node_path_1.join)((0, normalize_unicode_js_1.normalizeUnicode)(p)));
                 });
         const dirs = new Set(paths.map(path => getDirs(path)).reduce((a, b) => a.concat(b)));
         this.#reservations.set(fn, { dirs, paths });
@@ -106811,13 +106960,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -106847,6 +107006,7 @@ const SYMLINK = Symbol('symlink');
 const HARDLINK = Symbol('hardlink');
 const UNSUPPORTED = Symbol('unsupported');
 const CHECKPATH = Symbol('checkPath');
+const STRIPABSOLUTEPATH = Symbol('stripAbsolutePath');
 const MKDIR = Symbol('mkdir');
 const ONERROR = Symbol('onError');
 const PENDING = Symbol('pending');
@@ -107030,6 +107190,57 @@ class Unpack extends parse_js_1.Parser {
             this.emit('end');
         }
     }
+    // return false if we need to skip this file
+    // return true if the field was successfully sanitized
+    [STRIPABSOLUTEPATH](entry, field) {
+        const p = entry[field];
+        const { type } = entry;
+        if (!p || this.preservePaths)
+            return true;
+        const parts = p.split('/');
+        if (parts.includes('..') ||
+            /* c8 ignore next */
+            (isWindows && /^[a-z]:\.\.$/i.test(parts[0] ?? ''))) {
+            // For linkpath, check if the resolved path escapes cwd rather than
+            // just rejecting any path with '..' - relative symlinks like
+            // '../sibling/file' are valid if they resolve within the cwd.
+            // For paths, they just simply may not ever use .. at all.
+            if (field === 'path' || type === 'Link') {
+                this.warn('TAR_ENTRY_ERROR', `${field} contains '..'`, {
+                    entry,
+                    [field]: p,
+                });
+                // not ok!
+                return false;
+            }
+            else {
+                // Resolve linkpath relative to the entry's directory.
+                // `path.posix` is safe to use because we're operating on
+                // tar paths, not a filesystem.
+                const entryDir = node_path_1.default.posix.dirname(entry.path);
+                const resolved = node_path_1.default.posix.normalize(node_path_1.default.posix.join(entryDir, p));
+                // If the resolved path escapes (starts with ..), reject it
+                if (resolved.startsWith('../') || resolved === '..') {
+                    this.warn('TAR_ENTRY_ERROR', `${field} escapes extraction directory`, {
+                        entry,
+                        [field]: p,
+                    });
+                    return false;
+                }
+            }
+        }
+        // strip off the root
+        const [root, stripped] = (0, strip_absolute_path_js_1.stripAbsolutePath)(p);
+        if (root) {
+            // ok, but triggers warning about stripping root
+            entry[field] = String(stripped);
+            this.warn('TAR_ENTRY_INFO', `stripping ${root} from absolute ${field}`, {
+                entry,
+                [field]: p,
+            });
+        }
+        return true;
+    }
     [CHECKPATH](entry) {
         const p = (0, normalize_windows_path_js_1.normalizeWindowsPath)(entry.path);
         const parts = p.split('/');
@@ -107058,25 +107269,9 @@ class Unpack extends parse_js_1.Parser {
             });
             return false;
         }
-        if (!this.preservePaths) {
-            if (parts.includes('..') ||
-                /* c8 ignore next */
-                (isWindows && /^[a-z]:\.\.$/i.test(parts[0] ?? ''))) {
-                this.warn('TAR_ENTRY_ERROR', `path contains '..'`, {
-                    entry,
-                    path: p,
-                });
-                return false;
-            }
-            // strip off the root
-            const [root, stripped] = (0, strip_absolute_path_js_1.stripAbsolutePath)(p);
-            if (root) {
-                entry.path = String(stripped);
-                this.warn('TAR_ENTRY_INFO', `stripping ${root} from absolute path`, {
-                    entry,
-                    path: p,
-                });
-            }
+        if (!this[STRIPABSOLUTEPATH](entry, 'path') ||
+            !this[STRIPABSOLUTEPATH](entry, 'linkpath')) {
+            return false;
         }
         if (node_path_1.default.isAbsolute(entry.path)) {
             entry.absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(entry.path));
@@ -107783,13 +107978,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };

@@ -31,9 +31,26 @@ export interface ExtensionData {
 	title?: string;
 	author?: string;
 	version?: string;
+	quartoRequired?: string;
 	contributes?: string;
 	source?: string;
 	repository?: string;
+}
+
+/**
+ * Represents an extension that was skipped during update
+ */
+export interface SkippedUpdate {
+	update: ExtensionUpdate;
+	reason: string;
+}
+
+/**
+ * Result of applying extension updates
+ */
+export interface ApplyUpdatesResult {
+	modifiedFiles: string[];
+	skippedUpdates: SkippedUpdate[];
 }
 
 /**

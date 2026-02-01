@@ -5,7 +5,7 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig } from "./types";
+import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types";
 
 /**
  * Result of processing a PR
@@ -13,6 +13,7 @@ import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig } from "./typ
 export interface PRProcessingResult {
 	number: number;
 	url: string;
+	skippedUpdates?: SkippedUpdate[];
 }
 
 /**
@@ -108,7 +109,20 @@ export async function processPRForUpdateGroup(
 	}
 
 	// Apply updates and validate
-	const modifiedFiles = applyUpdates(updateGroup);
+	const { modifiedFiles, skippedUpdates } = applyUpdates(updateGroup);
+
+	if (skippedUpdates.length > 0) {
+		core.warning(`Skipped ${skippedUpdates.length} extension(s) during update`);
+		for (const skipped of skippedUpdates) {
+			core.warning(`  - ${skipped.update.nameWithOwner}: ${skipped.reason}`);
+		}
+	}
+
+	if (modifiedFiles.length === 0) {
+		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+		core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
+		return { number: 0, url: "", skippedUpdates };
+	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
 		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
@@ -135,7 +149,7 @@ export async function processPRForUpdateGroup(
 	core.info(`✅ Created commit: ${commitSha}`);
 
 	// Create or update PR
-	const prBody = await generatePRBody(updateGroup, octokit);
+	const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates);
 
 	try {
 		const pr = await createOrUpdatePR(
@@ -153,7 +167,7 @@ export async function processPRForUpdateGroup(
 		// Handle auto-merge
 		await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
 
-		return pr;
+		return { ...pr, skippedUpdates };
 	} catch (error) {
 		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 		core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);

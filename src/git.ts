@@ -2,24 +2,42 @@ import * as core from "@actions/core";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import type { ExtensionUpdate } from "./types";
-import { updateManifestSource } from "./extensions";
+import * as semver from "semver";
+import type { ExtensionUpdate, ApplyUpdatesResult } from "./types";
+import { updateManifestSource, readExtensionManifest } from "./extensions";
 
 /**
- * Checks if Quarto CLI is available
- * @returns True if Quarto CLI is available, false otherwise
+ * Gets the installed Quarto CLI version
+ * @returns The Quarto version string or null if unavailable
  */
-function isQuartoAvailable(): boolean {
+export function getQuartoVersion(): string | null {
 	try {
-		execSync("quarto --version", {
+		const output = execSync("quarto --version", {
 			stdio: "pipe",
 			encoding: "utf-8",
 		});
-		return true;
+		return output.trim();
 	} catch (error) {
 		core.error(`Quarto CLI is not available: ${error}`);
-		return false;
+		return null;
 	}
+}
+
+/**
+ * Checks whether the installed Quarto version satisfies a required version
+ * @param quartoVersion The installed Quarto version
+ * @param requiredVersion The minimum required Quarto version from extension manifest
+ * @returns True if the installed version satisfies the requirement
+ */
+function satisfiesQuartoRequirement(quartoVersion: string, requiredVersion: string): boolean {
+	const installed = semver.coerce(quartoVersion);
+	const required = semver.coerce(requiredVersion);
+
+	if (!installed || !required) {
+		return true;
+	}
+
+	return semver.gte(installed, required);
 }
 
 /**
@@ -52,21 +70,27 @@ function getAllFilesInDirectory(dirPath: string): string[] {
 /**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
- * @returns Array of file paths that were modified
+ * @returns Result containing modified files and any skipped updates
  */
-export function applyUpdates(updates: ExtensionUpdate[]): string[] {
-	// Check if Quarto CLI is available
-	if (!isQuartoAvailable()) {
+export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
+	const quartoVersion = getQuartoVersion();
+
+	if (!quartoVersion) {
 		const errorMessage =
 			"Quarto CLI is not available. Please install Quarto before running this action.\n" +
 			"In GitHub Actions, add this step before using quarto-extensions-updater:\n" +
 			"  - name: Setup Quarto\n" +
-			"    uses: quarto-dev/quarto-actions/setup@v2";
+			"    uses: quarto-dev/quarto-actions/setup@v2\n" +
+			"    with:\n" +
+			'      version: "release"';
 		core.error(errorMessage);
 		throw new Error("Quarto CLI is not available");
 	}
 
+	core.info(`Installed Quarto version: ${quartoVersion}`);
+
 	const modifiedFiles: string[] = [];
+	const skippedUpdates: ApplyUpdatesResult["skippedUpdates"] = [];
 
 	for (const update of updates) {
 		try {
@@ -80,6 +104,19 @@ export function applyUpdates(updates: ExtensionUpdate[]): string[] {
 
 			core.info(`Successfully updated ${update.nameWithOwner} to ${update.latestVersion}`);
 
+			// Check quarto-required in the updated manifest
+			const updatedManifest = readExtensionManifest(update.manifestPath);
+			if (updatedManifest?.quartoRequired) {
+				if (!satisfiesQuartoRequirement(quartoVersion, updatedManifest.quartoRequired)) {
+					const reason =
+						`Extension requires Quarto >= ${updatedManifest.quartoRequired} ` +
+						`but installed version is ${quartoVersion}`;
+					core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
+					skippedUpdates.push({ update, reason });
+					continue;
+				}
+			}
+
 			updateManifestSource(update.manifestPath, source);
 
 			const extensionDir = path.dirname(update.manifestPath);
@@ -88,12 +125,13 @@ export function applyUpdates(updates: ExtensionUpdate[]): string[] {
 
 			core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
 		} catch (error) {
-			core.error(`Failed to update ${update.nameWithOwner}: ${error}`);
-			throw error;
+			const reason = `Failed to update: ${error instanceof Error ? error.message : String(error)}`;
+			core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
+			skippedUpdates.push({ update, reason });
 		}
 	}
 
-	return modifiedFiles;
+	return { modifiedFiles, skippedUpdates };
 }
 
 /**

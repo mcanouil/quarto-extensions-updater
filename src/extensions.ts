@@ -14,6 +14,7 @@ interface ExtensionManifestYAML {
 	title?: string;
 	author?: string;
 	version?: string;
+	"quarto-required"?: string;
 	contributes?: Record<string, unknown>;
 	source?: string;
 	repository?: string;
@@ -85,6 +86,7 @@ export function readExtensionManifest(manifestPath: string): ExtensionData | nul
 			title: typeof data.title === "string" ? data.title : undefined,
 			author: typeof data.author === "string" ? data.author : undefined,
 			version: typeof data.version === "string" ? data.version : undefined,
+			quartoRequired: typeof data["quarto-required"] === "string" ? data["quarto-required"] : undefined,
 			contributes:
 				data.contributes && typeof data.contributes === "object" ? Object.keys(data.contributes).join(", ") : undefined,
 			source: typeof data.source === "string" ? data.source : undefined,

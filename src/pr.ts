@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import type { OctokitClient } from "./github";
-import type { ExtensionUpdate } from "./types";
+import type { ExtensionUpdate, SkippedUpdate } from "./types";
 import { groupUpdatesByType } from "./updates";
 import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants";
 
@@ -57,7 +57,11 @@ export function generatePRTitle(updates: ExtensionUpdate[], prefix = "chore(deps
  * @param octokit GitHub API client
  * @returns PR body in markdown format
  */
-export async function generatePRBody(updates: ExtensionUpdate[], octokit: OctokitClient): Promise<string> {
+export async function generatePRBody(
+	updates: ExtensionUpdate[],
+	octokit: OctokitClient,
+	skippedUpdates: SkippedUpdate[] = [],
+): Promise<string> {
 	const sections: string[] = [];
 
 	sections.push("Updates the following Quarto extension(s):");
@@ -132,6 +136,19 @@ export async function generatePRBody(updates: ExtensionUpdate[], octokit: Octoki
 		}
 
 		sections.push(`**Links**: [Repository](${update.url}) · [Release](${update.releaseUrl})`);
+		sections.push("");
+	}
+
+	if (skippedUpdates.length > 0) {
+		sections.push("## ⏭️ Skipped Extensions");
+		sections.push("");
+		sections.push("The following extension(s) were skipped during this update:");
+		sections.push("");
+		for (const skipped of skippedUpdates) {
+			sections.push(
+				`- **${skipped.update.nameWithOwner}** (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
+			);
+		}
 		sections.push("");
 	}
 

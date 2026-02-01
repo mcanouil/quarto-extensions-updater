@@ -8,7 +8,7 @@ import { parseInputs } from "./config";
 import { generateDryRunSummary, generateCompletedSummary } from "./summary";
 import { processAllPRs } from "./prProcessor";
 import { createIssueForUpdates } from "./github";
-import type { ExtensionUpdate } from "./types";
+import type { ExtensionUpdate, SkippedUpdate } from "./types";
 
 /**
  * Validates that the workspace path exists
@@ -155,20 +155,33 @@ async function run(): Promise<void> {
 			assignmentConfig: config.assignmentConfig,
 		});
 
+		// Collect skipped updates from all PR results
+		const allSkippedUpdates: SkippedUpdate[] = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
+
+		// Filter out PRs with no actual changes (number === 0)
+		const actualPRs = createdPRs.filter((pr) => pr.number > 0);
+
 		// Set outputs and generate summary
-		if (createdPRs.length > 0) {
-			setPROutputs(createdPRs);
+		if (actualPRs.length > 0) {
+			setPROutputs(actualPRs);
 
 			core.startGroup("📋 Generating Job Summary");
 			await generateCompletedSummary(
 				updates,
-				createdPRs,
+				actualPRs,
 				config.groupUpdates,
 				config.updateStrategy,
 				config.filterConfig,
 				config.autoMergeConfig,
+				allSkippedUpdates,
 			);
 			core.endGroup();
+		}
+
+		if (allSkippedUpdates.length > 0) {
+			core.warning(
+				`${allSkippedUpdates.length} extension(s) were skipped during update. ` + "Check the job summary for details.",
+			);
 		}
 
 		core.info("🎉 Successfully completed!");

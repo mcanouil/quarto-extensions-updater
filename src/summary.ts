@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig } from "./types";
+import type { ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig, SkippedUpdate } from "./types";
 
 /**
  * Generates markdown content for dry-run summary
@@ -195,6 +195,7 @@ export async function generateCompletedSummary(
 	updateStrategy: UpdateStrategy,
 	filterConfig: ExtensionFilterConfig,
 	autoMergeConfig: AutoMergeConfig,
+	skippedUpdates: SkippedUpdate[] = [],
 ): Promise<void> {
 	core.summary.addHeading("Extension Updates Summary", 2);
 	core.summary.addRaw(`Successfully created/updated ${createdPRs.length} PR${createdPRs.length > 1 ? "s" : ""}`, true);
@@ -250,6 +251,32 @@ export async function generateCompletedSummary(
 
 	core.summary.addTable(updatesTable);
 	core.summary.addBreak();
+
+	if (skippedUpdates.length > 0) {
+		core.summary.addHeading("Skipped Extensions", 3);
+		core.summary.addRaw("The following extension(s) were skipped during this update:", true);
+
+		const skippedTable = [
+			[
+				{ data: "Extension", header: true },
+				{ data: "Current", header: true },
+				{ data: "Latest", header: true },
+				{ data: "Reason", header: true },
+			],
+		];
+
+		for (const skipped of skippedUpdates) {
+			skippedTable.push([
+				{ data: skipped.update.nameWithOwner, header: false },
+				{ data: skipped.update.currentVersion, header: false },
+				{ data: skipped.update.latestVersion, header: false },
+				{ data: skipped.reason, header: false },
+			]);
+		}
+
+		core.summary.addTable(skippedTable);
+		core.summary.addBreak();
+	}
 
 	await core.summary.write();
 }
