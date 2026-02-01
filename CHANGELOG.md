@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (2026-02-01)
 
 - refactor: use `quarto-wizard-core` (#39).
 - fix: update copyright year from 2025 to 2026 in LICENSE.

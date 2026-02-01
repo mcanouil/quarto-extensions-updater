@@ -51,7 +51,7 @@ jobs:
         with:
           version: "release"
 
-      - uses: mcanouil/quarto-extensions-updater@v1
+      - uses: mcanouil/quarto-extensions-updater@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -59,7 +59,7 @@ jobs:
 ### Advanced Configuration
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     workspace-path: "."
@@ -274,7 +274,7 @@ jobs:
         with:
           version: "release"
 
-      - uses: mcanouil/quarto-extensions-updater@v1
+      - uses: mcanouil/quarto-extensions-updater@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-merge: true
@@ -285,7 +285,7 @@ jobs:
 ### Example: Auto-Merge Minor and Patch Updates
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     auto-merge: true
@@ -306,7 +306,7 @@ However, you can group all updates into a single PR if you prefer fewer PRs.
 ### Enable Grouped Updates
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     group-updates: true
@@ -334,7 +334,7 @@ Control which types of updates are applied based on semantic versioning.
 **Only apply safe patch updates:**
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     update-strategy: "patch"
@@ -343,7 +343,7 @@ Control which types of updates are applied based on semantic versioning.
 **Avoid breaking changes (no major updates):**
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     update-strategy: "minor"
@@ -354,7 +354,7 @@ Control which types of updates are applied based on semantic versioning.
 Update strategy works independently from auto-merge strategy:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     update-strategy: "minor" # Only check for minor and patch updates
@@ -377,7 +377,7 @@ You can control which extensions are updated using include and exclude lists.
 To update only certain extensions, use the `include-extensions` input:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     include-extensions: "mcanouil/iconify,quarto-ext/lightbox"
@@ -391,7 +391,7 @@ All other extensions will be ignored.
 To exclude certain extensions from updates (_e.g._, to pin a specific version), use the `exclude-extensions` input:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     exclude-extensions: "quarto-ext/fancy-text,owner/unstable-extension"
@@ -405,7 +405,7 @@ You can combine both filters.
 If an extension appears in both lists, the exclude filter takes precedence:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     include-extensions: "mcanouil/iconify,quarto-ext/lightbox,quarto-ext/fancy-text"
@@ -421,7 +421,7 @@ Test your configuration and see what updates would be applied without actually c
 ### Enable Dry-Run Mode
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     dry-run: true
@@ -443,7 +443,7 @@ When `dry-run` is enabled:
 Optionally create a GitHub issue with the update summary when running in dry-run mode:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     dry-run: true
@@ -480,7 +480,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
 ### Request Individual Reviewers
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     pr-reviewers: "user1,user2"
@@ -489,7 +489,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
 ### Request Team Reviewers
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     pr-team-reviewers: "frontend-team,backend-team"
@@ -498,7 +498,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
 ### Assign PRs and Request Reviewers
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     pr-reviewers: "team-lead"
@@ -508,7 +508,7 @@ Configure automatic reviewer requests and assignees for created pull requests to
 ### Combined Team Workflow
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     pr-reviewers: "user1,user2"
@@ -537,7 +537,7 @@ In this configuration:
 ### Test Configuration with Dry-Run
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     update-strategy: "minor"
@@ -550,7 +550,7 @@ In this configuration:
 ```yaml
 - name: Check for updates
   id: check
-  uses: mcanouil/quarto-extensions-updater@v1
+  uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     create-pr: false
@@ -564,7 +564,7 @@ In this configuration:
 ### Custom Registry
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     registry-url: "https://example.com/custom-registry.json"
@@ -593,7 +593,7 @@ on:
 Use conventional commits style with custom labels:
 
 ```yaml
-- uses: mcanouil/quarto-extensions-updater@v1
+- uses: mcanouil/quarto-extensions-updater@v2
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     branch-prefix: "deps/quarto"
