@@ -102,6 +102,7 @@ jobs:
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "New version: ${NEW_VERSION}"
+          echo "current_version=${CURRENT_VERSION}" >> "${GITHUB_OUTPUT}"
           echo "version=${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
           echo "bump_type=${BUMP_TYPE}" >> "${GITHUB_OUTPUT}"
 
@@ -109,6 +110,7 @@ jobs:
         id: update-version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_VERSION: ${{ steps.version.outputs.current_version }}
           NEW_VERSION: ${{ steps.version.outputs.version }}
         run: |
           if git show-ref --quiet refs/heads/${BRANCH}; then
@@ -135,7 +137,15 @@ jobs:
           # Update CHANGELOG.md: replace "Unreleased" with version and date
           sed -i "s/^## Unreleased$/## ${NEW_VERSION} (${DATE})/" CHANGELOG.md
 
-          git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/
+          # Update example version references on major bump
+          if [ "${BUMP_TYPE}" = "major" ]; then
+            OLD_MAJOR=$(echo ${CURRENT_VERSION} | cut -d. -f1)
+            NEW_MAJOR=$(echo ${NEW_VERSION} | cut -d. -f1)
+            sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" README.md
+            sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" .github/DISCUSSION_TEMPLATE/q-a.yml
+          fi
+
+          git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/ README.md .github/DISCUSSION_TEMPLATE/q-a.yml
           git commit -m "${COMMIT}" || echo "No changes to commit"
           git push --force origin ${BRANCH} || echo "No changes to push"
 
@@ -209,4 +219,5 @@ jobs:
           - Updated \`CHANGELOG.md\` to reflect version ${NEW_VERSION}
           - Created GitHub release: [v${NEW_VERSION}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${NEW_VERSION})
           - Updated major version tag: v${MAJOR_VERSION}
+          - Updated example version references in \`README.md\` and \`.github/DISCUSSION_TEMPLATE/q-a.yml\` (major bump only)
           EOF
