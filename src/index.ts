@@ -161,13 +161,17 @@ async function run(): Promise<void> {
 		// Filter out PRs with no actual changes (number === 0)
 		const actualPRs = createdPRs.filter((pr) => pr.number > 0);
 
+		// Filter updates to only those that were successfully applied
+		const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
+		const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
+
 		// Set outputs and generate summary
 		if (actualPRs.length > 0) {
 			setPROutputs(actualPRs);
 
 			core.startGroup("📋 Generating Job Summary");
 			await generateCompletedSummary(
-				updates,
+				appliedUpdates,
 				actualPRs,
 				config.groupUpdates,
 				config.updateStrategy,
