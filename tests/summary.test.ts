@@ -217,7 +217,7 @@ describe("generateCompletedSummary", () => {
 
 	it("should generate summary for single PR", async () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
-		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123" }];
+		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] }];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
 		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
@@ -235,8 +235,8 @@ describe("generateCompletedSummary", () => {
 			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
 		];
 		const createdPRs = [
-			{ number: 123, url: "https://github.com/owner/repo/pull/123" },
-			{ number: 124, url: "https://github.com/owner/repo/pull/124" },
+			{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] },
+			{ number: 124, url: "https://github.com/owner/repo/pull/124", extensions: ["owner/ext2"] },
 		];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
@@ -252,7 +252,9 @@ describe("generateCompletedSummary", () => {
 			createUpdate("owner/ext1", "1.0.0", "1.1.0"),
 			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
 		];
-		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123" }];
+		const createdPRs = [
+			{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1", "owner/ext2"] },
+		];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
 		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
@@ -277,8 +279,8 @@ describe("generateCompletedSummary", () => {
 			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
 		];
 		const createdPRs = [
-			{ number: 123, url: "https://github.com/owner/repo/pull/123" },
-			{ number: 124, url: "https://github.com/owner/repo/pull/124" },
+			{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] },
+			{ number: 124, url: "https://github.com/owner/repo/pull/124", extensions: ["owner/ext2"] },
 		];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
@@ -304,7 +306,7 @@ describe("generateCompletedSummary", () => {
 			createUpdate("owner/ext1", "1.0.0", "1.1.0"),
 			createUpdate("owner/ext2", "2.0.0", "2.1.0"),
 		];
-		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123" }];
+		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] }];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
 		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
@@ -327,8 +329,8 @@ describe("generateCompletedSummary", () => {
 			createUpdate("owner/ext2", "1.0.0", "2.0.0"),
 		];
 		const createdPRs = [
-			{ number: 123, url: "https://github.com/owner/repo/pull/123" },
-			{ number: 124, url: "https://github.com/owner/repo/pull/124" },
+			{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] },
+			{ number: 124, url: "https://github.com/owner/repo/pull/124", extensions: ["owner/ext2"] },
 		];
 
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
@@ -349,7 +351,7 @@ describe("generateCompletedSummary", () => {
 
 	it("should include filter configuration", async () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
-		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123" }];
+		const createdPRs = [{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["owner/ext1"] }];
 
 		const filterConfig: ExtensionFilterConfig = {
 			include: ["owner/ext1"],

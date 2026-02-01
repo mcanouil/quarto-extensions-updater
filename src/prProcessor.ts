@@ -13,6 +13,7 @@ import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdat
 export interface PRProcessingResult {
 	number: number;
 	url: string;
+	extensions: string[];
 	skippedUpdates?: SkippedUpdate[];
 }
 
@@ -105,7 +106,7 @@ export async function processPRForUpdateGroup(
 			core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
 		}
 		core.info(`   URL: ${existingPR.prUrl}`);
-		return { number: existingPR.prNumber, url: existingPR.prUrl };
+		return { number: existingPR.prNumber, url: existingPR.prUrl, extensions: updateGroup.map((u) => u.nameWithOwner) };
 	}
 
 	// Apply updates and validate
@@ -121,7 +122,7 @@ export async function processPRForUpdateGroup(
 	if (modifiedFiles.length === 0) {
 		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 		core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
-		return { number: 0, url: "", skippedUpdates };
+		return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
 	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
@@ -167,7 +168,7 @@ export async function processPRForUpdateGroup(
 		// Handle auto-merge
 		await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
 
-		return { ...pr, skippedUpdates };
+		return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
 	} catch (error) {
 		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 		core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);

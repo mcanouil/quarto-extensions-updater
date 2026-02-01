@@ -190,7 +190,7 @@ export async function generateDryRunSummary(
  */
 export async function generateCompletedSummary(
 	updates: ExtensionUpdate[],
-	createdPRs: { number: number; url: string }[],
+	createdPRs: { number: number; url: string; extensions: string[] }[],
 	groupUpdates: boolean,
 	updateStrategy: UpdateStrategy,
 	filterConfig: ExtensionFilterConfig,
@@ -219,9 +219,11 @@ export async function generateCompletedSummary(
 			updateToPR.set(update.nameWithOwner, pr);
 		}
 	} else {
-		// Match individual updates to their PRs (assumes same order)
-		for (let i = 0; i < Math.min(updates.length, createdPRs.length); i++) {
-			updateToPR.set(updates[i].nameWithOwner, createdPRs[i]);
+		// Match individual updates to their PRs by extension name
+		for (const pr of createdPRs) {
+			for (const ext of pr.extensions) {
+				updateToPR.set(ext, pr);
+			}
 		}
 	}
 

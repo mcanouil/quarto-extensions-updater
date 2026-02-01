@@ -90485,6 +90485,26 @@ function getAllFilesInDirectory(dirPath) {
     return files;
 }
 /**
+ * Extracts a meaningful error message from an execSync failure.
+ * Checks stderr, then stdout, then falls back to the error message.
+ * @param error The caught error from execSync
+ * @returns A descriptive error string
+ */
+function extractExecError(error) {
+    if (error instanceof Error && "stderr" in error) {
+        const execError = error;
+        const stderr = String(execError.stderr ?? "").trim();
+        if (stderr) {
+            return stderr;
+        }
+        const stdout = String(execError.stdout ?? "").trim();
+        if (stdout) {
+            return stdout;
+        }
+    }
+    return error instanceof Error ? error.message : String(error);
+}
+/**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
  * @returns Result containing modified files and any skipped updates
@@ -90508,10 +90528,13 @@ function applyUpdates(updates) {
         try {
             const source = `${update.repositoryName}@${update.latestVersion}`;
             core.info(`Running: quarto add ${source} --no-prompt`);
-            (0, child_process_1.execSync)(`quarto add ${source} --no-prompt`, {
-                stdio: "inherit",
+            const output = (0, child_process_1.execSync)(`quarto add ${source} --no-prompt`, {
+                stdio: "pipe",
                 encoding: "utf-8",
             });
+            if (output) {
+                core.info(output.trim());
+            }
             core.info(`Successfully updated ${update.nameWithOwner} to ${update.latestVersion}`);
             // Check quarto-required in the updated manifest
             const updatedManifest = (0, extensions_1.readExtensionManifest)(update.manifestPath);
@@ -90531,7 +90554,7 @@ function applyUpdates(updates) {
             core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
         }
         catch (error) {
-            const reason = `Failed to update: ${error instanceof Error ? error.message : String(error)}`;
+            const reason = `Failed to update: ${extractExecError(error)}`;
             core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
             skippedUpdates.push({ update, reason });
         }
@@ -91063,11 +91086,14 @@ async function run() {
         const allSkippedUpdates = createdPRs.flatMap((pr) => pr.skippedUpdates ?? []);
         // Filter out PRs with no actual changes (number === 0)
         const actualPRs = createdPRs.filter((pr) => pr.number > 0);
+        // Filter updates to only those that were successfully applied
+        const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
+        const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
         // Set outputs and generate summary
         if (actualPRs.length > 0) {
             setPROutputs(actualPRs);
             core.startGroup("📋 Generating Job Summary");
-            await (0, summary_1.generateCompletedSummary)(updates, actualPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, allSkippedUpdates);
+            await (0, summary_1.generateCompletedSummary)(appliedUpdates, actualPRs, config.groupUpdates, config.updateStrategy, config.filterConfig, config.autoMergeConfig, allSkippedUpdates);
             core.endGroup();
         }
         if (allSkippedUpdates.length > 0) {
@@ -91424,7 +91450,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
             core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
         }
         core.info(`   URL: ${existingPR.prUrl}`);
-        return { number: existingPR.prNumber, url: existingPR.prUrl };
+        return { number: existingPR.prNumber, url: existingPR.prUrl, extensions: updateGroup.map((u) => u.nameWithOwner) };
     }
     // Apply updates and validate
     const { modifiedFiles, skippedUpdates } = (0, git_1.applyUpdates)(updateGroup);
@@ -91437,7 +91463,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     if (modifiedFiles.length === 0) {
         const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
         core.warning(`No files modified for ${errorDesc}, all extensions may have been skipped`);
-        return { number: 0, url: "", skippedUpdates };
+        return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
     }
     if (!(0, git_1.validateModifiedFiles)(modifiedFiles)) {
         const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
@@ -91462,7 +91488,7 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
         const pr = await (0, github_1.createOrUpdatePR)(octokit, owner, repo, branchName, config.baseBranch, prTitle, prBody, config.prLabels, config.assignmentConfig);
         // Handle auto-merge
         await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
-        return { ...pr, skippedUpdates };
+        return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
     }
     catch (error) {
         const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
@@ -91776,9 +91802,11 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
         }
     }
     else {
-        // Match individual updates to their PRs (assumes same order)
-        for (let i = 0; i < Math.min(updates.length, createdPRs.length); i++) {
-            updateToPR.set(updates[i].nameWithOwner, createdPRs[i]);
+        // Match individual updates to their PRs by extension name
+        for (const pr of createdPRs) {
+            for (const ext of pr.extensions) {
+                updateToPR.set(ext, pr);
+            }
         }
     }
     const updatesTable = [
