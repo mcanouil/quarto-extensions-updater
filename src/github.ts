@@ -189,25 +189,18 @@ export async function createOrUpdatePR(
 	prBody: string,
 	prLabels: string[],
 	assignmentConfig?: PRAssignmentConfig,
+	existingPRNumber?: number,
 ): Promise<{ number: number; url: string }> {
-	const existingPRs = await octokit.rest.pulls.list({
-		owner,
-		repo,
-		head: `${owner}:${branchName}`,
-		state: "open",
-	});
-
 	let prNumber: number;
 	let prUrl: string;
 
-	if (existingPRs.data.length > 0) {
-		const existingPR = existingPRs.data[0];
-		core.info(`Updating existing PR #${existingPR.number}`);
+	if (existingPRNumber) {
+		core.info(`Updating existing PR #${existingPRNumber}`);
 
 		const { data: updatedPR } = await octokit.rest.pulls.update({
 			owner,
 			repo,
-			pull_number: existingPR.number,
+			pull_number: existingPRNumber,
 			title: prTitle,
 			body: prBody,
 		});
@@ -215,7 +208,7 @@ export async function createOrUpdatePR(
 		await octokit.rest.issues.setLabels({
 			owner,
 			repo,
-			issue_number: existingPR.number,
+			issue_number: existingPRNumber,
 			labels: prLabels,
 		});
 
@@ -272,12 +265,6 @@ export async function createCommit(
 	message: string,
 	files: { path: string; content: Buffer }[],
 ): Promise<string> {
-	const { data: baseTree } = await octokit.rest.git.getTree({
-		owner,
-		repo,
-		tree_sha: baseSha,
-	});
-
 	const tree = await Promise.all(
 		files.map(async (file) => {
 			const { data: blob } = await octokit.rest.git.createBlob({
@@ -299,7 +286,7 @@ export async function createCommit(
 	const { data: newTree } = await octokit.rest.git.createTree({
 		owner,
 		repo,
-		base_tree: baseTree.sha,
+		base_tree: baseSha,
 		tree,
 	});
 

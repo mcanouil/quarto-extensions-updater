@@ -70,9 +70,11 @@ export const QUARTO_EXTENSIONS_DIR = "_extensions";
 // Registry Constants
 // ============================================================================
 
+/** Default Quarto extensions registry URL (from @quarto-wizard/core) */
+export { getDefaultRegistryUrl } from "@quarto-wizard/core";
+
 /** Default Quarto extensions registry URL */
-export const DEFAULT_REGISTRY_URL =
-	"https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json";
+export const DEFAULT_REGISTRY_URL = "https://m.canouil.dev/quarto-extensions/extensions.json";
 
 /** GitHub repository base URL */
 export const GITHUB_BASE_URL = "https://github.com";

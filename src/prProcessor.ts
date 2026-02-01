@@ -5,7 +5,7 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody } from "./pr";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig } from "./types";
+import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types";
 
 /**
  * Result of processing a PR
@@ -13,6 +13,16 @@ import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig } from "./typ
 export interface PRProcessingResult {
 	number: number;
 	url: string;
+	extensions: string[];
+	skippedUpdates?: SkippedUpdate[];
+}
+
+/**
+ * Result of processing all PRs, including skipped updates from groups that produced no PR
+ */
+export interface ProcessAllPRsResult {
+	createdPRs: PRProcessingResult[];
+	skippedUpdates: SkippedUpdate[];
 }
 
 /**
@@ -81,6 +91,24 @@ async function handleAutoMerge(
 }
 
 /**
+ * Returns a human-readable description of an update group
+ */
+function describeUpdateGroup(updateGroup: ExtensionUpdate[]): string {
+	return updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+}
+
+/**
+ * Prepares files for a Git commit by stripping the workspace prefix and reading contents
+ */
+function prepareCommitFiles(modifiedFiles: string[], workspacePath: string): { path: string; content: Buffer }[] {
+	const workspacePrefix = `${workspacePath}${path.sep}`;
+	return modifiedFiles.map((filePath) => ({
+		path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
+		content: fs.readFileSync(filePath),
+	}));
+}
+
+/**
  * Processes a single update group (either a single extension or multiple grouped extensions)
  */
 export async function processPRForUpdateGroup(
@@ -90,6 +118,7 @@ export async function processPRForUpdateGroup(
 	updateGroup: ExtensionUpdate[],
 	config: PRProcessingConfig,
 ): Promise<PRProcessingResult> {
+	const groupDesc = describeUpdateGroup(updateGroup);
 	const branchName = createBranchName(updateGroup, config.branchPrefix);
 	const prTitle = generatePRTitle(updateGroup, config.prTitlePrefix);
 
@@ -104,15 +133,26 @@ export async function processPRForUpdateGroup(
 			core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
 		}
 		core.info(`   URL: ${existingPR.prUrl}`);
-		return { number: existingPR.prNumber, url: existingPR.prUrl };
+		return { number: existingPR.prNumber, url: existingPR.prUrl, extensions: updateGroup.map((u) => u.nameWithOwner) };
 	}
 
 	// Apply updates and validate
-	const modifiedFiles = applyUpdates(updateGroup);
+	const { modifiedFiles, skippedUpdates } = applyUpdates(updateGroup);
+
+	if (skippedUpdates.length > 0) {
+		core.warning(`Skipped ${skippedUpdates.length} extension(s) during update`);
+		for (const skipped of skippedUpdates) {
+			core.warning(`  - ${skipped.update.nameWithOwner}: ${skipped.reason}`);
+		}
+	}
+
+	if (modifiedFiles.length === 0) {
+		core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
+		return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
+	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
-		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-		throw new Error(`Failed to validate modified files for ${errorDesc}`);
+		throw new Error(`Failed to validate modified files for ${groupDesc}`);
 	}
 
 	core.info(`Modified ${modifiedFiles.length} file(s)`);
@@ -124,18 +164,13 @@ export async function processPRForUpdateGroup(
 
 	await createOrUpdateBranch(octokit, owner, repo, branchName, config.baseSha);
 
-	const workspacePrefix = `${config.workspacePath}${path.sep}`;
-	const files = modifiedFiles.map((filePath) => ({
-		path: filePath.startsWith(workspacePrefix) ? filePath.slice(workspacePrefix.length) : filePath,
-		content: fs.readFileSync(filePath),
-	}));
-
+	const files = prepareCommitFiles(modifiedFiles, config.workspacePath);
 	const commitSha = await createCommit(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
 
 	core.info(`✅ Created commit: ${commitSha}`);
 
 	// Create or update PR
-	const prBody = await generatePRBody(updateGroup, octokit);
+	const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates);
 
 	try {
 		const pr = await createOrUpdatePR(
@@ -153,10 +188,9 @@ export async function processPRForUpdateGroup(
 		// Handle auto-merge
 		await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
 
-		return pr;
+		return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
 	} catch (error) {
-		const errorDesc = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
-		core.error(`Failed to create/update PR for ${errorDesc}: ${error}`);
+		core.error(`Failed to create/update PR for ${groupDesc}: ${error}`);
 		throw error;
 	}
 }
@@ -171,8 +205,9 @@ export async function processAllPRs(
 	updates: ExtensionUpdate[],
 	groupUpdates: boolean,
 	config: PRProcessingConfig,
-): Promise<PRProcessingResult[]> {
+): Promise<ProcessAllPRsResult> {
 	const createdPRs: PRProcessingResult[] = [];
+	const allSkippedUpdates: SkippedUpdate[] = [];
 
 	// Determine whether to create one PR for all updates or one PR per extension
 	const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
@@ -183,8 +218,15 @@ export async function processAllPRs(
 		core.startGroup(`📝 Processing ${groupDescription}`);
 
 		try {
-			const pr = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
-			createdPRs.push(pr);
+			const result = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);
+
+			if (result.skippedUpdates && result.skippedUpdates.length > 0) {
+				allSkippedUpdates.push(...result.skippedUpdates);
+			}
+
+			if (result.number > 0) {
+				createdPRs.push(result);
+			}
 		} catch (error) {
 			core.error(`Failed to process ${groupDescription}: ${error}`);
 			throw error;
@@ -193,5 +235,5 @@ export async function processAllPRs(
 		}
 	}
 
-	return createdPRs;
+	return { createdPRs, skippedUpdates: allSkippedUpdates };
 }

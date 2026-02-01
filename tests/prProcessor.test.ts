@@ -60,7 +60,10 @@ describe("processPRForUpdateGroup", () => {
 		mockCreateBranchName.mockReturnValue("chore/quarto-extensions/update");
 		mockGeneratePRTitle.mockReturnValue("chore(deps): update extension");
 		mockCheckExistingPR.mockResolvedValue({ exists: false });
-		mockApplyUpdates.mockReturnValue(["/workspace/_extensions/owner/ext/_extension.yml"]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext/_extension.yml"],
+			skippedUpdates: [],
+		});
 		mockValidateModifiedFiles.mockReturnValue(true);
 		mockCreateCommitMessage.mockReturnValue("chore(deps): update extension\n\nUpdate details");
 		mockCreateOrUpdateBranch.mockResolvedValue(undefined);
@@ -76,10 +79,8 @@ describe("processPRForUpdateGroup", () => {
 
 		const result = await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
 
-		expect(result).toEqual({
-			number: 123,
-			url: "https://github.com/owner/repo/pull/123",
-		});
+		expect(result.number).toBe(123);
+		expect(result.url).toBe("https://github.com/owner/repo/pull/123");
 
 		expect(mockApplyUpdates).toHaveBeenCalledWith(updates);
 		expect(mockCreateCommit).toHaveBeenCalled();
@@ -97,10 +98,8 @@ describe("processPRForUpdateGroup", () => {
 
 		const result = await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
 
-		expect(result).toEqual({
-			number: 456,
-			url: "https://github.com/owner/repo/pull/456",
-		});
+		expect(result.number).toBe(456);
+		expect(result.url).toBe("https://github.com/owner/repo/pull/456");
 
 		expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining("PR #456 already exists for owner/ext1@1.1.0"));
 		expect(mockApplyUpdates).not.toHaveBeenCalled();
@@ -109,10 +108,13 @@ describe("processPRForUpdateGroup", () => {
 	it("should handle grouped updates", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0"), createUpdate("owner/ext2", "2.0.0", "2.1.0")];
 
-		mockApplyUpdates.mockReturnValue([
-			"/workspace/_extensions/owner/ext1/_extension.yml",
-			"/workspace/_extensions/owner/ext2/_extension.yml",
-		]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: [
+				"/workspace/_extensions/owner/ext1/_extension.yml",
+				"/workspace/_extensions/owner/ext2/_extension.yml",
+			],
+			skippedUpdates: [],
+		});
 
 		const result = await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
 
@@ -187,10 +189,13 @@ describe("processPRForUpdateGroup", () => {
 	it("should enable auto-merge for grouped updates when all qualify", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.0.1"), createUpdate("owner/ext2", "2.0.0", "2.0.1")];
 
-		mockApplyUpdates.mockReturnValue([
-			"/workspace/_extensions/owner/ext1/_extension.yml",
-			"/workspace/_extensions/owner/ext2/_extension.yml",
-		]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: [
+				"/workspace/_extensions/owner/ext1/_extension.yml",
+				"/workspace/_extensions/owner/ext2/_extension.yml",
+			],
+			skippedUpdates: [],
+		});
 
 		const config: PRProcessingConfig = {
 			...baseConfig,
@@ -214,10 +219,13 @@ describe("processPRForUpdateGroup", () => {
 			createUpdate("owner/ext2", "2.0.0", "3.0.0"), // Major
 		];
 
-		mockApplyUpdates.mockReturnValue([
-			"/workspace/_extensions/owner/ext1/_extension.yml",
-			"/workspace/_extensions/owner/ext2/_extension.yml",
-		]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: [
+				"/workspace/_extensions/owner/ext1/_extension.yml",
+				"/workspace/_extensions/owner/ext2/_extension.yml",
+			],
+			skippedUpdates: [],
+		});
 
 		const config: PRProcessingConfig = {
 			...baseConfig,
@@ -237,7 +245,10 @@ describe("processPRForUpdateGroup", () => {
 	it("should strip workspace path from file paths", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
 
-		mockApplyUpdates.mockReturnValue(["/workspace/_extensions/owner/ext1/_extension.yml"]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [],
+		});
 
 		await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
 
@@ -272,10 +283,13 @@ describe("processPRForUpdateGroup", () => {
 	it("should handle grouped updates error with proper description", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0"), createUpdate("owner/ext2", "2.0.0", "2.1.0")];
 
-		mockApplyUpdates.mockReturnValue([
-			"/workspace/_extensions/owner/ext1/_extension.yml",
-			"/workspace/_extensions/owner/ext2/_extension.yml",
-		]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: [
+				"/workspace/_extensions/owner/ext1/_extension.yml",
+				"/workspace/_extensions/owner/ext2/_extension.yml",
+			],
+			skippedUpdates: [],
+		});
 		mockCreateOrUpdatePR.mockRejectedValue(new Error("API error"));
 
 		await expect(processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig)).rejects.toThrow(
@@ -310,7 +324,10 @@ describe("processAllPRs", () => {
 		mockCreateBranchName.mockReturnValue("chore/quarto-extensions/update");
 		mockGeneratePRTitle.mockReturnValue("chore(deps): update extension");
 		mockCheckExistingPR.mockResolvedValue({ exists: false });
-		mockApplyUpdates.mockReturnValue(["/workspace/_extensions/owner/ext/_extension.yml"]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext/_extension.yml"],
+			skippedUpdates: [],
+		});
 		mockValidateModifiedFiles.mockReturnValue(true);
 		mockCreateCommitMessage.mockReturnValue("chore(deps): update extension");
 		mockCreateOrUpdateBranch.mockResolvedValue(undefined);
@@ -334,26 +351,32 @@ describe("processAllPRs", () => {
 			.mockResolvedValueOnce({ number: 123, url: "https://github.com/owner/repo/pull/123" })
 			.mockResolvedValueOnce({ number: 124, url: "https://github.com/owner/repo/pull/124" });
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
 
-		expect(results).toHaveLength(2);
-		expect(results[0]).toEqual({ number: 123, url: "https://github.com/owner/repo/pull/123" });
-		expect(results[1]).toEqual({ number: 124, url: "https://github.com/owner/repo/pull/124" });
+		expect(createdPRs).toHaveLength(2);
+		expect(createdPRs[0].number).toBe(123);
+		expect(createdPRs[0].url).toBe("https://github.com/owner/repo/pull/123");
+		expect(createdPRs[1].number).toBe(124);
+		expect(createdPRs[1].url).toBe("https://github.com/owner/repo/pull/124");
 		expect(mockCore.startGroup).toHaveBeenCalledTimes(2);
 	});
 
 	it("should process all updates together when grouped", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0"), createUpdate("owner/ext2", "2.0.0", "2.1.0")];
 
-		mockApplyUpdates.mockReturnValue([
-			"/workspace/_extensions/owner/ext1/_extension.yml",
-			"/workspace/_extensions/owner/ext2/_extension.yml",
-		]);
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: [
+				"/workspace/_extensions/owner/ext1/_extension.yml",
+				"/workspace/_extensions/owner/ext2/_extension.yml",
+			],
+			skippedUpdates: [],
+		});
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, true, baseConfig);
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", updates, true, baseConfig);
 
-		expect(results).toHaveLength(1);
-		expect(results[0]).toEqual({ number: 123, url: "https://github.com/owner/repo/pull/123" });
+		expect(createdPRs).toHaveLength(1);
+		expect(createdPRs[0].number).toBe(123);
+		expect(createdPRs[0].url).toBe("https://github.com/owner/repo/pull/123");
 		expect(mockCore.startGroup).toHaveBeenCalledTimes(1);
 		expect(mockCore.startGroup).toHaveBeenCalledWith(expect.stringContaining("2 extensions"));
 	});
@@ -380,9 +403,17 @@ describe("processAllPRs", () => {
 	it("should process empty updates array", async () => {
 		const updates: ExtensionUpdate[] = [];
 
-		const results = await processAllPRs(mockOctokit, "owner", "repo", updates, false, baseConfig);
+		const { createdPRs, skippedUpdates } = await processAllPRs(
+			mockOctokit,
+			"owner",
+			"repo",
+			updates,
+			false,
+			baseConfig,
+		);
 
-		expect(results).toEqual([]);
+		expect(createdPRs).toEqual([]);
+		expect(skippedUpdates).toEqual([]);
 		expect(mockCore.startGroup).not.toHaveBeenCalled();
 	});
 });

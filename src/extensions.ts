@@ -2,14 +2,19 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import * as core from "@actions/core";
+import type { InstalledExtension, ExtensionManifest } from "@quarto-wizard/core";
 import type { ExtensionData } from "./types";
 import { QUARTO_MANIFEST_FILENAMES } from "./constants";
+
+// Re-export core types for use in other modules
+export type { InstalledExtension, ExtensionManifest };
 
 /** Quarto extension manifest YAML structure */
 interface ExtensionManifestYAML {
 	title?: string;
 	author?: string;
 	version?: string;
+	"quarto-required"?: string;
 	contributes?: Record<string, unknown>;
 	source?: string;
 	repository?: string;
@@ -81,6 +86,7 @@ export function readExtensionManifest(manifestPath: string): ExtensionData | nul
 			title: typeof data.title === "string" ? data.title : undefined,
 			author: typeof data.author === "string" ? data.author : undefined,
 			version: typeof data.version === "string" ? data.version : undefined,
+			quartoRequired: typeof data["quarto-required"] === "string" ? data["quarto-required"] : undefined,
 			contributes:
 				data.contributes && typeof data.contributes === "object" ? Object.keys(data.contributes).join(", ") : undefined,
 			source: typeof data.source === "string" ? data.source : undefined,

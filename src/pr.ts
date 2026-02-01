@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import type { OctokitClient } from "./github";
-import type { ExtensionUpdate } from "./types";
+import type { ExtensionUpdate, SkippedUpdate } from "./types";
 import { groupUpdatesByType } from "./updates";
 import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants";
 
@@ -57,7 +57,11 @@ export function generatePRTitle(updates: ExtensionUpdate[], prefix = "chore(deps
  * @param octokit GitHub API client
  * @returns PR body in markdown format
  */
-export async function generatePRBody(updates: ExtensionUpdate[], octokit: OctokitClient): Promise<string> {
+export async function generatePRBody(
+	updates: ExtensionUpdate[],
+	octokit: OctokitClient,
+	skippedUpdates: SkippedUpdate[] = [],
+): Promise<string> {
 	const sections: string[] = [];
 
 	sections.push("Updates the following Quarto extension(s):");
@@ -89,6 +93,28 @@ export async function generatePRBody(updates: ExtensionUpdate[], octokit: Octoki
 	sections.push("---");
 	sections.push("");
 
+	// Fetch all release notes in parallel
+	const releaseNotesMap = new Map<string, string | null>();
+	const releaseNotesEntries = updates
+		.map((update) => {
+			const parts = update.repositoryName.split("/");
+			if (parts.length !== 2) {
+				core.warning(`Invalid repository name format: ${update.repositoryName}`);
+				return null;
+			}
+			const [owner, repo] = parts;
+			return {
+				key: update.nameWithOwner,
+				promise: fetchReleaseNotes(octokit, owner, repo, update.latestVersion),
+			};
+		})
+		.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+	const releaseNotesResults = await Promise.all(releaseNotesEntries.map((e) => e.promise));
+	for (let i = 0; i < releaseNotesEntries.length; i++) {
+		releaseNotesMap.set(releaseNotesEntries[i].key, releaseNotesResults[i]);
+	}
+
 	for (const update of updates) {
 		if (updates.length > 1) {
 			sections.push(`### ${update.nameWithOwner}`);
@@ -98,13 +124,7 @@ export async function generatePRBody(updates: ExtensionUpdate[], octokit: Octoki
 			sections.push("");
 		}
 
-		const parts = update.repositoryName.split("/");
-		if (parts.length !== 2) {
-			core.warning(`Invalid repository name format: ${update.repositoryName}`);
-			continue;
-		}
-		const [owner, repo] = parts;
-		const releaseBody = await fetchReleaseNotes(octokit, owner, repo, update.latestVersion);
+		const releaseBody = releaseNotesMap.get(update.nameWithOwner) ?? null;
 
 		sections.push("<details>");
 		sections.push(`<summary>Release ${update.latestVersion}</summary>`);
@@ -132,6 +152,19 @@ export async function generatePRBody(updates: ExtensionUpdate[], octokit: Octoki
 		}
 
 		sections.push(`**Links**: [Repository](${update.url}) · [Release](${update.releaseUrl})`);
+		sections.push("");
+	}
+
+	if (skippedUpdates.length > 0) {
+		sections.push("## ⏭️ Skipped Extensions");
+		sections.push("");
+		sections.push("The following extension(s) were skipped during this update:");
+		sections.push("");
+		for (const skipped of skippedUpdates) {
+			sections.push(
+				`- **${skipped.update.nameWithOwner}** (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
+			);
+		}
 		sections.push("");
 	}
 
@@ -168,16 +201,7 @@ function formatUpdateList(updates: ExtensionUpdate[]): string[] {
  * and add the updates parameter back to the function signature.
  */
 export function generatePRLabels(): string[] {
-	const labels = [...DEFAULT_PR_LABELS];
-
-	// Uncomment to add type-specific labels (and add updates: ExtensionUpdate[] parameter):
-	// const grouped = groupUpdatesByType(updates);
-	// if (grouped.major.length > 0) labels.push("major-update");
-	// if (grouped.minor.length > 0) labels.push("minor-update");
-	// if (grouped.patch.length > 0) labels.push("patch-update");
-	// if (updates.length > 1) labels.push("multiple-updates");
-
-	return labels;
+	return [...DEFAULT_PR_LABELS];
 }
 
 /**

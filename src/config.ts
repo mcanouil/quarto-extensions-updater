@@ -5,6 +5,7 @@ import {
 	validateUpdateStrategy,
 	validateRegistryUrl,
 	validateBranchPrefix,
+	parseCommaSeparatedList,
 } from "./validation";
 import {
 	DEFAULT_BASE_BRANCH,
@@ -14,14 +15,7 @@ import {
 	DEFAULT_PR_LABELS,
 	LABEL_SEPARATOR,
 } from "./constants";
-import type {
-	AutoMergeConfig,
-	AutoMergeStrategy,
-	MergeMethod,
-	ExtensionFilterConfig,
-	UpdateStrategy,
-	PRAssignmentConfig,
-} from "./types";
+import type { AutoMergeConfig, ExtensionFilterConfig, UpdateStrategy, PRAssignmentConfig } from "./types";
 
 /**
  * Application configuration parsed from GitHub Actions inputs
@@ -46,18 +40,6 @@ export interface AppConfig {
 }
 
 /**
- * Parses a comma-separated string input into a filtered array
- * @param input Comma-separated string to parse
- * @returns Array of trimmed non-empty strings
- */
-function parseCommaSeparatedInput(input: string): string[] {
-	return input
-		.split(",")
-		.map((item) => item.trim())
-		.filter((item) => item.length > 0);
-}
-
-/**
  * Parses all GitHub Actions inputs and returns validated configuration
  * @returns Validated application configuration object
  * @throws ValidationError if any input validation fails
@@ -79,7 +61,7 @@ export function parseInputs(): AppConfig {
 
 	// PR labels
 	const prLabelsInput = core.getInput("pr-labels") || DEFAULT_PR_LABELS.join(LABEL_SEPARATOR);
-	const prLabels = parseCommaSeparatedInput(prLabelsInput);
+	const prLabels = parseCommaSeparatedList(prLabelsInput);
 
 	// Auto-merge configuration
 	const autoMergeEnabled = core.getBooleanInput("auto-merge") === true;
@@ -92,8 +74,8 @@ export function parseInputs(): AppConfig {
 
 	const autoMergeConfig: AutoMergeConfig = {
 		enabled: autoMergeEnabled,
-		strategy: autoMergeStrategyInput as AutoMergeStrategy,
-		mergeMethod: autoMergeMethodInput as MergeMethod,
+		strategy: autoMergeStrategyInput,
+		mergeMethod: autoMergeMethodInput,
 	};
 
 	// Extension filtering
@@ -101,8 +83,8 @@ export function parseInputs(): AppConfig {
 	const excludeExtensionsInput = core.getInput("exclude-extensions") || "";
 
 	const filterConfig: ExtensionFilterConfig = {
-		include: parseCommaSeparatedInput(includeExtensionsInput),
-		exclude: parseCommaSeparatedInput(excludeExtensionsInput),
+		include: parseCommaSeparatedList(includeExtensionsInput),
+		exclude: parseCommaSeparatedList(excludeExtensionsInput),
 	};
 
 	// Update configuration
@@ -113,7 +95,7 @@ export function parseInputs(): AppConfig {
 
 	// Validate update strategy
 	validateUpdateStrategy(updateStrategyInput);
-	const updateStrategy = updateStrategyInput as UpdateStrategy;
+	const updateStrategy = updateStrategyInput;
 
 	// PR assignment configuration
 	const prReviewersInput = core.getInput("pr-reviewers") || "";
@@ -121,9 +103,9 @@ export function parseInputs(): AppConfig {
 	const prAssigneesInput = core.getInput("pr-assignees") || "";
 
 	const assignmentConfig: PRAssignmentConfig = {
-		reviewers: parseCommaSeparatedInput(prReviewersInput),
-		teamReviewers: parseCommaSeparatedInput(prTeamReviewersInput),
-		assignees: parseCommaSeparatedInput(prAssigneesInput),
+		reviewers: parseCommaSeparatedList(prReviewersInput),
+		teamReviewers: parseCommaSeparatedList(prTeamReviewersInput),
+		assignees: parseCommaSeparatedList(prAssigneesInput),
 	};
 
 	// Validate configuration

@@ -1,24 +1,5 @@
-/**
- * Represents details of a Quarto extension from the registry
- */
-export interface ExtensionDetails {
-	createdAt: string;
-	defaultBranchRef: string;
-	description: string;
-	latestRelease: string;
-	latestReleaseUrl: string;
-	licenseInfo: string;
-	name: string;
-	nameWithOwner: string;
-	owner: string;
-	repositoryTopics: string[];
-	stargazerCount: number;
-	title: string;
-	url: string;
-	author: string;
-	template: boolean;
-	templateContent: string | null;
-}
+// Re-export core types
+export type { Registry, RegistryEntry } from "@quarto-wizard/core";
 
 /**
  * Represents data from an installed extension's manifest
@@ -27,9 +8,26 @@ export interface ExtensionData {
 	title?: string;
 	author?: string;
 	version?: string;
+	quartoRequired?: string;
 	contributes?: string;
 	source?: string;
 	repository?: string;
+}
+
+/**
+ * Represents an extension that was skipped during update
+ */
+export interface SkippedUpdate {
+	update: ExtensionUpdate;
+	reason: string;
+}
+
+/**
+ * Result of applying extension updates
+ */
+export interface ApplyUpdatesResult {
+	modifiedFiles: string[];
+	skippedUpdates: SkippedUpdate[];
 }
 
 /**
@@ -47,11 +45,6 @@ export interface ExtensionUpdate {
 	releaseUrl: string;
 	description: string;
 }
-
-/**
- * Registry of all available extensions
- */
-export type ExtensionRegistry = Record<string, ExtensionDetails>;
 
 /**
  * Update strategy - controls which types of updates to apply

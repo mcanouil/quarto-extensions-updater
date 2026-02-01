@@ -106,31 +106,17 @@ export function validateBranchPrefix(branchPrefix: string): void {
 }
 
 /**
- * Parses and validates a comma-separated list input
+ * Parses a comma-separated list input into trimmed, non-empty strings
  * @param input The comma-separated input string
- * @param fieldName The name of the field (for error messages)
  * @returns Array of trimmed, non-empty strings
- * @throws ValidationError if the list format is invalid
  */
-export function parseCommaSeparatedList(input: string, fieldName: string): string[] {
+export function parseCommaSeparatedList(input: string): string[] {
 	if (!input || input.trim().length === 0) {
 		return [];
 	}
 
-	const items = input
+	return input
 		.split(",")
 		.map((item) => item.trim())
 		.filter((item) => item.length > 0);
-
-	// Validate no empty items after trimming
-	const originalCount = input.split(",").length;
-	if (items.length !== originalCount && items.length > 0) {
-		throw new ValidationError(
-			`Invalid ${fieldName} format: contains empty values after comma separation`,
-			fieldName,
-			input,
-		);
-	}
-
-	return items;
 }

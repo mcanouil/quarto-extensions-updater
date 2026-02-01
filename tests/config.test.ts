@@ -10,6 +10,7 @@ import {
 	validateUpdateStrategy,
 	validateRegistryUrl,
 	validateBranchPrefix,
+	parseCommaSeparatedList,
 } from "../src/validation";
 
 const mockCore = jest.mocked(core);
@@ -18,10 +19,22 @@ const mockValidateMergeMethod = jest.mocked(validateMergeMethod);
 const mockValidateUpdateStrategy = jest.mocked(validateUpdateStrategy);
 const mockValidateRegistryUrl = jest.mocked(validateRegistryUrl);
 const mockValidateBranchPrefix = jest.mocked(validateBranchPrefix);
+const mockParseCommaSeparatedList = jest.mocked(parseCommaSeparatedList);
 
 describe("parseInputs", () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+
+		// Use real implementation for parseCommaSeparatedList
+		mockParseCommaSeparatedList.mockImplementation((input: string) => {
+			if (!input || input.trim().length === 0) {
+				return [];
+			}
+			return input
+				.split(",")
+				.map((item) => item.trim())
+				.filter((item) => item.length > 0);
+		});
 
 		// Set default mock implementations
 		mockCore.getInput.mockImplementation((name: string) => {

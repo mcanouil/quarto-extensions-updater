@@ -143,17 +143,28 @@ async function run(): Promise<void> {
 		const baseSha = refData.object.sha;
 
 		// Process all PRs
-		const createdPRs = await processAllPRs(octokit, owner, repo, updates, config.groupUpdates, {
-			workspacePath: config.workspacePath,
-			baseBranch: config.baseBranch,
-			baseSha,
-			branchPrefix: config.branchPrefix,
-			prTitlePrefix: config.prTitlePrefix,
-			commitMessagePrefix: config.commitMessagePrefix,
-			prLabels: config.prLabels,
-			autoMergeConfig: config.autoMergeConfig,
-			assignmentConfig: config.assignmentConfig,
-		});
+		const { createdPRs, skippedUpdates: allSkippedUpdates } = await processAllPRs(
+			octokit,
+			owner,
+			repo,
+			updates,
+			config.groupUpdates,
+			{
+				workspacePath: config.workspacePath,
+				baseBranch: config.baseBranch,
+				baseSha,
+				branchPrefix: config.branchPrefix,
+				prTitlePrefix: config.prTitlePrefix,
+				commitMessagePrefix: config.commitMessagePrefix,
+				prLabels: config.prLabels,
+				autoMergeConfig: config.autoMergeConfig,
+				assignmentConfig: config.assignmentConfig,
+			},
+		);
+
+		// Filter updates to only those that were successfully applied
+		const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
+		const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
 
 		// Set outputs and generate summary
 		if (createdPRs.length > 0) {
@@ -161,14 +172,21 @@ async function run(): Promise<void> {
 
 			core.startGroup("📋 Generating Job Summary");
 			await generateCompletedSummary(
-				updates,
+				appliedUpdates,
 				createdPRs,
 				config.groupUpdates,
 				config.updateStrategy,
 				config.filterConfig,
 				config.autoMergeConfig,
+				allSkippedUpdates,
 			);
 			core.endGroup();
+		}
+
+		if (allSkippedUpdates.length > 0) {
+			core.warning(
+				`${allSkippedUpdates.length} extension(s) were skipped during update. ` + "Check the job summary for details.",
+			);
 		}
 
 		core.info("🎉 Successfully completed!");

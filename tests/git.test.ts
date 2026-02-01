@@ -1,6 +1,12 @@
 import { execSync } from "child_process";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "../src/git";
-import { updateManifestSource } from "../src/extensions";
+import {
+	applyUpdates,
+	getQuartoVersion,
+	createBranchName,
+	createCommitMessage,
+	validateModifiedFiles,
+} from "../src/git";
+import { updateManifestSource, readExtensionManifest } from "../src/extensions";
 import type { ExtensionUpdate } from "../src/types";
 
 // Mock modules before importing
@@ -28,6 +34,7 @@ import * as core from "@actions/core";
 
 const mockExecSync = execSync as jest.MockedFunction<typeof execSync>;
 const mockUpdateManifestSource = updateManifestSource as jest.MockedFunction<typeof updateManifestSource>;
+const mockReadExtensionManifest = readExtensionManifest as jest.MockedFunction<typeof readExtensionManifest>;
 const mockPath = jest.mocked(path);
 const mockFs = jest.mocked(fs);
 
@@ -43,119 +50,31 @@ describe("git.ts", () => {
 		jest.clearAllMocks();
 		mockPath.join.mockImplementation((...args: string[]) => args.join("/"));
 		mockPath.dirname.mockImplementation((p: string) => p.split("/").slice(0, -1).join("/"));
+		mockReadExtensionManifest.mockReturnValue(null);
 	});
 
-	describe("isQuartoAvailable", () => {
-		it("should return true when Quarto CLI is available", () => {
-			mockExecSync.mockReturnValue(Buffer.from("1.4.0\n"));
+	describe("getQuartoVersion", () => {
+		it("should return version when Quarto CLI is available", () => {
+			mockExecSync.mockReturnValue("1.4.0\n" as unknown as Buffer);
 
-			const createUpdate = (): ExtensionUpdate => ({
-				name: "test-ext",
-				owner: "test-owner",
-				nameWithOwner: "test-owner/test-ext",
-				repositoryName: "test-owner/test-repo",
-				currentVersion: "1.0.0",
-				latestVersion: "1.1.0",
-				manifestPath: "/path/to/_extension.yml",
-				url: "https://github.com/test-owner/test-repo",
-				releaseUrl: "https://github.com/test-owner/test-repo/releases/tag/v1.1.0",
-				description: "Test extension",
-			});
+			const result = getQuartoVersion();
 
-			mockFs.existsSync.mockReturnValue(true);
-			mockFs.readdirSync.mockReturnValue([
-				{ name: "file1.txt", isFile: () => true, isDirectory: () => false } as DirEntry,
-			]);
-			mockFs.readFileSync.mockReturnValue(Buffer.from("content"));
-
-			applyUpdates([createUpdate()]);
-
+			expect(result).toBe("1.4.0");
 			expect(mockExecSync).toHaveBeenCalledWith("quarto --version", {
 				stdio: "pipe",
 				encoding: "utf-8",
 			});
 		});
 
-		it("should throw error when Quarto CLI is not available", () => {
-			mockExecSync.mockImplementation((cmd) => {
-				if (cmd === "quarto --version") {
-					throw new Error("Command not found");
-				}
-				return Buffer.from("");
+		it("should return null when Quarto CLI is not available", () => {
+			mockExecSync.mockImplementation(() => {
+				throw new Error("Command not found");
 			});
 
-			const createUpdate = (): ExtensionUpdate => ({
-				name: "test-ext",
-				owner: "test-owner",
-				nameWithOwner: "test-owner/test-ext",
-				repositoryName: "test-owner/test-repo",
-				currentVersion: "1.0.0",
-				latestVersion: "1.1.0",
-				manifestPath: "/path/to/_extension.yml",
-				url: "https://github.com/test-owner/test-repo",
-				releaseUrl: "https://github.com/test-owner/test-repo/releases/tag/v1.1.0",
-				description: "Test extension",
-			});
+			const result = getQuartoVersion();
 
-			expect(() => applyUpdates([createUpdate()])).toThrow("Quarto CLI is not available");
+			expect(result).toBeNull();
 			expect(core.error).toHaveBeenCalledWith(expect.stringContaining("Quarto CLI is not available"));
-		});
-	});
-
-	describe("getAllFilesInDirectory", () => {
-		it("should recursively collect all files", () => {
-			const createUpdate = (): ExtensionUpdate => ({
-				name: "test-ext",
-				owner: "test-owner",
-				nameWithOwner: "test-owner/test-ext",
-				repositoryName: "test-owner/test-repo",
-				currentVersion: "1.0.0",
-				latestVersion: "1.1.0",
-				manifestPath: "/path/to/_extension.yml",
-				url: "https://github.com/test-owner/test-repo",
-				releaseUrl: "https://github.com/test-owner/test-repo/releases/tag/v1.1.0",
-				description: "Test extension",
-			});
-
-			mockExecSync.mockReturnValue(Buffer.from("1.4.0\n"));
-			mockFs.existsSync.mockReturnValue(true);
-
-			// Mock directory structure
-			mockFs.readdirSync
-				.mockReturnValueOnce([
-					{ name: "file1.txt", isFile: () => true, isDirectory: () => false },
-					{ name: "subdir", isFile: () => false, isDirectory: () => true },
-				] as DirEntry[])
-				.mockReturnValueOnce([{ name: "file2.txt", isFile: () => true, isDirectory: () => false }] as DirEntry[]);
-
-			mockFs.readFileSync.mockReturnValue(Buffer.from("content"));
-
-			const result = applyUpdates([createUpdate()]);
-
-			expect(result).toContain("/path/to/file1.txt");
-			expect(result).toContain("/path/to/subdir/file2.txt");
-		});
-
-		it("should return empty array for non-existent directory", () => {
-			const createUpdate = (): ExtensionUpdate => ({
-				name: "test-ext",
-				owner: "test-owner",
-				nameWithOwner: "test-owner/test-ext",
-				repositoryName: "test-owner/test-repo",
-				currentVersion: "1.0.0",
-				latestVersion: "1.1.0",
-				manifestPath: "/path/to/_extension.yml",
-				url: "https://github.com/test-owner/test-repo",
-				releaseUrl: "https://github.com/test-owner/test-repo/releases/tag/v1.1.0",
-				description: "Test extension",
-			});
-
-			mockExecSync.mockReturnValue(Buffer.from("1.4.0\n"));
-			mockFs.existsSync.mockReturnValue(false);
-
-			const result = applyUpdates([createUpdate()]);
-
-			expect(result).toEqual([]);
 		});
 	});
 
@@ -174,7 +93,7 @@ describe("git.ts", () => {
 		});
 
 		beforeEach(() => {
-			mockExecSync.mockReturnValue(Buffer.from("1.4.0\n"));
+			mockExecSync.mockReturnValue("1.4.0\n" as unknown as Buffer);
 			mockFs.existsSync.mockReturnValue(true);
 			mockFs.readdirSync.mockReturnValue([
 				{ name: "_extension.yml", isFile: () => true, isDirectory: () => false },
@@ -183,20 +102,30 @@ describe("git.ts", () => {
 			mockFs.readFileSync.mockReturnValue(Buffer.from("content"));
 		});
 
+		it("should throw error when Quarto CLI is not available", () => {
+			mockExecSync.mockImplementation(() => {
+				throw new Error("Command not found");
+			});
+
+			expect(() => applyUpdates([createUpdate()])).toThrow("Quarto CLI is not available");
+			expect(core.error).toHaveBeenCalledWith(expect.stringContaining("Quarto CLI is not available"));
+		});
+
 		it("should apply single update successfully", () => {
 			const update = createUpdate();
 
 			const result = applyUpdates([update]);
 
 			expect(mockExecSync).toHaveBeenCalledWith("quarto add test-owner/test-test-ext@1.1.0 --no-prompt", {
-				stdio: "inherit",
+				stdio: "pipe",
 				encoding: "utf-8",
 			});
 			expect(mockUpdateManifestSource).toHaveBeenCalledWith(
 				"/path/to/test-ext/_extension.yml",
 				"test-owner/test-test-ext@1.1.0",
 			);
-			expect(result.length).toBeGreaterThan(0);
+			expect(result.modifiedFiles.length).toBeGreaterThan(0);
+			expect(result.skippedUpdates).toEqual([]);
 			expect(core.info).toHaveBeenCalledWith("Successfully updated test-owner/test-ext to 1.1.0");
 		});
 
@@ -207,21 +136,121 @@ describe("git.ts", () => {
 
 			expect(mockExecSync).toHaveBeenCalledTimes(3); // version check + 2 updates
 			expect(mockUpdateManifestSource).toHaveBeenCalledTimes(2);
-			expect(result.length).toBeGreaterThan(0);
+			expect(result.modifiedFiles.length).toBeGreaterThan(0);
+			expect(result.skippedUpdates).toEqual([]);
 		});
 
-		it("should throw error when Quarto add fails", () => {
+		it("should skip extension when quarto add fails instead of throwing", () => {
 			mockExecSync.mockImplementation((cmd) => {
 				if (cmd === "quarto --version") {
-					return Buffer.from("1.4.0\n");
+					return "1.4.0\n" as unknown as Buffer;
 				}
 				throw new Error("Failed to add extension");
 			});
 
 			const update = createUpdate();
 
-			expect(() => applyUpdates([update])).toThrow("Failed to add extension");
-			expect(core.error).toHaveBeenCalledWith(expect.stringContaining("Failed to update test-owner/test-ext"));
+			const result = applyUpdates([update]);
+
+			expect(result.modifiedFiles).toEqual([]);
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].update).toBe(update);
+			expect(result.skippedUpdates[0].reason).toContain("Failed to update");
+			expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Skipping test-owner/test-ext"));
+		});
+
+		it("should use stderr from quarto add failure for a more informative reason", () => {
+			mockExecSync.mockImplementation((cmd) => {
+				if (cmd === "quarto --version") {
+					return "1.4.0\n" as unknown as Buffer;
+				}
+				const error = new Error("Command failed: quarto add test-owner/test-test-ext@1.1.0 --no-prompt");
+				(error as Error & { stderr: string }).stderr =
+					"ERROR: Extension requires Quarto version >=99.0.0 (you have 1.4.0)\n";
+				throw error;
+			});
+
+			const update = createUpdate();
+
+			const result = applyUpdates([update]);
+
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].reason).toBe(
+				"Failed to update: ERROR: Extension requires Quarto version >=99.0.0 (you have 1.4.0)",
+			);
+		});
+
+		it("should fall back to stdout when stderr is empty", () => {
+			mockExecSync.mockImplementation((cmd) => {
+				if (cmd === "quarto --version") {
+					return "1.4.0\n" as unknown as Buffer;
+				}
+				const error = new Error("Command failed: quarto add test-owner/test-test-ext@1.1.0 --no-prompt");
+				(error as Error & { stderr: string; stdout: string }).stderr = "";
+				(error as Error & { stderr: string; stdout: string }).stdout =
+					"ERROR: Extension not found at test-owner/test-test-ext@1.1.0\n";
+				throw error;
+			});
+
+			const update = createUpdate();
+
+			const result = applyUpdates([update]);
+
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].reason).toBe(
+				"Failed to update: ERROR: Extension not found at test-owner/test-test-ext@1.1.0",
+			);
+		});
+
+		it("should skip extension when quarto-required exceeds installed version", () => {
+			const update = createUpdate();
+			mockReadExtensionManifest.mockReturnValue({
+				version: "1.1.0",
+				quartoRequired: "99.0.0",
+			});
+
+			const result = applyUpdates([update]);
+
+			expect(result.modifiedFiles).toEqual([]);
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].reason).toContain("requires Quarto >= 99.0.0");
+			expect(core.warning).toHaveBeenCalledWith(expect.stringContaining("Skipping test-owner/test-ext"));
+		});
+
+		it("should include extension when quarto-required is satisfied", () => {
+			const update = createUpdate();
+			mockReadExtensionManifest.mockReturnValue({
+				version: "1.1.0",
+				quartoRequired: "1.0.0",
+			});
+
+			const result = applyUpdates([update]);
+
+			expect(result.modifiedFiles.length).toBeGreaterThan(0);
+			expect(result.skippedUpdates).toEqual([]);
+		});
+
+		it("should continue processing when one extension fails", () => {
+			let callCount = 0;
+			mockExecSync.mockImplementation((cmd) => {
+				if (cmd === "quarto --version") {
+					return "1.4.0\n" as unknown as Buffer;
+				}
+				callCount++;
+				if (callCount === 1) {
+					throw new Error("Failed to add extension");
+				}
+				return "" as unknown as Buffer;
+			});
+
+			const updates = [createUpdate("failing-ext", "1.1.0"), createUpdate("working-ext", "2.0.0")];
+
+			const result = applyUpdates(updates);
+
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].update.name).toBe("failing-ext");
+			expect(result.modifiedFiles.length).toBeGreaterThan(0);
+			expect(mockUpdateManifestSource).toHaveBeenCalledTimes(1);
 		});
 
 		it("should track all files in extension directory", () => {
@@ -238,10 +267,25 @@ describe("git.ts", () => {
 			const update = createUpdate();
 			const result = applyUpdates([update]);
 
-			expect(result).toContain("/path/to/test-ext/_extension.yml");
-			expect(result).toContain("/path/to/test-ext/assets/style.css");
-			expect(result).toContain("/path/to/test-ext/assets/script.js");
+			expect(result.modifiedFiles).toContain("/path/to/test-ext/_extension.yml");
+			expect(result.modifiedFiles).toContain("/path/to/test-ext/assets/style.css");
+			expect(result.modifiedFiles).toContain("/path/to/test-ext/assets/script.js");
 			expect(core.info).toHaveBeenCalledWith(expect.stringContaining("Tracked 3 file(s)"));
+		});
+
+		it("should return empty modified files for non-existent directory", () => {
+			mockFs.existsSync.mockReturnValue(false);
+
+			const update = createUpdate();
+			const result = applyUpdates([update]);
+
+			expect(result.modifiedFiles).toEqual([]);
+		});
+
+		it("should log installed Quarto version", () => {
+			applyUpdates([createUpdate()]);
+
+			expect(core.info).toHaveBeenCalledWith("Installed Quarto version: 1.4.0");
 		});
 	});
 

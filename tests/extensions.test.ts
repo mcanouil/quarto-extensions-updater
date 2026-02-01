@@ -216,10 +216,25 @@ contributes:
 			title: "Test Extension",
 			author: "Test Author",
 			version: "1.0.0",
+			quartoRequired: undefined,
 			source: "owner/repo@v1.0.0",
 			repository: "owner/repo",
 			contributes: "filters",
 		});
+	});
+
+	it("should parse quarto-required field", () => {
+		mockFs.existsSync.mockReturnValue(true);
+		mockFs.readFileSync.mockReturnValue(`
+title: Test Extension
+version: 1.0.0
+quarto-required: ">=1.4.0"
+source: owner/repo@v1.0.0
+`);
+
+		const result = readExtensionManifest("/path/_extension.yml");
+
+		expect(result?.quartoRequired).toBe(">=1.4.0");
 	});
 
 	it("should handle manifest with minimal fields", () => {
@@ -232,6 +247,7 @@ contributes:
 			title: undefined,
 			author: undefined,
 			version: "2.0.0",
+			quartoRequired: undefined,
 			source: undefined,
 			repository: undefined,
 			contributes: undefined,

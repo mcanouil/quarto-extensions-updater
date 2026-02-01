@@ -340,7 +340,6 @@ describe("github.ts", () => {
 
 	describe("createOrUpdatePR", () => {
 		it("should create a new PR when none exists", async () => {
-			mockOctokit.rest.pulls.list.mockResolvedValue({ data: [] });
 			mockOctokit.rest.pulls.create.mockResolvedValue({
 				data: {
 					number: 42,
@@ -383,15 +382,6 @@ describe("github.ts", () => {
 		});
 
 		it("should update existing PR", async () => {
-			mockOctokit.rest.pulls.list.mockResolvedValue({
-				data: [
-					{
-						number: 42,
-						title: "Old title",
-						html_url: "https://github.com/owner/repo/pull/42",
-					},
-				],
-			});
 			mockOctokit.rest.pulls.update.mockResolvedValue({
 				data: {
 					number: 42,
@@ -409,6 +399,8 @@ describe("github.ts", () => {
 				"New title",
 				"New body",
 				["dependencies"],
+				undefined,
+				42,
 			);
 
 			expect(mockOctokit.rest.pulls.update).toHaveBeenCalledWith({
@@ -433,7 +425,6 @@ describe("github.ts", () => {
 		});
 
 		it("should request reviewers and assignees when config provided", async () => {
-			mockOctokit.rest.pulls.list.mockResolvedValue({ data: [] });
 			mockOctokit.rest.pulls.create.mockResolvedValue({
 				data: {
 					number: 42,
@@ -465,7 +456,6 @@ describe("github.ts", () => {
 		});
 
 		it("should not request reviewers when config not provided", async () => {
-			mockOctokit.rest.pulls.list.mockResolvedValue({ data: [] });
 			mockOctokit.rest.pulls.create.mockResolvedValue({
 				data: {
 					number: 42,
@@ -484,10 +474,6 @@ describe("github.ts", () => {
 
 	describe("createCommit", () => {
 		it("should create commit with multiple files", async () => {
-			mockOctokit.rest.git.getTree.mockResolvedValue({
-				data: { sha: "tree-sha" },
-			});
-
 			mockOctokit.rest.git.createBlob.mockResolvedValue({
 				data: { sha: "blob-sha-1" },
 			});
@@ -524,10 +510,6 @@ describe("github.ts", () => {
 		});
 
 		it("should handle single file", async () => {
-			mockOctokit.rest.git.getTree.mockResolvedValue({
-				data: { sha: "tree-sha" },
-			});
-
 			mockOctokit.rest.git.createBlob.mockResolvedValue({
 				data: { sha: "blob-sha" },
 			});
@@ -561,10 +543,6 @@ describe("github.ts", () => {
 		});
 
 		it("should handle empty file list", async () => {
-			mockOctokit.rest.git.getTree.mockResolvedValue({
-				data: { sha: "tree-sha" },
-			});
-
 			mockOctokit.rest.git.createTree.mockResolvedValue({
 				data: { sha: "new-tree-sha" },
 			});
@@ -594,10 +572,6 @@ describe("github.ts", () => {
 		});
 
 		it("should encode file content as base64", async () => {
-			mockOctokit.rest.git.getTree.mockResolvedValue({
-				data: { sha: "tree-sha" },
-			});
-
 			mockOctokit.rest.git.createBlob.mockResolvedValue({
 				data: { sha: "blob-sha" },
 			});

@@ -20,7 +20,7 @@ inputs:
   registry-url:
     description: "URL to the Quarto extensions registry JSON file"
     required: false
-    default: "https://raw.githubusercontent.com/mcanouil/quarto-extensions/refs/heads/quarto-wizard/quarto-extensions.json"
+    default: "https://m.canouil.dev/quarto-extensions/extensions.json"
 
   create-pr:
     description: "Whether to create a pull request for updates"

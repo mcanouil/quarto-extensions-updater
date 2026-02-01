@@ -11,12 +11,14 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 - 🔀 **One PR per extension** — each extension gets its own PR that updates when new versions are available (or group all updates into a single PR).
 - 🏷️ Categorises updates by type (major, minor, patch).
 - 🤖 Dependabot-style PR descriptions.
-- 🚀 **Auto-merge support** — enable automatic merging of PRs based on configurable rules (*e.g.*, patch updates only).
+- 🚀 **Auto-merge support** — enable automatic merging of PRs based on configurable rules (_e.g._, patch updates only).
 - 🎯 **Selective updates** — include or exclude specific extensions from updates.
 - 📦 **Grouped updates** — option to combine all extension updates into a single PR.
 - 🛡️ **Update strategy** — control which types of updates to apply (all, minor, patch).
 - 🧪 **Dry-run mode** — preview updates and test configuration without making changes.
 - 👥 **PR reviewers and assignees** — automatically request reviewers and assign team members to PRs.
+- 🛡️ **Quarto version compatibility** — checks `quarto-required` in extension manifests and skips incompatible extensions.
+- 🔧 **Resilient updates** — individual extension failures do not crash the workflow; skipped extensions are reported in the PR body and job summary.
 - ⚡ Runs on a schedule or manually.
 - ⚙️ Highly customisable branch names, commit messages, and PR titles.
 
@@ -24,14 +26,14 @@ A GitHub Action that automatically updates Quarto extensions in your repository,
 
 ### Basic Setup
 
-Create a workflow file (*e.g.*, `.github/workflows/update-extensions.yml`):
+Create a workflow file (_e.g._, `.github/workflows/update-extensions.yml`):
 
 ```yaml
 name: Update Quarto Extensions
 
 on:
   schedule:
-    - cron: "0 0 * * *"  # Daily at midnight UTC
+    - cron: "0 0 * * *" # Daily at midnight UTC
   workflow_dispatch:
 
 permissions:
@@ -46,6 +48,8 @@ jobs:
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "release"
 
       - uses: mcanouil/quarto-extensions-updater@v1
         with:
@@ -87,15 +91,15 @@ jobs:
 | `auto-merge`            | Enable automatic merging of PRs based on `auto-merge-strategy`                            | No       | `false`                                                                 |
 | `auto-merge-strategy`   | Auto-merge strategy: `patch` (patch only), `minor` (minor and patch), `all` (all)         | No       | `patch`                                                                 |
 | `auto-merge-method`     | Merge method to use: `merge`, `squash`, or `rebase`                                       | No       | `squash`                                                                |
-| `include-extensions`    | Comma-separated list of extensions to include (*e.g.*, `owner/name1,owner/name2`)         | No       | *(all)*                                                                 |
-| `exclude-extensions`    | Comma-separated list of extensions to exclude (*e.g.*, `owner/name1,owner/name2`)         | No       | *(none)*                                                                |
+| `include-extensions`    | Comma-separated list of extensions to include (_e.g._, `owner/name1,owner/name2`)         | No       | _(all)_                                                                 |
+| `exclude-extensions`    | Comma-separated list of extensions to exclude (_e.g._, `owner/name1,owner/name2`)         | No       | _(none)_                                                                |
 | `group-updates`         | Group all extension updates into a single PR instead of one PR per extension              | No       | `false`                                                                 |
 | `update-strategy`       | Control which types of updates to apply: `all`, `minor` (minor and patch), `patch`        | No       | `all`                                                                   |
 | `dry-run`               | Run in dry-run mode: check for updates and report without making changes                  | No       | `false`                                                                 |
 | `create-issue`          | In dry-run mode, create a GitHub issue with the update summary                            | No       | `false`                                                                 |
-| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (*e.g.*, `user1,user2`)  | No       | *(none)*                                                                |
-| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (*e.g.*, `team1,team2`) | No       | *(none)*                                                                |
-| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (*e.g.*, `user1,user2`)         | No       | *(none)*                                                                |
+| `pr-reviewers`          | Comma-separated list of GitHub usernames to request as reviewers (_e.g._, `user1,user2`)  | No       | _(none)_                                                                |
+| `pr-team-reviewers`     | Comma-separated list of GitHub team slugs to request as reviewers (_e.g._, `team1,team2`) | No       | _(none)_                                                                |
+| `pr-assignees`          | Comma-separated list of GitHub usernames to assign to PRs (_e.g._, `user1,user2`)         | No       | _(none)_                                                                |
 
 ## Outputs
 
@@ -116,8 +120,9 @@ jobs:
 3. **Check Versions**: Compares installed versions with registry using semantic versioning.
 4. **Process Each Extension**: Each extension is processed individually to create separate PRs.
 5. **Apply Updates**: Uses Quarto CLI (`quarto add owner/repo@version --no-prompt`) to update extensions.
-6. **Track Updates**: Maintains `source` field in extension manifests for future update tracking.
-7. **Create/Update PR**:
+6. **Check Compatibility**: Reads `quarto-required` from updated manifests and skips extensions that require a newer Quarto version than the one installed.
+7. **Track Updates**: Maintains `source` field in extension manifests for future update tracking.
+8. **Create/Update PR**:
    - Creates a new PR if none exists for this extension.
    - Updates the existing PR if one already exists (same branch name).
    - Ensures **one PR per extension** at most.
@@ -128,6 +133,7 @@ This action requires:
 
 - Quarto CLI installed in the workflow environment.
 - Use `quarto-dev/quarto-actions/setup@v2` to install Quarto in GitHub Actions.
+- Specify an explicit Quarto version (_e.g._, `version: "release"`) in the setup step to ensure reproducible builds.
 
 ## Extension Registry
 
@@ -152,12 +158,15 @@ Extensions should have a manifest file (`_extension.yml` or `_extension.yaml`) w
 title: "My Extension"
 author: "Your Name"
 version: "1.0.0"
-contributes:
-  ...
+quarto-required: ">=1.4.0"
+contributes: ...
 source: "owner/repo@v1.0.0"
 ```
 
 The action will automatically add or update the `source` field to track extension origins.
+
+If the `quarto-required` field is present, the action checks whether the installed Quarto version satisfies the requirement.
+Extensions whose requirement exceeds the installed version are skipped and reported in the PR body and job summary.
 
 ## Pull Request Format
 
@@ -188,10 +197,10 @@ Updates the following Quarto extension(s):
 <summary>Release 3.0.2</summary>
 
 > ## What's Changed
-> * refactor: use module and enhance iconify extension by @mcanouil in https://github.com/mcanouil/quarto-iconify/pull/46
-> * ci: bump version for release :rocket: by @github-actions[bot] in https://github.com/mcanouil/quarto-iconify/pull/47
-> 
-> 
+>
+> - refactor: use module and enhance iconify extension by @mcanouil in https://github.com/mcanouil/quarto-iconify/pull/46
+> - ci: bump version for release :rocket: by @github-actions[bot] in https://github.com/mcanouil/quarto-iconify/pull/47
+>
 > **Full Changelog**: https://github.com/mcanouil/quarto-iconify/compare/3.0.1...3.0.2
 
 </details>
@@ -219,8 +228,8 @@ PRs will be merged automatically once all required status checks pass and branch
 
 ### Auto-Merge Strategies
 
-- **`patch`** (default): Only auto-merge patch updates (*e.g.*, 1.0.0 to 1.0.1).
-- **`minor`**: Auto-merge minor and patch updates (*e.g.*, 1.0.0 to 1.1.0 or 1.0.1).
+- **`patch`** (default): Only auto-merge patch updates (_e.g._, 1.0.0 to 1.0.1).
+- **`minor`**: Auto-merge minor and patch updates (_e.g._, 1.0.0 to 1.1.0 or 1.0.1).
 - **`all`**: Auto-merge all updates including major versions.
 
 ### Auto-Merge Methods
@@ -262,6 +271,8 @@ jobs:
 
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "release"
 
       - uses: mcanouil/quarto-extensions-updater@v1
         with:
@@ -284,7 +295,7 @@ jobs:
 ### Important Notes
 
 - The PR will only merge automatically after all required status checks pass.
-- If auto-merge fails (*e.g.*, due to permission issues or missing status checks), the PR will still be created but will not auto-merge.
+- If auto-merge fails (_e.g._, due to permission issues or missing status checks), the PR will still be created but will not auto-merge.
 - The action logs a warning if auto-merge fails but continues normal operation.
 
 ## Grouped Updates
@@ -346,9 +357,9 @@ Update strategy works independently from auto-merge strategy:
 - uses: mcanouil/quarto-extensions-updater@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
-    update-strategy: "minor"      # Only check for minor and patch updates
+    update-strategy: "minor" # Only check for minor and patch updates
     auto-merge: true
-    auto-merge-strategy: "patch"  # Auto-merge only patch updates
+    auto-merge-strategy: "patch" # Auto-merge only patch updates
 ```
 
 In this configuration:
@@ -377,7 +388,7 @@ All other extensions will be ignored.
 
 ### Exclude Specific Extensions
 
-To exclude certain extensions from updates (*e.g.*, to pin a specific version), use the `exclude-extensions` input:
+To exclude certain extensions from updates (_e.g._, to pin a specific version), use the `exclude-extensions` input:
 
 ```yaml
 - uses: mcanouil/quarto-extensions-updater@v1
@@ -519,7 +530,7 @@ In this configuration:
 - **Team reviewers** require the repository to be part of an organisation and the team to have access to the repository.
 - **Permissions**: The GitHub token must have appropriate permissions to request reviewers and add assignees.
 - **Branch protection**: If branch protection rules require review approval, auto-merge will wait for the required approvals.
-- **Failed requests**: If reviewer/assignee requests fail (*e.g.*, due to permissions), a warning is logged but the PR creation will still succeed.
+- **Failed requests**: If reviewer/assignee requests fail (_e.g._, due to permissions), a warning is logged but the PR creation will still succeed.
 
 ## Examples
 
@@ -566,7 +577,7 @@ In this configuration:
 ```yaml
 on:
   schedule:
-    - cron: "0 0 * * 0"  # Weekly on Sunday
+    - cron: "0 0 * * 0" # Weekly on Sunday
 ```
 
 **Monthly schedule:**
@@ -574,7 +585,7 @@ on:
 ```yaml
 on:
   schedule:
-    - cron: "0 0 1 * *"  # Monthly on 1st day
+    - cron: "0 0 1 * *" # Monthly on 1st day
 ```
 
 ### Custom Branch Naming and PR Format
@@ -614,6 +625,17 @@ Ensure your extensions are in `_extensions/owner/name/` structure with `_extensi
 - Verify workflow has `contents: write` and `pull-requests: write` permissions.
 - Check GitHub Actions logs for errors.
 - Ensure no existing PR with same branch name.
+
+### Extensions Skipped
+
+Extensions may be skipped during an update for two reasons:
+
+- **Quarto version requirement not met**: The updated extension declares a `quarto-required` field that exceeds the installed Quarto version.
+  Upgrade Quarto in your workflow or wait for a compatible extension release.
+- **`quarto add` failure**: The Quarto CLI failed to install the extension (_e.g._, network error or invalid release).
+  Check the workflow logs for the specific error message.
+
+Skipped extensions are reported in the job summary and, when applicable, in the PR body under a "Skipped Extensions" section.
 
 ## Related Projects
 
