@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- refactor: use `quarto-wizard-core` (#39).
+- fix: update copyright year from 2025 to 2026 in LICENSE.
+- chore(deps): bump `actions/upload-artifact` from 5.0.0 to 6.0.0 (#38).
+
 ## 1.0.0 (2025-12-12)
 
 Release of 1.0.0! 🎉
