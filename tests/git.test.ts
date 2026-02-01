@@ -180,6 +180,28 @@ describe("git.ts", () => {
 			);
 		});
 
+		it("should fall back to stdout when stderr is empty", () => {
+			mockExecSync.mockImplementation((cmd) => {
+				if (cmd === "quarto --version") {
+					return "1.4.0\n" as unknown as Buffer;
+				}
+				const error = new Error("Command failed: quarto add test-owner/test-test-ext@1.1.0 --no-prompt");
+				(error as Error & { stderr: string; stdout: string }).stderr = "";
+				(error as Error & { stderr: string; stdout: string }).stdout =
+					"ERROR: Extension not found at test-owner/test-test-ext@1.1.0\n";
+				throw error;
+			});
+
+			const update = createUpdate();
+
+			const result = applyUpdates([update]);
+
+			expect(result.skippedUpdates).toHaveLength(1);
+			expect(result.skippedUpdates[0].reason).toBe(
+				"Failed to update: ERROR: Extension not found at test-owner/test-test-ext@1.1.0",
+			);
+		});
+
 		it("should skip extension when quarto-required exceeds installed version", () => {
 			const update = createUpdate();
 			mockReadExtensionManifest.mockReturnValue({

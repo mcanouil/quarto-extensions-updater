@@ -68,6 +68,27 @@ function getAllFilesInDirectory(dirPath: string): string[] {
 }
 
 /**
+ * Extracts a meaningful error message from an execSync failure.
+ * Checks stderr, then stdout, then falls back to the error message.
+ * @param error The caught error from execSync
+ * @returns A descriptive error string
+ */
+function extractExecError(error: unknown): string {
+	if (error instanceof Error && "stderr" in error) {
+		const execError = error as Error & { stderr?: unknown; stdout?: unknown };
+		const stderr = String(execError.stderr ?? "").trim();
+		if (stderr) {
+			return stderr;
+		}
+		const stdout = String(execError.stdout ?? "").trim();
+		if (stdout) {
+			return stdout;
+		}
+	}
+	return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
  * @returns Result containing modified files and any skipped updates
@@ -129,14 +150,7 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 
 			core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
 		} catch (error) {
-			let reason: string;
-			if (error instanceof Error && "stderr" in error) {
-				const stderr = String((error as NodeJS.ErrnoException & { stderr: unknown }).stderr).trim();
-				reason = stderr || error.message;
-			} else {
-				reason = error instanceof Error ? error.message : String(error);
-			}
-			reason = `Failed to update: ${reason}`;
+			const reason = `Failed to update: ${extractExecError(error)}`;
 			core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
 			skippedUpdates.push({ update, reason });
 		}
