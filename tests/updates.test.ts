@@ -438,6 +438,95 @@ describe("checkForUpdates", () => {
 			expect(updates).toHaveLength(3);
 		});
 	});
+
+	describe("multi-directory scanning", () => {
+		beforeEach(() => {
+			jest.clearAllMocks();
+		});
+
+		it("should scan multiple directories and combine results", () => {
+			(extensions.findExtensionManifests as jest.Mock)
+				.mockReturnValueOnce(["/workspace/_extensions/mcanouil/iconify/_extension.yml"])
+				.mockReturnValueOnce(["/workspace/slides/_extensions/quarto-ext/lightbox/_extension.yml"]);
+
+			(extensions.readExtensionManifest as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("iconify")) {
+					return {
+						version: "1.0.0",
+						source: "mcanouil/quarto-iconify@1.0.0",
+						repository: "https://github.com/mcanouil/quarto-iconify",
+					};
+				} else if (path.includes("lightbox")) {
+					return {
+						version: "1.0.0",
+						source: "quarto-ext/lightbox@1.0.0",
+						repository: "https://github.com/quarto-ext/lightbox",
+					};
+				}
+				return null;
+			});
+			(extensions.extractExtensionInfo as jest.Mock).mockImplementation((path: string) => {
+				if (path.includes("iconify")) {
+					return { owner: "mcanouil", name: "iconify" };
+				} else if (path.includes("lightbox")) {
+					return { owner: "quarto-ext", name: "lightbox" };
+				}
+				return null;
+			});
+
+			const multiRegistry: Registry = {
+				"mcanouil/iconify": {
+					...mockRegistry["mcanouil/iconify"],
+				},
+				"quarto-ext/lightbox": {
+					id: "quarto-ext/lightbox",
+					owner: "quarto-ext",
+					name: "lightbox",
+					fullName: "quarto-ext/lightbox",
+					description: "Lightbox for Quarto",
+					topics: ["quarto"],
+					contributes: ["shortcodes"],
+					latestVersion: "2.0.0",
+					latestTag: "v2.0.0",
+					latestReleaseUrl: "https://github.com/quarto-ext/lightbox/releases/tag/v2.0.0",
+					stars: 50,
+					licence: "MIT License",
+					htmlUrl: "https://github.com/quarto-ext/lightbox",
+					template: false,
+					defaultBranchRef: "main",
+					latestCommit: "def456",
+				},
+			};
+
+			const updates = checkForUpdates("/workspace", multiRegistry, undefined, "all", [".", "slides"]);
+
+			expect(updates).toHaveLength(2);
+			expect(updates.map((u) => u.nameWithOwner)).toContain("mcanouil/iconify");
+			expect(updates.map((u) => u.nameWithOwner)).toContain("quarto-ext/lightbox");
+			expect(extensions.findExtensionManifests).toHaveBeenCalledTimes(2);
+		});
+
+		it("should deduplicate manifests when directories overlap", () => {
+			const sharedManifest = "/workspace/_extensions/mcanouil/iconify/_extension.yml";
+			(extensions.findExtensionManifests as jest.Mock)
+				.mockReturnValueOnce([sharedManifest])
+				.mockReturnValueOnce([sharedManifest]);
+
+			(extensions.readExtensionManifest as jest.Mock).mockReturnValue({
+				version: "1.0.0",
+				source: "mcanouil/quarto-iconify@1.0.0",
+				repository: "https://github.com/mcanouil/quarto-iconify",
+			});
+			(extensions.extractExtensionInfo as jest.Mock).mockReturnValue({
+				owner: "mcanouil",
+				name: "iconify",
+			});
+
+			const updates = checkForUpdates("/workspace", mockRegistry, undefined, "all", [".", "."]);
+
+			expect(updates).toHaveLength(1);
+		});
+	});
 });
 
 describe("groupUpdatesByType", () => {

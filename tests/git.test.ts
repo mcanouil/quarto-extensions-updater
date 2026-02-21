@@ -5,6 +5,7 @@ import {
 	createBranchName,
 	createCommitMessage,
 	validateModifiedFiles,
+	deriveQuartoAddCwd,
 } from "../src/git";
 import { updateManifestSource, readExtensionManifest } from "../src/extensions";
 import type { ExtensionUpdate } from "../src/types";
@@ -117,6 +118,7 @@ describe("git.ts", () => {
 			const result = applyUpdates([update]);
 
 			expect(mockExecSync).toHaveBeenCalledWith("quarto add test-owner/test-test-ext@1.1.0 --no-prompt", {
+				cwd: process.cwd(),
 				stdio: "pipe",
 				encoding: "utf-8",
 			});
@@ -286,6 +288,55 @@ describe("git.ts", () => {
 			applyUpdates([createUpdate()]);
 
 			expect(core.info).toHaveBeenCalledWith("Installed Quarto version: 1.4.0");
+		});
+
+		it("should use correct cwd when manifest path contains _extensions", () => {
+			const update: ExtensionUpdate = {
+				name: "iconify",
+				owner: "mcanouil",
+				nameWithOwner: "mcanouil/iconify",
+				repositoryName: "mcanouil/quarto-iconify",
+				currentVersion: "1.0.0",
+				latestVersion: "1.1.0",
+				manifestPath: "/workspace/_extensions/mcanouil/iconify/_extension.yml",
+				url: "https://github.com/mcanouil/quarto-iconify",
+				releaseUrl: "https://github.com/mcanouil/quarto-iconify/releases/tag/v1.1.0",
+				description: "Test extension",
+			};
+
+			applyUpdates([update]);
+
+			expect(mockExecSync).toHaveBeenCalledWith("quarto add mcanouil/quarto-iconify@1.1.0 --no-prompt", {
+				cwd: "/workspace",
+				stdio: "pipe",
+				encoding: "utf-8",
+			});
+		});
+	});
+
+	describe("deriveQuartoAddCwd", () => {
+		it("should return parent directory of _extensions", () => {
+			const result = deriveQuartoAddCwd("/workspace/_extensions/owner/ext/_extension.yml");
+
+			expect(result).toBe("/workspace");
+		});
+
+		it("should return process.cwd() when path has no _extensions segment", () => {
+			const result = deriveQuartoAddCwd("/path/to/ext/_extension.yml");
+
+			expect(result).toBe(process.cwd());
+		});
+
+		it("should return process.cwd() when path starts with _extensions", () => {
+			const result = deriveQuartoAddCwd("_extensions/owner/ext/_extension.yml");
+
+			expect(result).toBe(process.cwd());
+		});
+
+		it("should handle nested scan directories", () => {
+			const result = deriveQuartoAddCwd("/workspace/slides/_extensions/owner/ext/_extension.yml");
+
+			expect(result).toBe("/workspace/slides");
 		});
 	});
 

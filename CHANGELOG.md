@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- feat: add `scan-directories` input for multi-directory extension scanning.
+
 ## 2.0.0 (2026-02-01)
 
 - refactor: use `quarto-wizard-core` (#39).

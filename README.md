@@ -81,6 +81,7 @@ jobs:
 | ----------------------- | ----------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
 | `github-token`          | GitHub token for creating pull requests                                                   | Yes      | `${{ github.token }}`                                                   |
 | `workspace-path`        | Path to the workspace containing `_extensions` directory                                  | No       | `.`                                                                     |
+| `scan-directories`      | Directories to scan for `_extensions` (newline-separated, relative to `workspace-path`)   | No       | `.`                                                                     |
 | `registry-url`          | URL to the Quarto extensions registry JSON file                                           | No       | [quarto-extensions directory](https://m.canouil.dev/quarto-extensions/) |
 | `create-pr`             | Whether to create a pull request for updates                                              | No       | `true`                                                                  |
 | `branch-prefix`         | Prefix for the update branch name                                                         | No       | `chore/quarto-extensions`                                               |
@@ -116,7 +117,7 @@ jobs:
 ## How It Works
 
 1. **Fetch Registry**: Downloads the Quarto extensions registry from GitHub.
-2. **Scan Extensions**: Finds all installed extensions in `_extensions/`.
+2. **Scan Extensions**: Finds all installed extensions in `_extensions/` across each configured scan directory.
 3. **Check Versions**: Compares installed versions with registry using semantic versioning.
 4. **Process Each Extension**: Each extension is processed individually to create separate PRs.
 5. **Apply Updates**: Uses Quarto CLI (`quarto add owner/repo@version --no-prompt`) to update extensions.
@@ -318,6 +319,26 @@ When `group-updates` is enabled:
 - The PR title reflects the total number of extensions being updated.
 - The PR body lists all updates grouped by type (major, minor, patch).
 - Auto-merge will only be enabled if all extensions in the group qualify based on your auto-merge strategy.
+
+## Multi-directory Scanning
+
+By default, the action scans for `_extensions` in the workspace root only.
+If your repository contains multiple Quarto sub-projects (each with their own `_extensions` directory), use the `scan-directories` input to scan them all.
+
+### Enable Multi-directory Scanning
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    scan-directories: |
+      .
+      slides
+      exercises
+```
+
+Paths are relative to `workspace-path`.
+Each directory is scanned independently for `_extensions`, and duplicates are automatically removed when directories overlap.
 
 ## Update Strategy
 

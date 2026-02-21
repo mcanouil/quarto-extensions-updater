@@ -11,6 +11,7 @@ import {
 	validateRegistryUrl,
 	validateBranchPrefix,
 	parseCommaSeparatedList,
+	parseNewlineSeparatedList,
 } from "../src/validation";
 
 const mockCore = jest.mocked(core);
@@ -20,6 +21,7 @@ const mockValidateUpdateStrategy = jest.mocked(validateUpdateStrategy);
 const mockValidateRegistryUrl = jest.mocked(validateRegistryUrl);
 const mockValidateBranchPrefix = jest.mocked(validateBranchPrefix);
 const mockParseCommaSeparatedList = jest.mocked(parseCommaSeparatedList);
+const mockParseNewlineSeparatedList = jest.mocked(parseNewlineSeparatedList);
 
 describe("parseInputs", () => {
 	beforeEach(() => {
@@ -36,11 +38,24 @@ describe("parseInputs", () => {
 				.filter((item) => item.length > 0);
 		});
 
+		// Use real implementation for parseNewlineSeparatedList
+		mockParseNewlineSeparatedList.mockImplementation((input: string) => {
+			if (!input || input.trim().length === 0) {
+				return ["."];
+			}
+			const items = input
+				.split("\n")
+				.map((item) => item.trim())
+				.filter((item) => item.length > 0);
+			return items.length === 0 ? ["."] : items;
+		});
+
 		// Set default mock implementations
 		mockCore.getInput.mockImplementation((name: string) => {
 			const defaults: Record<string, string> = {
 				"github-token": "test-token",
 				"workspace-path": "",
+				"scan-directories": "",
 				"registry-url": "",
 				"base-branch": "",
 				"branch-prefix": "",
@@ -77,6 +92,7 @@ describe("parseInputs", () => {
 		expect(config).toEqual({
 			githubToken: "test-token",
 			workspacePath: process.cwd(),
+			scanDirectories: ["."],
 			registryUrl: undefined,
 			createPR: true,
 			baseBranch: "main",
@@ -149,6 +165,7 @@ describe("parseInputs", () => {
 		expect(config).toEqual({
 			githubToken: "custom-token",
 			workspacePath: "/custom/path",
+			scanDirectories: ["."],
 			registryUrl: "https://example.com/registry.json",
 			createPR: true,
 			baseBranch: "develop",
@@ -443,5 +460,29 @@ describe("parseInputs", () => {
 		const config = parseInputs();
 
 		expect(config.createIssue).toBe(false);
+	});
+
+	it("should parse custom scan-directories input", () => {
+		mockCore.getInput.mockImplementation((name: string) => {
+			if (name === "github-token") return "test-token";
+			if (name === "scan-directories") return ".\nslides\nexercises";
+			return "";
+		});
+
+		const config = parseInputs();
+
+		expect(config.scanDirectories).toEqual([".", "slides", "exercises"]);
+	});
+
+	it("should default scan-directories to ['.'] when not provided", () => {
+		mockCore.getInput.mockImplementation((name: string) => {
+			if (name === "github-token") return "test-token";
+			if (name === "scan-directories") return "";
+			return "";
+		});
+
+		const config = parseInputs();
+
+		expect(config.scanDirectories).toEqual(["."]);
 	});
 });
