@@ -5,6 +5,7 @@ import { fetchExtensionsRegistry } from "./registry";
 import { checkForUpdates } from "./updates";
 import { logUpdateSummary } from "./pr";
 import { parseInputs } from "./config";
+import { validateScanDirectories } from "./validation";
 import { generateDryRunSummary, generateCompletedSummary } from "./summary";
 import { processAllPRs } from "./prProcessor";
 import { createIssueForUpdates } from "./github";
@@ -59,6 +60,7 @@ async function run(): Promise<void> {
 
 		// Validate workspace exists
 		validateWorkspace(config.workspacePath);
+		validateScanDirectories(config.scanDirectories, config.workspacePath);
 
 		// Initialise GitHub client
 		const octokit = github.getOctokit(config.githubToken);
@@ -67,6 +69,7 @@ async function run(): Promise<void> {
 
 		core.info("🚀 Starting Quarto Extensions Updater...");
 		core.info(`Workspace path: ${config.workspacePath}`);
+		core.info(`Scan directories: ${config.scanDirectories.join(", ")}`);
 		core.info(`Repository: ${owner}/${repo}`);
 		core.info(`Base branch: ${config.baseBranch}`);
 
@@ -76,7 +79,13 @@ async function run(): Promise<void> {
 		core.endGroup();
 
 		core.startGroup("🔍 Checking for updates");
-		const updates = checkForUpdates(config.workspacePath, registry, config.filterConfig, config.updateStrategy);
+		const updates = checkForUpdates(
+			config.workspacePath,
+			registry,
+			config.filterConfig,
+			config.updateStrategy,
+			config.scanDirectories,
+		);
 		core.endGroup();
 
 		// Handle no updates case

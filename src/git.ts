@@ -113,6 +113,22 @@ function requireQuartoVersion(): string {
 }
 
 /**
+ * Derives the working directory for running `quarto add` based on the manifest path.
+ * Returns the parent directory of `_extensions` so that `quarto add` installs
+ * the extension in the correct location.
+ * @param manifestPath Absolute path to the extension manifest file
+ * @returns The directory to use as cwd for `quarto add`
+ */
+export function deriveQuartoAddCwd(manifestPath: string): string {
+	const parts = manifestPath.split(path.sep);
+	const extensionsIndex = parts.indexOf("_extensions");
+	if (extensionsIndex <= 0) {
+		return process.cwd();
+	}
+	return parts.slice(0, extensionsIndex).join(path.sep);
+}
+
+/**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
  * @returns Result containing modified files and any skipped updates
@@ -126,9 +142,11 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 	for (const update of updates) {
 		try {
 			const source = `${update.repositoryName}@${update.latestVersion}`;
-			core.info(`Running: quarto add ${source} --no-prompt`);
+			const quartoAddCwd = deriveQuartoAddCwd(update.manifestPath);
+			core.info(`Running: quarto add ${source} --no-prompt (cwd: ${quartoAddCwd})`);
 
 			const output = execSync(`quarto add ${source} --no-prompt`, {
+				cwd: quartoAddCwd,
 				stdio: "pipe",
 				encoding: "utf-8",
 			});

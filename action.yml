@@ -17,6 +17,11 @@ inputs:
     required: false
     default: "."
 
+  scan-directories:
+    description: "Newline-separated list of directories (relative to workspace-path) to scan for _extensions. Each directory is scanned independently."
+    required: false
+    default: "."
+
   registry-url:
     description: "URL to the Quarto extensions registry JSON file"
     required: false

@@ -1,3 +1,4 @@
+import * as path from "path";
 import * as core from "@actions/core";
 import * as semver from "semver";
 import type { Registry, RegistryEntry } from "@quarto-wizard/core";
@@ -43,6 +44,7 @@ function shouldApplyUpdate(currentVersion: string, latestVersion: string, strate
  * @param registry The extensions registry
  * @param filterConfig Optional configuration for filtering extensions
  * @param updateStrategy Optional strategy to control which types of updates to apply (default: "all")
+ * @param scanDirectories Directories relative to workspacePath to scan for _extensions (default: ["."])
  * @returns Array of available updates
  */
 export function checkForUpdates(
@@ -50,9 +52,14 @@ export function checkForUpdates(
 	registry: Registry,
 	filterConfig?: ExtensionFilterConfig,
 	updateStrategy: UpdateStrategy = "all",
+	scanDirectories: string[] = ["."],
 ): ExtensionUpdate[] {
 	const updates: ExtensionUpdate[] = [];
-	const manifestPaths = findExtensionManifests(workspacePath);
+	const allManifestPaths: string[] = [];
+	for (const scanDir of scanDirectories) {
+		allManifestPaths.push(...findExtensionManifests(path.join(workspacePath, scanDir)));
+	}
+	const manifestPaths = [...new Set(allManifestPaths)];
 
 	core.info(`Checking ${manifestPaths.length} extensions for updates...`);
 

@@ -6,6 +6,7 @@ import {
 	validateRegistryUrl,
 	validateBranchPrefix,
 	parseCommaSeparatedList,
+	parseNewlineSeparatedList,
 } from "./validation";
 import {
 	DEFAULT_BASE_BRANCH,
@@ -23,6 +24,7 @@ import type { AutoMergeConfig, ExtensionFilterConfig, UpdateStrategy, PRAssignme
 export interface AppConfig {
 	githubToken: string;
 	workspacePath: string;
+	scanDirectories: string[];
 	registryUrl: string | undefined;
 	createPR: boolean;
 	baseBranch: string;
@@ -50,6 +52,8 @@ export function parseInputs(): AppConfig {
 
 	// Path and registry
 	const workspacePath = core.getInput("workspace-path") || process.cwd();
+	const scanDirectoriesInput = core.getInput("scan-directories") || ".";
+	const scanDirectories = parseNewlineSeparatedList(scanDirectoriesInput);
 	const registryUrl = core.getInput("registry-url") || undefined;
 
 	// PR configuration
@@ -117,6 +121,7 @@ export function parseInputs(): AppConfig {
 	return {
 		githubToken,
 		workspacePath,
+		scanDirectories,
 		registryUrl,
 		createPR,
 		baseBranch,

@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import {
 	validateMergeMethod,
 	validateAutoMergeStrategy,
@@ -6,7 +7,11 @@ import {
 	validateRegistryUrl,
 	validateBranchPrefix,
 	parseCommaSeparatedList,
+	parseNewlineSeparatedList,
+	validateScanDirectories,
 } from "../src/validation";
+
+jest.mock("fs");
 
 describe("validateMergeMethod", () => {
 	it("should accept valid merge methods", () => {
@@ -130,5 +135,66 @@ describe("parseCommaSeparatedList", () => {
 
 	it("should filter out whitespace-only items", () => {
 		expect(parseCommaSeparatedList("item1, ,item2")).toEqual(["item1", "item2"]);
+	});
+});
+
+describe("parseNewlineSeparatedList", () => {
+	it("should return ['.'] for empty input", () => {
+		expect(parseNewlineSeparatedList("")).toEqual(["."]);
+	});
+
+	it("should return ['.'] for whitespace-only input", () => {
+		expect(parseNewlineSeparatedList("   ")).toEqual(["."]);
+	});
+
+	it("should parse a single directory", () => {
+		expect(parseNewlineSeparatedList("slides")).toEqual(["slides"]);
+	});
+
+	it("should parse multiple newline-separated directories", () => {
+		expect(parseNewlineSeparatedList(".\nslides\nexercises")).toEqual([".", "slides", "exercises"]);
+	});
+
+	it("should trim whitespace from items", () => {
+		expect(parseNewlineSeparatedList("  slides  \n  exercises  ")).toEqual(["slides", "exercises"]);
+	});
+
+	it("should filter out empty lines", () => {
+		expect(parseNewlineSeparatedList("slides\n\nexercises\n")).toEqual(["slides", "exercises"]);
+	});
+});
+
+describe("validateScanDirectories", () => {
+	const mockFs = jest.mocked(fs);
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+
+	it("should throw for absolute paths", () => {
+		expect(() => validateScanDirectories(["/absolute/path"], "/workspace")).toThrow(
+			"Scan directory must be a relative path: '/absolute/path'",
+		);
+	});
+
+	it("should throw for path traversal outside workspace", () => {
+		expect(() => validateScanDirectories(["../../etc"], "/workspace")).toThrow(
+			"Scan directory '../../etc' resolves outside the workspace",
+		);
+	});
+
+	it("should throw for non-existent directories", () => {
+		mockFs.existsSync.mockReturnValue(false);
+
+		expect(() => validateScanDirectories(["nonexistent"], "/workspace")).toThrow(
+			"Scan directory does not exist: 'nonexistent'",
+		);
+	});
+
+	it("should pass for valid relative directories", () => {
+		mockFs.existsSync.mockReturnValue(true);
+
+		expect(() => validateScanDirectories([".", "slides", "exercises"], "/workspace")).not.toThrow();
+		expect(mockFs.existsSync).toHaveBeenCalledTimes(3);
 	});
 });

@@ -1,3 +1,5 @@
+import * as path from "path";
+import * as fs from "fs";
 import type { AutoMergeStrategy, MergeMethod, UpdateStrategy } from "./types";
 import { ValidationError } from "./errors";
 import {
@@ -119,4 +121,52 @@ export function parseCommaSeparatedList(input: string): string[] {
 		.split(",")
 		.map((item) => item.trim())
 		.filter((item) => item.length > 0);
+}
+
+/**
+ * Parses a newline-separated list input into trimmed, non-empty strings
+ * Falls back to ["."] when input is empty
+ * @param input The newline-separated input string
+ * @returns Array of trimmed, non-empty strings
+ */
+export function parseNewlineSeparatedList(input: string): string[] {
+	if (!input || input.trim().length === 0) {
+		return ["."];
+	}
+
+	const items = input
+		.split("\n")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+
+	return items.length === 0 ? ["."] : items;
+}
+
+/**
+ * Validates that scan directories are relative paths pointing to existing directories within the workspace
+ * @param scanDirectories Array of directory paths to validate
+ * @param workspacePath The workspace root path
+ * @throws ValidationError if any path is absolute, escapes the workspace, or does not exist
+ */
+export function validateScanDirectories(scanDirectories: string[], workspacePath: string): void {
+	const resolvedWorkspace = path.resolve(workspacePath);
+
+	for (const dir of scanDirectories) {
+		if (path.isAbsolute(dir)) {
+			throw new ValidationError(`Scan directory must be a relative path: '${dir}'`, "scan-directories", dir);
+		}
+
+		const resolved = path.resolve(workspacePath, dir);
+		if (resolved !== resolvedWorkspace && !resolved.startsWith(resolvedWorkspace + path.sep)) {
+			throw new ValidationError(`Scan directory '${dir}' resolves outside the workspace`, "scan-directories", dir);
+		}
+
+		if (!fs.existsSync(resolved)) {
+			throw new ValidationError(
+				`Scan directory does not exist: '${dir}' (resolved to '${resolved}')`,
+				"scan-directories",
+				dir,
+			);
+		}
+	}
 }

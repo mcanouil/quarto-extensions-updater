@@ -89921,6 +89921,8 @@ function parseInputs() {
     const githubToken = core.getInput("github-token", { required: true });
     // Path and registry
     const workspacePath = core.getInput("workspace-path") || process.cwd();
+    const scanDirectoriesInput = core.getInput("scan-directories") || ".";
+    const scanDirectories = (0, validation_1.parseNewlineSeparatedList)(scanDirectoriesInput);
     const registryUrl = core.getInput("registry-url") || undefined;
     // PR configuration
     const createPR = core.getBooleanInput("create-pr") !== false;
@@ -89975,6 +89977,7 @@ function parseInputs() {
     return {
         githubToken,
         workspacePath,
+        scanDirectories,
         registryUrl,
         createPR,
         baseBranch,
@@ -90410,6 +90413,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getQuartoVersion = getQuartoVersion;
+exports.deriveQuartoAddCwd = deriveQuartoAddCwd;
 exports.applyUpdates = applyUpdates;
 exports.createBranchName = createBranchName;
 exports.createCommitMessage = createCommitMessage;
@@ -90514,6 +90518,21 @@ function requireQuartoVersion() {
     return quartoVersion;
 }
 /**
+ * Derives the working directory for running `quarto add` based on the manifest path.
+ * Returns the parent directory of `_extensions` so that `quarto add` installs
+ * the extension in the correct location.
+ * @param manifestPath Absolute path to the extension manifest file
+ * @returns The directory to use as cwd for `quarto add`
+ */
+function deriveQuartoAddCwd(manifestPath) {
+    const parts = manifestPath.split(path.sep);
+    const extensionsIndex = parts.indexOf("_extensions");
+    if (extensionsIndex <= 0) {
+        return process.cwd();
+    }
+    return parts.slice(0, extensionsIndex).join(path.sep);
+}
+/**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
  * @returns Result containing modified files and any skipped updates
@@ -90525,8 +90544,10 @@ function applyUpdates(updates) {
     for (const update of updates) {
         try {
             const source = `${update.repositoryName}@${update.latestVersion}`;
-            core.info(`Running: quarto add ${source} --no-prompt`);
+            const quartoAddCwd = deriveQuartoAddCwd(update.manifestPath);
+            core.info(`Running: quarto add ${source} --no-prompt (cwd: ${quartoAddCwd})`);
             const output = (0, child_process_1.execSync)(`quarto add ${source} --no-prompt`, {
+                cwd: quartoAddCwd,
                 stdio: "pipe",
                 encoding: "utf-8",
             });
@@ -90960,6 +90981,7 @@ const registry_1 = __nccwpck_require__(92976);
 const updates_1 = __nccwpck_require__(48361);
 const pr_1 = __nccwpck_require__(81309);
 const config_1 = __nccwpck_require__(22973);
+const validation_1 = __nccwpck_require__(24344);
 const summary_1 = __nccwpck_require__(28855);
 const prProcessor_1 = __nccwpck_require__(76409);
 const github_1 = __nccwpck_require__(69248);
@@ -91003,12 +91025,14 @@ async function run() {
         const config = (0, config_1.parseInputs)();
         // Validate workspace exists
         validateWorkspace(config.workspacePath);
+        (0, validation_1.validateScanDirectories)(config.scanDirectories, config.workspacePath);
         // Initialise GitHub client
         const octokit = github.getOctokit(config.githubToken);
         const context = github.context;
         const { owner, repo } = context.repo;
         core.info("🚀 Starting Quarto Extensions Updater...");
         core.info(`Workspace path: ${config.workspacePath}`);
+        core.info(`Scan directories: ${config.scanDirectories.join(", ")}`);
         core.info(`Repository: ${owner}/${repo}`);
         core.info(`Base branch: ${config.baseBranch}`);
         // Fetch registry and check for updates
@@ -91016,7 +91040,7 @@ async function run() {
         const registry = await (0, registry_1.fetchExtensionsRegistry)(config.registryUrl);
         core.endGroup();
         core.startGroup("🔍 Checking for updates");
-        const updates = (0, updates_1.checkForUpdates)(config.workspacePath, registry, config.filterConfig, config.updateStrategy);
+        const updates = (0, updates_1.checkForUpdates)(config.workspacePath, registry, config.filterConfig, config.updateStrategy, config.scanDirectories);
         core.endGroup();
         // Handle no updates case
         if (updates.length === 0) {
@@ -91896,6 +91920,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.checkForUpdates = checkForUpdates;
 exports.normaliseVersion = normaliseVersion;
 exports.groupUpdatesByType = groupUpdatesByType;
+const path = __importStar(__nccwpck_require__(16928));
 const core = __importStar(__nccwpck_require__(37484));
 const semver = __importStar(__nccwpck_require__(62088));
 const extensions_1 = __nccwpck_require__(19233);
@@ -91931,11 +91956,16 @@ function shouldApplyUpdate(currentVersion, latestVersion, strategy) {
  * @param registry The extensions registry
  * @param filterConfig Optional configuration for filtering extensions
  * @param updateStrategy Optional strategy to control which types of updates to apply (default: "all")
+ * @param scanDirectories Directories relative to workspacePath to scan for _extensions (default: ["."])
  * @returns Array of available updates
  */
-function checkForUpdates(workspacePath, registry, filterConfig, updateStrategy = "all") {
+function checkForUpdates(workspacePath, registry, filterConfig, updateStrategy = "all", scanDirectories = ["."]) {
     const updates = [];
-    const manifestPaths = (0, extensions_1.findExtensionManifests)(workspacePath);
+    const allManifestPaths = [];
+    for (const scanDir of scanDirectories) {
+        allManifestPaths.push(...(0, extensions_1.findExtensionManifests)(path.join(workspacePath, scanDir)));
+    }
+    const manifestPaths = [...new Set(allManifestPaths)];
     core.info(`Checking ${manifestPaths.length} extensions for updates...`);
     for (const manifestPath of manifestPaths) {
         const extensionData = (0, extensions_1.readExtensionManifest)(manifestPath);
@@ -92070,10 +92100,43 @@ function groupUpdatesByType(updates) {
 /***/ }),
 
 /***/ 24344:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.validateMergeMethod = validateMergeMethod;
 exports.validateAutoMergeStrategy = validateAutoMergeStrategy;
@@ -92082,6 +92145,10 @@ exports.validateWorkspacePath = validateWorkspacePath;
 exports.validateRegistryUrl = validateRegistryUrl;
 exports.validateBranchPrefix = validateBranchPrefix;
 exports.parseCommaSeparatedList = parseCommaSeparatedList;
+exports.parseNewlineSeparatedList = parseNewlineSeparatedList;
+exports.validateScanDirectories = validateScanDirectories;
+const path = __importStar(__nccwpck_require__(16928));
+const fs = __importStar(__nccwpck_require__(79896));
 const errors_1 = __nccwpck_require__(83916);
 const constants_1 = __nccwpck_require__(27242);
 /**
@@ -92170,6 +92237,43 @@ function parseCommaSeparatedList(input) {
         .split(",")
         .map((item) => item.trim())
         .filter((item) => item.length > 0);
+}
+/**
+ * Parses a newline-separated list input into trimmed, non-empty strings
+ * Falls back to ["."] when input is empty
+ * @param input The newline-separated input string
+ * @returns Array of trimmed, non-empty strings
+ */
+function parseNewlineSeparatedList(input) {
+    if (!input || input.trim().length === 0) {
+        return ["."];
+    }
+    const items = input
+        .split("\n")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    return items.length === 0 ? ["."] : items;
+}
+/**
+ * Validates that scan directories are relative paths pointing to existing directories within the workspace
+ * @param scanDirectories Array of directory paths to validate
+ * @param workspacePath The workspace root path
+ * @throws ValidationError if any path is absolute, escapes the workspace, or does not exist
+ */
+function validateScanDirectories(scanDirectories, workspacePath) {
+    const resolvedWorkspace = path.resolve(workspacePath);
+    for (const dir of scanDirectories) {
+        if (path.isAbsolute(dir)) {
+            throw new errors_1.ValidationError(`Scan directory must be a relative path: '${dir}'`, "scan-directories", dir);
+        }
+        const resolved = path.resolve(workspacePath, dir);
+        if (resolved !== resolvedWorkspace && !resolved.startsWith(resolvedWorkspace + path.sep)) {
+            throw new errors_1.ValidationError(`Scan directory '${dir}' resolves outside the workspace`, "scan-directories", dir);
+        }
+        if (!fs.existsSync(resolved)) {
+            throw new errors_1.ValidationError(`Scan directory does not exist: '${dir}' (resolved to '${resolved}')`, "scan-directories", dir);
+        }
+    }
 }
 
 
