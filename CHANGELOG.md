@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 (2026-02-21)
 
 - feat: add `scan-directories` input for multi-directory extension scanning.
 
