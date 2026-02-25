@@ -7206,6 +7206,7 @@ const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const os = __importStar(__nccwpck_require__(48161));
 const errors_js_1 = __nccwpck_require__(42356);
+const manifest_js_1 = __nccwpck_require__(14222);
 const zip_js_1 = __nccwpck_require__(71645);
 const tar_js_1 = __nccwpck_require__(62477);
 /**
@@ -7256,19 +7257,36 @@ async function extractArchive(archivePath, options = {}) {
     }
 }
 /**
+ * Check whether a file exists using async FS operations.
+ */
+async function fileExists(filePath) {
+    try {
+        await fs.promises.access(filePath);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Maximum recursion depth for findExtensionRoot to prevent stack overflow on crafted archives. */
+const MAX_FIND_DEPTH = 5;
+/**
  * Find the extension root in an extracted archive.
  *
  * GitHub archives typically have a top-level directory like "repo-tag/".
  * This function finds the directory containing _extension.yml.
  *
  * @param extractDir - Extraction directory
+ * @param depth - Current recursion depth (internal use)
  * @returns Path to extension root or null if not found
  */
-async function findExtensionRoot(extractDir) {
-    const manifestNames = ["_extension.yml", "_extension.yaml"];
-    for (const name of manifestNames) {
+async function findExtensionRoot(extractDir, depth = 0) {
+    if (depth > MAX_FIND_DEPTH) {
+        return null;
+    }
+    for (const name of manifest_js_1.MANIFEST_FILENAMES) {
         const directPath = path.join(extractDir, name);
-        if (fs.existsSync(directPath)) {
+        if (await fileExists(directPath)) {
             return extractDir;
         }
     }
@@ -7276,15 +7294,15 @@ async function findExtensionRoot(extractDir) {
     const directories = entries.filter((e) => e.isDirectory());
     for (const dir of directories) {
         const dirPath = path.join(extractDir, dir.name);
-        for (const name of manifestNames) {
+        for (const name of manifest_js_1.MANIFEST_FILENAMES) {
             const manifestPath = path.join(dirPath, name);
-            if (fs.existsSync(manifestPath)) {
+            if (await fileExists(manifestPath)) {
                 return dirPath;
             }
         }
     }
     for (const dir of directories) {
-        const subRoot = await findExtensionRoot(path.join(extractDir, dir.name));
+        const subRoot = await findExtensionRoot(path.join(extractDir, dir.name), depth + 1);
         if (subRoot) {
             return subRoot;
         }
@@ -7326,12 +7344,14 @@ function deriveExtensionIdFromPath(extensionPath, extractDir) {
  */
 async function findAllExtensionRoots(extractDir) {
     const results = [];
-    const manifestNames = ["_extension.yml", "_extension.yaml"];
-    async function searchDirectory(dir) {
+    async function searchDirectory(dir, depth = 0) {
+        if (depth > MAX_FIND_DEPTH) {
+            return;
+        }
         // Check for manifest in current directory
-        for (const name of manifestNames) {
+        for (const name of manifest_js_1.MANIFEST_FILENAMES) {
             const manifestPath = path.join(dir, name);
-            if (fs.existsSync(manifestPath)) {
+            if (await fileExists(manifestPath)) {
                 // Found an extension, derive its ID from path
                 const id = deriveExtensionIdFromPath(dir, extractDir);
                 const relativePath = path.relative(extractDir, dir);
@@ -7344,7 +7364,7 @@ async function findAllExtensionRoots(extractDir) {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
             if (entry.isDirectory()) {
-                await searchDirectory(path.join(dir, entry.name));
+                await searchDirectory(path.join(dir, entry.name), depth + 1);
             }
         }
     }
@@ -7379,7 +7399,11 @@ async function cleanupExtraction(extractDir) {
  * Archive module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.cleanupExtraction = exports.findAllExtensionRoots = exports.findExtensionRoot = exports.extractArchive = exports.detectArchiveFormat = exports.extractTar = exports.extractZip = void 0;
+exports.cleanupExtraction = exports.findAllExtensionRoots = exports.findExtensionRoot = exports.extractArchive = exports.detectArchiveFormat = exports.extractTar = exports.extractZip = exports.validateUrlProtocol = exports.formatSize = exports.checkPathTraversal = void 0;
+var security_js_1 = __nccwpck_require__(25118);
+Object.defineProperty(exports, "checkPathTraversal", ({ enumerable: true, get: function () { return security_js_1.checkPathTraversal; } }));
+Object.defineProperty(exports, "formatSize", ({ enumerable: true, get: function () { return security_js_1.formatSize; } }));
+Object.defineProperty(exports, "validateUrlProtocol", ({ enumerable: true, get: function () { return security_js_1.validateUrlProtocol; } }));
 var zip_js_1 = __nccwpck_require__(71645);
 Object.defineProperty(exports, "extractZip", ({ enumerable: true, get: function () { return zip_js_1.extractZip; } }));
 var tar_js_1 = __nccwpck_require__(62477);
@@ -7391,6 +7415,122 @@ Object.defineProperty(exports, "findExtensionRoot", ({ enumerable: true, get: fu
 Object.defineProperty(exports, "findAllExtensionRoots", ({ enumerable: true, get: function () { return extract_js_1.findAllExtensionRoots; } }));
 Object.defineProperty(exports, "cleanupExtraction", ({ enumerable: true, get: function () { return extract_js_1.cleanupExtraction; } }));
 //# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 25118:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * @title Archive Security Module
+ * @description Shared security utilities for archive extraction.
+ *
+ * Provides path traversal detection and size formatting used by both
+ * ZIP and TAR extractors.
+ *
+ * @module archive
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.MAX_FILE_COUNT = exports.MAX_COMPRESSION_RATIO = exports.DEFAULT_MAX_SIZE = void 0;
+exports.checkPathTraversal = checkPathTraversal;
+exports.validateUrlProtocol = validateUrlProtocol;
+exports.formatSize = formatSize;
+const path = __importStar(__nccwpck_require__(76760));
+const errors_js_1 = __nccwpck_require__(42356);
+/** Default maximum extraction size: 100 MB. */
+exports.DEFAULT_MAX_SIZE = 100 * 1024 * 1024;
+/** Maximum compression ratio allowed. */
+exports.MAX_COMPRESSION_RATIO = 100;
+/** Maximum number of entries allowed in an archive. */
+exports.MAX_FILE_COUNT = 10_000;
+/**
+ * Check for path traversal attempts in archive entry paths.
+ *
+ * @param filePath - Entry path from the archive
+ * @throws SecurityError if path traversal is detected
+ */
+function checkPathTraversal(filePath) {
+    const normalised = path.normalize(filePath);
+    if (path.isAbsolute(normalised)) {
+        throw new errors_js_1.SecurityError(`Path traversal detected in archive: "${filePath}"`);
+    }
+    const segments = normalised.split(path.sep);
+    if (segments.some((segment) => segment === "..")) {
+        throw new errors_js_1.SecurityError(`Path traversal detected in archive: "${filePath}"`);
+    }
+}
+/**
+ * Validate that a URL uses an allowed protocol.
+ *
+ * Prevents SSRF by rejecting file://, ftp://, and other non-HTTP protocols.
+ *
+ * @param url - URL string to validate
+ * @throws SecurityError if the protocol is not allowed
+ */
+function validateUrlProtocol(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    }
+    catch {
+        throw new errors_js_1.SecurityError(`Invalid URL: "${url}"`);
+    }
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== "https:") {
+        throw new errors_js_1.SecurityError(`Disallowed URL protocol "${protocol}" in "${url}". Only https: is permitted.`);
+    }
+}
+/**
+ * Format a byte count for display.
+ *
+ * @param bytes - Number of bytes
+ * @returns Human-readable size string
+ */
+function formatSize(bytes) {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+//# sourceMappingURL=security.js.map
 
 /***/ }),
 
@@ -7446,17 +7586,7 @@ const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const tar = __importStar(__nccwpck_require__(8116));
 const errors_js_1 = __nccwpck_require__(42356);
-/** Default maximum extraction size: 100 MB. */
-const DEFAULT_MAX_SIZE = 100 * 1024 * 1024;
-/**
- * Check for path traversal attempts.
- */
-function checkPathTraversal(filePath) {
-    const normalised = path.normalize(filePath);
-    if (normalised.includes("..") || path.isAbsolute(normalised)) {
-        throw new errors_js_1.SecurityError(`Path traversal detected in archive: "${filePath}"`);
-    }
-}
+const security_js_1 = __nccwpck_require__(25118);
 /**
  * Extract a TAR.GZ archive to a directory.
  *
@@ -7466,21 +7596,60 @@ function checkPathTraversal(filePath) {
  * @returns List of extracted file paths
  */
 async function extractTar(archivePath, destDir, options = {}) {
-    const { maxSize = DEFAULT_MAX_SIZE, onProgress } = options;
+    const { maxSize = security_js_1.DEFAULT_MAX_SIZE, onProgress } = options;
+    const stats = await fs.promises.stat(archivePath);
+    const compressedSize = stats.size;
     await fs.promises.mkdir(destDir, { recursive: true });
     const extractedFiles = [];
     let totalSize = 0;
+    let entryCount = 0;
+    let securityError;
     await tar.extract({
         file: archivePath,
         cwd: destDir,
-        filter: (entryPath) => {
-            checkPathTraversal(entryPath);
+        filter: (entryPath, entry) => {
+            if (securityError) {
+                return false;
+            }
+            try {
+                (0, security_js_1.checkPathTraversal)(entryPath);
+            }
+            catch (error) {
+                securityError = error instanceof errors_js_1.SecurityError ? error : new errors_js_1.SecurityError(String(error));
+                return false;
+            }
+            if ("type" in entry && (entry.type === "SymbolicLink" || entry.type === "Link")) {
+                const linkType = entry.type === "SymbolicLink" ? "symbolic link" : "hard link";
+                securityError = new errors_js_1.SecurityError(`Archive contains a ${linkType} ("${entryPath}"), which is not permitted.`);
+                return false;
+            }
             return true;
         },
         onReadEntry: (entry) => {
+            if (securityError) {
+                entry.resume();
+                return;
+            }
+            entryCount++;
+            if (entryCount > security_js_1.MAX_FILE_COUNT) {
+                securityError = new errors_js_1.SecurityError(`Archive contains too many entries: ${entryCount} > ${security_js_1.MAX_FILE_COUNT}. This may indicate a file bomb.`);
+                entry.resume();
+                return;
+            }
             totalSize += entry.size ?? 0;
             if (totalSize > maxSize) {
-                throw new errors_js_1.SecurityError(`Archive exceeds maximum size: ${formatSize(totalSize)} > ${formatSize(maxSize)}`);
+                securityError = new errors_js_1.SecurityError(`Archive exceeds maximum size: ${(0, security_js_1.formatSize)(totalSize)} > ${(0, security_js_1.formatSize)(maxSize)}`);
+                entry.resume();
+                return;
+            }
+            // Check compression ratio incrementally to detect tar bombs early.
+            if (compressedSize > 0) {
+                const ratio = totalSize / compressedSize;
+                if (ratio > security_js_1.MAX_COMPRESSION_RATIO) {
+                    securityError = new errors_js_1.SecurityError(`Suspicious compression ratio detected: ${ratio.toFixed(1)}:1. ` + "This may indicate a tar bomb.");
+                    entry.resume();
+                    return;
+                }
             }
             const entryPath = entry.path;
             if (entry.type === "File" || entry.type === "ContiguousFile") {
@@ -7489,19 +7658,10 @@ async function extractTar(archivePath, destDir, options = {}) {
             }
         },
     });
+    if (securityError) {
+        throw securityError;
+    }
     return extractedFiles;
-}
-/**
- * Format size for display.
- */
-function formatSize(bytes) {
-    if (bytes < 1024) {
-        return `${bytes} B`;
-    }
-    if (bytes < 1024 * 1024) {
-        return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 //# sourceMappingURL=tar.js.map
 
@@ -7559,19 +7719,7 @@ const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const unzipper = __importStar(__nccwpck_require__(23835));
 const errors_js_1 = __nccwpck_require__(42356);
-/** Default maximum extraction size: 100 MB. */
-const DEFAULT_MAX_SIZE = 100 * 1024 * 1024;
-/** Maximum compression ratio allowed. */
-const MAX_COMPRESSION_RATIO = 100;
-/**
- * Check for path traversal attempts.
- */
-function checkPathTraversal(filePath) {
-    const normalised = path.normalize(filePath);
-    if (normalised.includes("..") || path.isAbsolute(normalised)) {
-        throw new errors_js_1.SecurityError(`Path traversal detected in archive: "${filePath}"`);
-    }
-}
+const security_js_1 = __nccwpck_require__(25118);
 /**
  * Extract a ZIP archive to a directory.
  *
@@ -7581,54 +7729,70 @@ function checkPathTraversal(filePath) {
  * @returns List of extracted file paths
  */
 async function extractZip(archivePath, destDir, options = {}) {
-    const { maxSize = DEFAULT_MAX_SIZE, onProgress } = options;
+    const { maxSize = security_js_1.DEFAULT_MAX_SIZE, onProgress } = options;
     const stats = await fs.promises.stat(archivePath);
     const compressedSize = stats.size;
     const directory = await unzipper.Open.file(archivePath);
+    if (directory.files.length > security_js_1.MAX_FILE_COUNT) {
+        throw new errors_js_1.SecurityError(`Archive contains too many entries: ${directory.files.length} > ${security_js_1.MAX_FILE_COUNT}. This may indicate a file bomb.`);
+    }
     let totalUncompressedSize = 0;
     for (const file of directory.files) {
-        checkPathTraversal(file.path);
+        (0, security_js_1.checkPathTraversal)(file.path);
         totalUncompressedSize += file.uncompressedSize;
         if (totalUncompressedSize > maxSize) {
-            throw new errors_js_1.SecurityError(`Archive exceeds maximum size: ${formatSize(totalUncompressedSize)} > ${formatSize(maxSize)}`);
+            throw new errors_js_1.SecurityError(`Archive exceeds maximum size: ${(0, security_js_1.formatSize)(totalUncompressedSize)} > ${(0, security_js_1.formatSize)(maxSize)}`);
         }
     }
     if (compressedSize > 0) {
         const ratio = totalUncompressedSize / compressedSize;
-        if (ratio > MAX_COMPRESSION_RATIO) {
+        if (ratio > security_js_1.MAX_COMPRESSION_RATIO) {
             throw new errors_js_1.SecurityError(`Suspicious compression ratio detected: ${ratio.toFixed(1)}:1. ` + "This may indicate a zip bomb.");
         }
     }
     await fs.promises.mkdir(destDir, { recursive: true });
     const extractedFiles = [];
+    let extractedSize = 0;
     for (const file of directory.files) {
         const destPath = path.join(destDir, file.path);
         if (file.type === "Directory") {
             await fs.promises.mkdir(destPath, { recursive: true });
             continue;
         }
+        // Reject symlinks: the Unix mode is stored in the upper 16 bits of externalFileAttributes.
+        const unixMode = (file.externalFileAttributes >>> 16) & 0xffff;
+        const isSymlink = (unixMode & 0o170000) === 0o120000;
+        if (isSymlink) {
+            throw new errors_js_1.SecurityError(`Archive contains a symbolic link ("${file.path}"), which is not permitted.`);
+        }
         const dir = path.dirname(destPath);
         await fs.promises.mkdir(dir, { recursive: true });
         onProgress?.(file.path);
         const content = await file.buffer();
+        // Incremental size check using actual extracted content size
+        extractedSize += content.length;
+        if (extractedSize > maxSize) {
+            throw new errors_js_1.SecurityError(`Archive exceeds maximum size: ${(0, security_js_1.formatSize)(extractedSize)} > ${(0, security_js_1.formatSize)(maxSize)}`);
+        }
         await fs.promises.writeFile(destPath, content);
         extractedFiles.push(destPath);
     }
     return extractedFiles;
 }
-/**
- * Format size for display.
- */
-function formatSize(bytes) {
-    if (bytes < 1024) {
-        return `${bytes} B`;
-    }
-    if (bytes < 1024 * 1024) {
-        return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 //# sourceMappingURL=zip.js.map
+
+/***/ }),
+
+/***/ 96094:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.USER_AGENT = void 0;
+/** User-Agent header value for all outgoing HTTP requests. */
+exports.USER_AGENT = "quarto-wizard";
+//# sourceMappingURL=constants.js.map
 
 /***/ }),
 
@@ -7646,8 +7810,10 @@ function formatSize(bytes) {
  * @module errors
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.VersionError = exports.ManifestError = exports.SecurityError = exports.NetworkError = exports.RepositoryNotFoundError = exports.AuthenticationError = exports.ExtensionError = exports.QuartoWizardError = void 0;
+exports.CancellationError = exports.VersionError = exports.ManifestError = exports.SecurityError = exports.NetworkError = exports.RepositoryNotFoundError = exports.AuthenticationError = exports.ExtensionError = exports.QuartoWizardError = void 0;
+exports.isCancellationError = isCancellationError;
 exports.isQuartoWizardError = isQuartoWizardError;
+exports.getErrorMessage = getErrorMessage;
 exports.wrapError = wrapError;
 /**
  * Base error class for all Quarto Wizard errors.
@@ -7768,10 +7934,36 @@ class VersionError extends QuartoWizardError {
 }
 exports.VersionError = VersionError;
 /**
+ * Error thrown when an operation is cancelled by the user.
+ *
+ * Use this instead of throwing a generic Error with a cancellation message,
+ * so callers can reliably detect cancellation via instanceof rather than
+ * fragile string matching.
+ */
+class CancellationError extends QuartoWizardError {
+    constructor(message = "Operation cancelled by the user.") {
+        super(message, "CANCELLED");
+        this.name = "CancellationError";
+    }
+}
+exports.CancellationError = CancellationError;
+/**
+ * Check if an error is a CancellationError.
+ */
+function isCancellationError(error) {
+    return error instanceof CancellationError;
+}
+/**
  * Check if an error is a QuartoWizardError.
  */
 function isQuartoWizardError(error) {
     return error instanceof QuartoWizardError;
+}
+/**
+ * Extract a human-readable message from an unknown error value.
+ */
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
 }
 /**
  * Wrap an unknown error as a QuartoWizardError.
@@ -7780,9 +7972,11 @@ function wrapError(error, context) {
     if (isQuartoWizardError(error)) {
         return error;
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     const contextPrefix = context ? `${context}: ` : "";
-    return new QuartoWizardError(`${contextPrefix}${message}`, "UNKNOWN_ERROR");
+    return new QuartoWizardError(`${contextPrefix}${message}`, "UNKNOWN_ERROR", {
+        cause: error instanceof Error ? error : undefined,
+    });
 }
 //# sourceMappingURL=errors.js.map
 
@@ -7844,6 +8038,7 @@ exports.getExtensionInstallPath = getExtensionInstallPath;
 const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const manifest_js_1 = __nccwpck_require__(14222);
+const walk_js_1 = __nccwpck_require__(31898);
 /** Name of the extensions directory. */
 const EXTENSIONS_DIR = "_extensions";
 /**
@@ -7885,92 +8080,10 @@ function hasExtensionsDir(projectDir) {
  * ```
  */
 async function discoverInstalledExtensions(projectDir, options = {}) {
-    const extensionsDir = getExtensionsDir(projectDir);
-    if (!hasExtensionsDir(projectDir)) {
-        return [];
-    }
-    const results = [];
-    try {
-        const topEntries = await fs.promises.readdir(extensionsDir, {
-            withFileTypes: true,
-        });
-        for (const topEntry of topEntries) {
-            if (!topEntry.isDirectory()) {
-                continue;
-            }
-            const topPath = path.join(extensionsDir, topEntry.name);
-            // Check if this is an extension without owner (has manifest directly)
-            const directManifest = (0, manifest_js_1.readManifest)(topPath);
-            if (directManifest) {
-                results.push({
-                    id: { owner: null, name: topEntry.name },
-                    manifest: directManifest.manifest,
-                    manifestPath: directManifest.manifestPath,
-                    directory: topPath,
-                });
-                continue;
-            }
-            // Otherwise, treat as owner directory and look for extensions inside
-            const extEntries = await fs.promises.readdir(topPath, {
-                withFileTypes: true,
-            });
-            for (const extEntry of extEntries) {
-                if (!extEntry.isDirectory()) {
-                    continue;
-                }
-                const extPath = path.join(topPath, extEntry.name);
-                try {
-                    const manifestResult = (0, manifest_js_1.readManifest)(extPath);
-                    if (manifestResult) {
-                        results.push({
-                            id: { owner: topEntry.name, name: extEntry.name },
-                            manifest: manifestResult.manifest,
-                            manifestPath: manifestResult.manifestPath,
-                            directory: extPath,
-                        });
-                    }
-                    else if (options.includeInvalid) {
-                        results.push({
-                            id: { owner: topEntry.name, name: extEntry.name },
-                            manifest: {
-                                title: extEntry.name,
-                                author: "",
-                                version: "",
-                                contributes: {},
-                            },
-                            manifestPath: path.join(extPath, "_extension.yml"),
-                            directory: extPath,
-                        });
-                    }
-                }
-                catch {
-                    // Manifest parsing failed (invalid YAML, missing required fields, etc.).
-                    // If includeInvalid is set, we still want to show the extension exists
-                    // so users can see and potentially fix or remove it.
-                    if (options.includeInvalid) {
-                        results.push({
-                            id: { owner: topEntry.name, name: extEntry.name },
-                            manifest: {
-                                title: extEntry.name,
-                                author: "",
-                                version: "",
-                                contributes: {},
-                            },
-                            manifestPath: path.join(extPath, "_extension.yml"),
-                            directory: extPath,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    catch {
-        // Top-level directory read failed (permissions, deleted mid-scan, etc.).
-        // Return empty array rather than throwing since discovery is best-effort;
-        // a missing or inaccessible _extensions directory just means no extensions.
-        return [];
-    }
-    return results;
+    // Delegates to the sync version since readManifest (the heavy work) is
+    // already synchronous. The only async part would be readdir, but for
+    // the small _extensions directory this is negligible.
+    return discoverInstalledExtensionsSync(projectDir, options);
 }
 /**
  * Synchronous version of discoverInstalledExtensions.
@@ -8076,7 +8189,7 @@ async function findInstalledExtension(projectDir, extensionId) {
         return extensions.find((ext) => ext.id.name === extensionId.name) ?? null;
     }
     const extPath = path.join(getExtensionsDir(projectDir), extensionId.owner, extensionId.name);
-    if (!fs.existsSync(extPath)) {
+    if (!(await (0, walk_js_1.pathExists)(extPath))) {
         return null;
     }
     const manifestResult = (0, manifest_js_1.readManifest)(extPath);
@@ -8117,8 +8230,9 @@ function getExtensionInstallPath(projectDir, extensionId) {
  * Filesystem module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.updateManifestSource = exports.writeManifest = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = void 0;
+exports.pathExists = exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.updateManifestSource = exports.writeManifest = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = exports.MANIFEST_FILENAMES = void 0;
 var manifest_js_1 = __nccwpck_require__(14222);
+Object.defineProperty(exports, "MANIFEST_FILENAMES", ({ enumerable: true, get: function () { return manifest_js_1.MANIFEST_FILENAMES; } }));
 Object.defineProperty(exports, "findManifestFile", ({ enumerable: true, get: function () { return manifest_js_1.findManifestFile; } }));
 Object.defineProperty(exports, "parseManifestFile", ({ enumerable: true, get: function () { return manifest_js_1.parseManifestFile; } }));
 Object.defineProperty(exports, "parseManifestContent", ({ enumerable: true, get: function () { return manifest_js_1.parseManifestContent; } }));
@@ -8137,6 +8251,7 @@ var walk_js_1 = __nccwpck_require__(31898);
 Object.defineProperty(exports, "walkDirectory", ({ enumerable: true, get: function () { return walk_js_1.walkDirectory; } }));
 Object.defineProperty(exports, "collectFiles", ({ enumerable: true, get: function () { return walk_js_1.collectFiles; } }));
 Object.defineProperty(exports, "copyDirectory", ({ enumerable: true, get: function () { return walk_js_1.copyDirectory; } }));
+Object.defineProperty(exports, "pathExists", ({ enumerable: true, get: function () { return walk_js_1.pathExists; } }));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -8188,6 +8303,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.MANIFEST_FILENAMES = void 0;
 exports.findManifestFile = findManifestFile;
 exports.parseManifestFile = parseManifestFile;
 exports.parseManifestContent = parseManifestContent;
@@ -8201,7 +8317,7 @@ const yaml = __importStar(__nccwpck_require__(74281));
 const manifest_js_1 = __nccwpck_require__(88696);
 const errors_js_1 = __nccwpck_require__(42356);
 /** Supported manifest file names. */
-const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
+exports.MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
 /**
  * Find the manifest file in a directory.
  *
@@ -8209,7 +8325,7 @@ const MANIFEST_FILENAMES = ["_extension.yml", "_extension.yaml"];
  * @returns Path to manifest file or null if not found
  */
 function findManifestFile(directory) {
-    for (const filename of MANIFEST_FILENAMES) {
+    for (const filename of exports.MANIFEST_FILENAMES) {
         const manifestPath = path.join(directory, filename);
         if (fs.existsSync(manifestPath)) {
             return manifestPath;
@@ -8233,7 +8349,7 @@ function parseManifestFile(manifestPath) {
         if (error instanceof errors_js_1.ManifestError) {
             throw error;
         }
-        throw new errors_js_1.ManifestError(`Failed to read manifest file: ${error instanceof Error ? error.message : String(error)}`, {
+        throw new errors_js_1.ManifestError(`Failed to read manifest file: ${(0, errors_js_1.getErrorMessage)(error)}`, {
             manifestPath,
             cause: error,
         });
@@ -8259,7 +8375,7 @@ function parseManifestContent(content, sourcePath) {
         if (error instanceof errors_js_1.ManifestError) {
             throw error;
         }
-        throw new errors_js_1.ManifestError(`Failed to parse manifest: ${error instanceof Error ? error.message : String(error)}`, {
+        throw new errors_js_1.ManifestError(`Failed to parse manifest: ${(0, errors_js_1.getErrorMessage)(error)}`, {
             manifestPath: sourcePath,
             cause: error,
         });
@@ -8311,6 +8427,9 @@ function writeManifest(manifestPath, manifest) {
     if (manifest.source) {
         raw.source = manifest.source;
     }
+    if (manifest.sourceType) {
+        raw["source-type"] = manifest.sourceType;
+    }
     const contributes = {};
     if (manifest.contributes.filter?.length) {
         contributes.filters = manifest.contributes.filter;
@@ -8346,10 +8465,14 @@ function writeManifest(manifestPath, manifest) {
  *
  * @param manifestPath - Path to the manifest file
  * @param source - New source value
+ * @param sourceType - Type of source (github, url, local, registry)
  */
-function updateManifestSource(manifestPath, source) {
+function updateManifestSource(manifestPath, source, sourceType) {
     const manifest = parseManifestFile(manifestPath);
     manifest.source = source;
+    if (sourceType) {
+        manifest.sourceType = sourceType;
+    }
     writeManifest(manifestPath, manifest);
 }
 //# sourceMappingURL=manifest.js.map
@@ -8405,6 +8528,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.walkDirectory = walkDirectory;
 exports.collectFiles = collectFiles;
+exports.pathExists = pathExists;
 exports.copyDirectory = copyDirectory;
 const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
@@ -8443,6 +8567,24 @@ async function collectFiles(directory) {
         }
     });
     return files;
+}
+/**
+ * Async check whether a path exists on disk.
+ *
+ * Prefer this over fs.existsSync in async code paths to avoid blocking
+ * the event loop.
+ *
+ * @param filePath - Path to check
+ * @returns True if the path exists
+ */
+async function pathExists(filePath) {
+    try {
+        await fs.promises.access(filePath);
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 /**
  * Copy a directory recursively.
@@ -8521,11 +8663,14 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.downloadGitHubArchive = downloadGitHubArchive;
 exports.downloadArchive = downloadArchive;
 exports.downloadFromUrl = downloadFromUrl;
+const crypto = __importStar(__nccwpck_require__(77598));
 const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const os = __importStar(__nccwpck_require__(48161));
+const constants_js_1 = __nccwpck_require__(96094);
 const auth_js_1 = __nccwpck_require__(84959);
 const errors_js_1 = __nccwpck_require__(42356);
+const security_js_1 = __nccwpck_require__(25118);
 const index_js_1 = __nccwpck_require__(41504);
 const releases_js_1 = __nccwpck_require__(11741);
 /**
@@ -8538,12 +8683,12 @@ const releases_js_1 = __nccwpck_require__(11741);
  * @returns Download result
  */
 async function downloadGitHubArchive(owner, repo, version, options = {}) {
-    const { auth, timeout = 60000, format = "zip", onProgress, downloadDir, defaultBranch, latestCommit } = options;
+    const { auth, timeout = 60000, format = "zip", onProgress, downloadDir, defaultBranch, latestCommit, signal, } = options;
     onProgress?.({
         phase: "resolving",
         message: `Resolving version for ${owner}/${repo}...`,
     });
-    const resolved = await (0, releases_js_1.resolveVersion)(owner, repo, version, { auth, timeout, defaultBranch, latestCommit });
+    const resolved = await (0, releases_js_1.resolveVersion)(owner, repo, version, { auth, timeout, defaultBranch, latestCommit, signal });
     const downloadUrl = format === "zip" ? resolved.zipballUrl : resolved.tarballUrl;
     const extension = format === "zip" ? ".zip" : ".tar.gz";
     onProgress?.({
@@ -8556,6 +8701,7 @@ async function downloadGitHubArchive(owner, repo, version, options = {}) {
         extension,
         downloadDir,
         onProgress,
+        signal,
     });
     return {
         archivePath,
@@ -8572,7 +8718,11 @@ async function downloadGitHubArchive(owner, repo, version, options = {}) {
  * @returns Path to downloaded file
  */
 async function downloadArchive(url, options = {}) {
-    const { auth, timeout = 60000, extension = ".zip", downloadDir, onProgress } = options;
+    const { auth, timeout = 60000, extension = ".zip", downloadDir, onProgress, signal } = options;
+    if (signal?.aborted) {
+        throw new errors_js_1.CancellationError();
+    }
+    (0, security_js_1.validateUrlProtocol)(url);
     let githubLikeHost = false;
     try {
         const parsedUrl = new URL(url);
@@ -8584,11 +8734,16 @@ async function downloadArchive(url, options = {}) {
         githubLikeHost = false;
     }
     const headers = {
-        "User-Agent": "quarto-wizard",
+        "User-Agent": constants_js_1.USER_AGENT,
         ...(0, auth_js_1.getAuthHeaders)(auth, githubLikeHost),
     };
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const onExternalAbort = () => controller.abort();
+    signal?.addEventListener("abort", onExternalAbort, { once: true });
+    const dir = downloadDir ?? os.tmpdir();
+    const filename = `quarto-ext-${crypto.randomUUID()}${extension}`;
+    const archivePath = path.join(dir, filename);
     try {
         const response = await (0, index_js_1.proxyFetch)(url, {
             headers,
@@ -8600,28 +8755,52 @@ async function downloadArchive(url, options = {}) {
         }
         const contentLength = response.headers.get("content-length");
         const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
-        const dir = downloadDir ?? os.tmpdir();
-        const filename = `quarto-ext-${Date.now()}${extension}`;
-        const archivePath = path.join(dir, filename);
         const fileStream = fs.createWriteStream(archivePath);
+        // Capture stream errors that occur during the write loop so they
+        // can be rethrown after the loop finishes.
+        let streamError;
+        fileStream.on("error", (err) => {
+            streamError = err;
+        });
         if (!response.body) {
+            fileStream.destroy();
             throw new errors_js_1.NetworkError("No response body received");
         }
         const reader = response.body.getReader();
         let bytesDownloaded = 0;
         try {
             while (true) {
+                if (streamError) {
+                    break;
+                }
                 const { done, value } = await reader.read();
                 if (done) {
                     break;
                 }
-                fileStream.write(Buffer.from(value));
+                const canContinue = fileStream.write(Buffer.from(value));
                 bytesDownloaded += value.length;
+                // Respect backpressure: wait for drain before writing more data.
+                // Also listen for stream errors to avoid hanging if the stream
+                // fails while waiting (e.g., disk full).
+                if (!canContinue) {
+                    await new Promise((resolve, reject) => {
+                        const onDrain = () => {
+                            fileStream.off("error", onError);
+                            resolve();
+                        };
+                        const onError = (err) => {
+                            fileStream.off("drain", onDrain);
+                            reject(err);
+                        };
+                        fileStream.once("drain", onDrain);
+                        fileStream.once("error", onError);
+                    });
+                }
                 if (onProgress) {
                     const percentage = totalBytes ? Math.round((bytesDownloaded / totalBytes) * 100) : undefined;
                     onProgress({
                         phase: "downloading",
-                        message: `Downloading... ${formatBytes(bytesDownloaded)}`,
+                        message: `Downloading... ${(0, security_js_1.formatSize)(bytesDownloaded)}`,
                         bytesDownloaded,
                         totalBytes,
                         percentage,
@@ -8632,6 +8811,9 @@ async function downloadArchive(url, options = {}) {
         finally {
             fileStream.end();
         }
+        if (streamError) {
+            throw new errors_js_1.NetworkError(`Write error during download: ${streamError.message}`, { cause: streamError });
+        }
         await new Promise((resolve, reject) => {
             fileStream.on("finish", resolve);
             fileStream.on("error", reject);
@@ -8639,13 +8821,24 @@ async function downloadArchive(url, options = {}) {
         return archivePath;
     }
     catch (error) {
+        // Clean up partial download on failure.
+        try {
+            await fs.promises.unlink(archivePath);
+        }
+        catch {
+            // Best-effort cleanup.
+        }
         if (error instanceof Error && error.name === "AbortError") {
+            if (signal?.aborted) {
+                throw new errors_js_1.CancellationError();
+            }
             throw new errors_js_1.NetworkError(`Download timed out after ${timeout}ms`, { cause: error });
         }
         throw error;
     }
     finally {
         clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", onExternalAbort);
     }
 }
 /**
@@ -8674,18 +8867,6 @@ function getExtensionFromUrl(url) {
         return ".zip";
     }
     return ".zip";
-}
-/**
- * Format bytes for display.
- */
-function formatBytes(bytes) {
-    if (bytes < 1024) {
-        return `${bytes} B`;
-    }
-    if (bytes < 1024 * 1024) {
-        return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 //# sourceMappingURL=download.js.map
 
@@ -8734,6 +8915,7 @@ exports.fetchTags = fetchTags;
 exports.getLatestRelease = getLatestRelease;
 exports.resolveVersion = resolveVersion;
 const auth_js_1 = __nccwpck_require__(84959);
+const constants_js_1 = __nccwpck_require__(96094);
 const errors_js_1 = __nccwpck_require__(42356);
 const http_js_1 = __nccwpck_require__(19447);
 const GITHUB_API_BASE = "https://api.github.com";
@@ -8743,9 +8925,16 @@ const GITHUB_API_BASE = "https://api.github.com";
 function getGitHubHeaders(auth) {
     return {
         Accept: "application/vnd.github.v3+json",
-        "User-Agent": "quarto-wizard",
+        "User-Agent": constants_js_1.USER_AGENT,
         ...(0, auth_js_1.getAuthHeaders)(auth, true),
     };
+}
+/**
+ * Build a GitHub API URL with encoded path segments.
+ */
+function repoApiUrl(owner, repo, ...segments) {
+    const encoded = segments.map(encodeURIComponent);
+    return `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encoded.join("/")}`;
 }
 /**
  * Construct a GitHub archive URL.
@@ -8759,14 +8948,17 @@ function getGitHubHeaders(auth) {
  */
 function constructArchiveUrl(owner, repo, ref, refType, format = "zip") {
     const ext = format === "zip" ? ".zip" : ".tar.gz";
-    const baseUrl = `https://github.com/${owner}/${repo}/archive`;
+    const encodedOwner = encodeURIComponent(owner);
+    const encodedRepo = encodeURIComponent(repo);
+    const encodedRef = encodeURIComponent(ref);
+    const baseUrl = `https://github.com/${encodedOwner}/${encodedRepo}/archive`;
     switch (refType) {
         case "tag":
-            return `${baseUrl}/refs/tags/${ref}${ext}`;
+            return `${baseUrl}/refs/tags/${encodedRef}${ext}`;
         case "branch":
-            return `${baseUrl}/refs/heads/${ref}${ext}`;
+            return `${baseUrl}/refs/heads/${encodedRef}${ext}`;
         case "commit":
-            return `${baseUrl}/${ref}${ext}`;
+            return `${baseUrl}/${encodedRef}${ext}`;
     }
 }
 /**
@@ -8798,13 +8990,14 @@ function handleGitHubError(error, owner, repo) {
  * @throws VersionError if branch does not exist
  */
 async function validateBranch(owner, repo, branch, options = {}) {
-    const { auth, timeout } = options;
-    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`;
+    const { auth, timeout, signal } = options;
+    const url = repoApiUrl(owner, repo, "branches", branch);
     try {
         await (0, http_js_1.fetchJson)(url, {
             headers: getGitHubHeaders(auth),
             timeout,
             retries: 1,
+            signal,
         });
     }
     catch (error) {
@@ -8826,13 +9019,14 @@ async function validateBranch(owner, repo, branch, options = {}) {
  * @throws VersionError if commit does not exist
  */
 async function validateCommit(owner, repo, commit, options = {}) {
-    const { auth, timeout } = options;
-    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${encodeURIComponent(commit)}`;
+    const { auth, timeout, signal } = options;
+    const url = repoApiUrl(owner, repo, "commits", commit);
     try {
         await (0, http_js_1.fetchJson)(url, {
             headers: getGitHubHeaders(auth),
             timeout,
             retries: 1,
+            signal,
         });
     }
     catch (error) {
@@ -8854,13 +9048,14 @@ async function validateCommit(owner, repo, commit, options = {}) {
  * @returns Array of releases
  */
 async function fetchReleases(owner, repo, options = {}) {
-    const { auth, timeout, includePrereleases = false } = options;
-    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/releases`;
+    const { auth, timeout, includePrereleases = false, signal } = options;
+    const url = repoApiUrl(owner, repo, "releases");
     try {
         const raw = await (0, http_js_1.fetchJson)(url, {
             headers: getGitHubHeaders(auth),
             timeout,
             retries: 2,
+            signal,
         });
         return raw
             .filter((r) => !r.draft && (includePrereleases || !r.prerelease))
@@ -8888,13 +9083,14 @@ async function fetchReleases(owner, repo, options = {}) {
  * @returns Array of tags
  */
 async function fetchTags(owner, repo, options = {}) {
-    const { auth, timeout } = options;
-    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/tags`;
+    const { auth, timeout, signal } = options;
+    const url = repoApiUrl(owner, repo, "tags");
     try {
         const raw = await (0, http_js_1.fetchJson)(url, {
             headers: getGitHubHeaders(auth),
             timeout,
             retries: 2,
+            signal,
         });
         return raw.map((t) => ({
             name: t.name,
@@ -9040,7 +9236,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.wrapError = exports.isQuartoWizardError = exports.VersionError = exports.ManifestError = exports.SecurityError = exports.NetworkError = exports.RepositoryNotFoundError = exports.AuthenticationError = exports.ExtensionError = exports.QuartoWizardError = void 0;
+exports.wrapError = exports.getErrorMessage = exports.isCancellationError = exports.isQuartoWizardError = exports.CancellationError = exports.VersionError = exports.ManifestError = exports.SecurityError = exports.NetworkError = exports.RepositoryNotFoundError = exports.AuthenticationError = exports.ExtensionError = exports.QuartoWizardError = void 0;
 // Type exports
 __exportStar(__nccwpck_require__(73305), exports);
 // Error exports
@@ -9053,7 +9249,10 @@ Object.defineProperty(exports, "NetworkError", ({ enumerable: true, get: functio
 Object.defineProperty(exports, "SecurityError", ({ enumerable: true, get: function () { return errors_js_1.SecurityError; } }));
 Object.defineProperty(exports, "ManifestError", ({ enumerable: true, get: function () { return errors_js_1.ManifestError; } }));
 Object.defineProperty(exports, "VersionError", ({ enumerable: true, get: function () { return errors_js_1.VersionError; } }));
+Object.defineProperty(exports, "CancellationError", ({ enumerable: true, get: function () { return errors_js_1.CancellationError; } }));
 Object.defineProperty(exports, "isQuartoWizardError", ({ enumerable: true, get: function () { return errors_js_1.isQuartoWizardError; } }));
+Object.defineProperty(exports, "isCancellationError", ({ enumerable: true, get: function () { return errors_js_1.isCancellationError; } }));
+Object.defineProperty(exports, "getErrorMessage", ({ enumerable: true, get: function () { return errors_js_1.getErrorMessage; } }));
 Object.defineProperty(exports, "wrapError", ({ enumerable: true, get: function () { return errors_js_1.wrapError; } }));
 // Filesystem exports
 __exportStar(__nccwpck_require__(71987), exports);
@@ -9071,6 +9270,726 @@ __exportStar(__nccwpck_require__(41504), exports);
 
 /***/ }),
 
+/***/ 80467:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * @title Brand Use Module
+ * @description Brand operations for downloading and applying Quarto brands.
+ *
+ * Handles downloading brand extensions or plain brand repositories
+ * and copying brand files (YAML + referenced assets) to _brand/.
+ *
+ * @module operations
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.checkForBrandExtension = checkForBrandExtension;
+exports.findBrandFile = findBrandFile;
+exports.extractBrandFilePaths = extractBrandFilePaths;
+exports.resolveStagedDir = resolveStagedDir;
+exports.useBrand = useBrand;
+const fs = __importStar(__nccwpck_require__(73024));
+const path = __importStar(__nccwpck_require__(76760));
+const yaml = __importStar(__nccwpck_require__(74281));
+const errors_js_1 = __nccwpck_require__(42356);
+const install_js_1 = __nccwpck_require__(83869);
+const download_js_1 = __nccwpck_require__(44919);
+const extract_js_1 = __nccwpck_require__(927);
+const manifest_js_1 = __nccwpck_require__(14222);
+const fetcher_js_1 = __nccwpck_require__(84476);
+/** Supported brand file names at root level. */
+const BRAND_FILENAMES = ["_brand.yml", "_brand.yaml"];
+/**
+ * Check if a directory contains a brand extension.
+ *
+ * Reads _extension.yml and looks for contributes.metadata.project.brand.
+ *
+ * @param dir - Directory to check
+ * @returns Brand extension info
+ */
+function checkForBrandExtension(dir) {
+    for (const filename of manifest_js_1.MANIFEST_FILENAMES) {
+        const filePath = path.join(dir, filename);
+        if (!fs.existsSync(filePath)) {
+            continue;
+        }
+        try {
+            const content = fs.readFileSync(filePath, "utf-8");
+            const raw = yaml.load(content);
+            if (!raw) {
+                continue;
+            }
+            const contributes = raw.contributes;
+            const metadata = contributes?.metadata;
+            const project = metadata?.project;
+            const brandFile = project?.brand;
+            if (typeof brandFile === "string" && brandFile.length > 0) {
+                return {
+                    isBrandExtension: true,
+                    extensionDir: dir,
+                    brandFileName: brandFile,
+                };
+            }
+        }
+        catch {
+            // Cannot read or parse the extension file; continue searching.
+        }
+    }
+    return { isBrandExtension: false };
+}
+/**
+ * Find the brand file in a staged directory.
+ *
+ * Search order:
+ * 1. Root: _brand.yml / _brand.yaml (plain brand repo).
+ * 2. _extensions/\* (direct children).
+ * 3. _extensions/\*\/\* (nested owner/name).
+ *
+ * @param stagedDir - Extracted/staged directory to search
+ * @returns Brand file info or null if not found
+ */
+function findBrandFile(stagedDir) {
+    // 1. Check root for plain brand file.
+    for (const filename of BRAND_FILENAMES) {
+        const filePath = path.join(stagedDir, filename);
+        if (fs.existsSync(filePath)) {
+            return {
+                brandFilePath: filePath,
+                brandFileDir: stagedDir,
+                isBrandExtension: false,
+            };
+        }
+    }
+    // 2. Check _extensions directory for brand extensions.
+    const extensionsDir = path.join(stagedDir, "_extensions");
+    if (!fs.existsSync(extensionsDir)) {
+        return null;
+    }
+    let entries;
+    try {
+        entries = fs.readdirSync(extensionsDir, { withFileTypes: true });
+    }
+    catch {
+        return null;
+    }
+    for (const entry of entries) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const extPath = path.join(extensionsDir, entry.name);
+        // Check direct child: _extensions/name/
+        const check = checkForBrandExtension(extPath);
+        if (check.isBrandExtension && check.extensionDir && check.brandFileName) {
+            const brandFilePath = path.join(check.extensionDir, check.brandFileName);
+            if (fs.existsSync(brandFilePath)) {
+                return {
+                    brandFilePath,
+                    brandFileDir: check.extensionDir,
+                    isBrandExtension: true,
+                };
+            }
+        }
+        // Check nested: _extensions/owner/name/
+        let nestedEntries;
+        try {
+            nestedEntries = fs.readdirSync(extPath, { withFileTypes: true });
+        }
+        catch {
+            continue;
+        }
+        for (const nested of nestedEntries) {
+            if (!nested.isDirectory()) {
+                continue;
+            }
+            const nestedPath = path.join(extPath, nested.name);
+            const nestedCheck = checkForBrandExtension(nestedPath);
+            if (nestedCheck.isBrandExtension && nestedCheck.extensionDir && nestedCheck.brandFileName) {
+                const brandFilePath = path.join(nestedCheck.extensionDir, nestedCheck.brandFileName);
+                if (fs.existsSync(brandFilePath)) {
+                    return {
+                        brandFilePath,
+                        brandFileDir: nestedCheck.extensionDir,
+                        isBrandExtension: true,
+                    };
+                }
+            }
+        }
+    }
+    return null;
+}
+/**
+ * Extract a path string from various brand YAML value formats.
+ *
+ * Handles:
+ * - string: "path/to/file"
+ * - object with path: \{ path: "path/to/file", alt: "..." \}
+ *
+ * @param value - Value from brand YAML
+ * @returns Extracted path or undefined
+ */
+function extractPath(value) {
+    if (typeof value === "string") {
+        return value;
+    }
+    if (value && typeof value === "object" && "path" in value) {
+        const pathValue = value.path;
+        if (typeof pathValue === "string") {
+            return pathValue;
+        }
+    }
+    return undefined;
+}
+const RECOGNISED_ASSET_EXTENSIONS = new Set([
+    "svg",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "ico",
+    "webp",
+    "avif",
+    "woff",
+    "woff2",
+    "ttf",
+    "otf",
+    "eot",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    "json",
+    "yml",
+    "yaml",
+]);
+/**
+ * Check if a string is a local file path (not a URL or a named image reference).
+ *
+ * Named image references like "light" or "dark" refer to logo.images keys,
+ * not file paths. We detect these by checking for path separators or extensions.
+ *
+ * Trade-off: a bare value like "logo.svg" (no path separator) is classified as
+ * a file path because ".svg" is in the recognised set. If a brand YAML ever
+ * uses a named reference whose name happens to end with a recognised extension,
+ * it would be misclassified. In practice this is unlikely because named
+ * references are short identifiers ("light", "dark", "icon"), not filenames.
+ *
+ * @param value - String to check
+ * @returns True if the value is a local file path
+ */
+function isLocalFilePath(value) {
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+        return false;
+    }
+    // Paths with separators are always file paths.
+    if (value.includes("/") || value.includes("\\")) {
+        return true;
+    }
+    // Without path separators, require a recognised asset file extension to avoid
+    // misclassifying dotted named references (e.g., "my.theme") as file paths.
+    const ext = value.split(".").pop()?.toLowerCase();
+    return ext !== undefined && RECOGNISED_ASSET_EXTENSIONS.has(ext);
+}
+/**
+ * Extract all local file paths referenced in a brand YAML file.
+ *
+ * Extracts paths from:
+ * - logo.images.\* (string or \{ path, alt \} objects).
+ * - logo.small, logo.medium, logo.large (string or \{ light, dark \} objects).
+ * - typography.fonts[].files where source is "file".
+ *
+ * @param brandYamlPath - Absolute path to the brand YAML file
+ * @param onWarning - Optional callback for non-fatal warnings (e.g., parse errors)
+ * @returns Array of unique relative file paths
+ */
+function extractBrandFilePaths(brandYamlPath, onWarning) {
+    const paths = [];
+    let raw;
+    try {
+        const content = fs.readFileSync(brandYamlPath, "utf-8");
+        raw = yaml.load(content);
+        if (!raw || typeof raw !== "object") {
+            return paths;
+        }
+    }
+    catch (error) {
+        onWarning?.(`Failed to read brand file "${brandYamlPath}": ${(0, errors_js_1.getErrorMessage)(error)}`);
+        return paths;
+    }
+    // Extract logo paths.
+    const logo = raw.logo;
+    if (logo && typeof logo === "object") {
+        // logo.images: named resources.
+        const images = logo.images;
+        if (images && typeof images === "object") {
+            for (const value of Object.values(images)) {
+                const p = extractPath(value);
+                if (p && isLocalFilePath(p)) {
+                    paths.push(p);
+                }
+            }
+        }
+        // logo.small, logo.medium, logo.large: string or { light, dark }.
+        for (const size of ["small", "medium", "large"]) {
+            const sizeValue = logo[size];
+            if (!sizeValue) {
+                continue;
+            }
+            if (typeof sizeValue === "string") {
+                if (isLocalFilePath(sizeValue)) {
+                    paths.push(sizeValue);
+                }
+            }
+            else if (typeof sizeValue === "object" && sizeValue !== null) {
+                const lightDark = sizeValue;
+                if (typeof lightDark.light === "string" && isLocalFilePath(lightDark.light)) {
+                    paths.push(lightDark.light);
+                }
+                if (typeof lightDark.dark === "string" && isLocalFilePath(lightDark.dark)) {
+                    paths.push(lightDark.dark);
+                }
+            }
+        }
+    }
+    // Extract typography font file paths.
+    const typography = raw.typography;
+    if (typography && typeof typography === "object") {
+        const fonts = typography.fonts;
+        if (Array.isArray(fonts)) {
+            for (const font of fonts) {
+                if (!font || typeof font !== "object") {
+                    continue;
+                }
+                const fontObj = font;
+                if (fontObj.source !== "file") {
+                    continue;
+                }
+                const files = fontObj.files;
+                if (Array.isArray(files)) {
+                    for (const file of files) {
+                        const p = extractPath(file);
+                        if (p && isLocalFilePath(p)) {
+                            paths.push(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Deduplicate.
+    return [...new Set(paths)];
+}
+/**
+ * Find files in a directory that are not in the source set.
+ *
+ * @param targetDir - Directory to scan
+ * @param sourceFiles - Set of relative file paths expected from the source
+ * @returns Array of relative paths for files not in sourceFiles
+ */
+async function findExtraFiles(targetDir, sourceFiles) {
+    const extras = [];
+    async function walk(dir, baseRel) {
+        let entries;
+        try {
+            entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
+            // Normalise entry names to forward slashes for consistent comparison
+            // with sourceFileSet (also forward-slash normalised).
+            // On Windows, entry.name itself should not contain backslashes, but we
+            // normalise defensively to avoid subtle cross-platform mismatches.
+            const name = entry.name.replace(/\\/g, "/");
+            const rel = baseRel ? path.posix.join(baseRel, name) : name;
+            if (entry.isDirectory()) {
+                await walk(path.join(dir, entry.name), rel);
+            }
+            else if (!sourceFiles.has(rel)) {
+                extras.push(rel);
+            }
+        }
+    }
+    try {
+        await fs.promises.access(targetDir);
+        await walk(targetDir, "");
+    }
+    catch {
+        // Directory does not exist or is otherwise inaccessible (e.g. EACCES).
+        // Both cases are treated as "no extras", matching prior existsSync behaviour.
+    }
+    return extras;
+}
+/**
+ * Remove empty directories recursively from bottom up.
+ *
+ * @param dir - Root directory to clean
+ */
+async function cleanupEmptyDirs(dir) {
+    try {
+        await fs.promises.access(dir);
+    }
+    catch {
+        return;
+    }
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    const subdirs = entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(dir, entry.name));
+    await Promise.all(subdirs.map((subdir) => cleanupEmptyDirs(subdir)));
+    await Promise.all(subdirs.map(async (subdir) => {
+        try {
+            const contents = await fs.promises.readdir(subdir);
+            if (contents.length === 0) {
+                await fs.promises.rmdir(subdir);
+            }
+        }
+        catch {
+            // Best-effort cleanup.
+        }
+    }));
+}
+/**
+ * Resolve the staged directory from a downloaded/extracted archive.
+ *
+ * GitHub archives typically have a single top-level directory (e.g., "owner-repo-sha/").
+ * This function finds that directory.
+ *
+ * @param extractDir - Extraction directory
+ * @returns The effective staged directory
+ */
+function resolveStagedDir(extractDir) {
+    let entries;
+    try {
+        entries = fs.readdirSync(extractDir, { withFileTypes: true });
+    }
+    catch {
+        return extractDir;
+    }
+    // Classify entries, following symlinks so that a symlink to a directory
+    // is counted as a directory rather than being silently ignored.
+    const dirs = [];
+    const files = [];
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            dirs.push(entry);
+        }
+        else if (entry.isFile()) {
+            files.push(entry);
+        }
+        else if (entry.isSymbolicLink()) {
+            try {
+                const target = fs.realpathSync(path.join(extractDir, entry.name));
+                const realExtractDir = fs.realpathSync(extractDir);
+                if (!target.startsWith(realExtractDir + path.sep) && target !== realExtractDir) {
+                    // Symlink points outside extractDir; treat as a file to avoid traversal.
+                    files.push(entry);
+                    continue;
+                }
+                const resolved = fs.statSync(path.join(extractDir, entry.name));
+                if (resolved.isDirectory()) {
+                    dirs.push(entry);
+                }
+                else {
+                    files.push(entry);
+                }
+            }
+            catch {
+                // Broken symlink; treat as a file so we do not descend into it.
+                files.push(entry);
+            }
+        }
+    }
+    // If there is exactly one directory and no files, use that directory.
+    if (dirs.length === 1 && files.length === 0) {
+        return path.join(extractDir, dirs[0].name);
+    }
+    return extractDir;
+}
+/**
+ * Download and extract a brand source to a temporary directory.
+ *
+ * @param source - Parsed install source
+ * @param options - Brand options for auth and progress
+ * @returns Object with extractDir and stagedDir paths
+ */
+async function stageBrandSource(source, options) {
+    const { auth, onProgress } = options;
+    if (source.type === "github") {
+        onProgress?.({ phase: "resolving", message: `Resolving ${source.owner}/${source.repo}...` });
+        let defaultBranch;
+        let latestCommit;
+        try {
+            const registry = await (0, fetcher_js_1.fetchRegistry)(options);
+            const registryKey = `${source.owner}/${source.repo}`;
+            const entry = registry[registryKey] ?? registry[registryKey.toLowerCase()];
+            if (entry) {
+                defaultBranch = entry.defaultBranchRef ?? undefined;
+                latestCommit = entry.latestCommit ?? undefined;
+            }
+        }
+        catch {
+            // Registry fetch failed; use defaults.
+        }
+        const result = await (0, download_js_1.downloadGitHubArchive)(source.owner, source.repo, source.version, {
+            auth,
+            defaultBranch,
+            latestCommit,
+            onProgress: (p) => {
+                onProgress?.({ phase: p.phase, message: p.message });
+            },
+        });
+        onProgress?.({ phase: "extracting", message: "Extracting archive..." });
+        const extracted = await (0, extract_js_1.extractArchive)(result.archivePath);
+        // Clean up downloaded archive.
+        try {
+            await fs.promises.unlink(result.archivePath);
+        }
+        catch {
+            // Best-effort cleanup.
+        }
+        const stagedDir = resolveStagedDir(extracted.extractDir);
+        return { extractDir: extracted.extractDir, stagedDir, isLocal: false };
+    }
+    if (source.type === "url") {
+        onProgress?.({ phase: "downloading", message: "Downloading archive..." });
+        const archivePath = await (0, download_js_1.downloadFromUrl)(source.url, { auth });
+        onProgress?.({ phase: "extracting", message: "Extracting archive..." });
+        const extracted = await (0, extract_js_1.extractArchive)(archivePath);
+        try {
+            await fs.promises.unlink(archivePath);
+        }
+        catch {
+            // Best-effort cleanup.
+        }
+        const stagedDir = resolveStagedDir(extracted.extractDir);
+        return { extractDir: extracted.extractDir, stagedDir, isLocal: false };
+    }
+    // Local source.
+    const stat = await fs.promises.stat(source.path);
+    if (stat.isDirectory()) {
+        return { extractDir: source.path, stagedDir: source.path, isLocal: true };
+    }
+    onProgress?.({ phase: "extracting", message: "Extracting archive..." });
+    const extracted = await (0, extract_js_1.extractArchive)(source.path);
+    const stagedDir = resolveStagedDir(extracted.extractDir);
+    return { extractDir: extracted.extractDir, stagedDir, isLocal: false };
+}
+/**
+ * Download and apply a Quarto brand to a project.
+ *
+ * Downloads/extracts the source, finds the brand YAML file, extracts referenced
+ * asset paths, and copies the brand file (renamed to _brand.yml) plus assets
+ * into the project's _brand/ directory.
+ *
+ * @param source - Brand source (string or InstallSource)
+ * @param options - Use brand options
+ * @returns Use brand result
+ *
+ * @example
+ * ```typescript
+ * const result = await useBrand("mcanouil/quarto-mcanouil", {
+ *   projectDir: "/path/to/project",
+ *   onProgress: ({ phase, message }) => console.log(`[${phase}] ${message}`),
+ * });
+ * ```
+ */
+async function useBrand(source, options) {
+    const { projectDir, confirmOverwrite, cleanupExtra, onProgress } = options;
+    const installSource = typeof source === "string" ? (0, install_js_1.parseInstallSource)(source) : source;
+    const sourceString = (0, install_js_1.formatInstallSource)(installSource);
+    let extractDir;
+    let isLocal = false;
+    try {
+        // Step 1: Download and extract.
+        const staged = await stageBrandSource(installSource, options);
+        extractDir = staged.extractDir;
+        isLocal = staged.isLocal;
+        // Step 2: Find brand file.
+        onProgress?.({ phase: "detecting", message: "Searching for brand file..." });
+        const brandInfo = findBrandFile(staged.stagedDir);
+        if (!brandInfo) {
+            throw new errors_js_1.ExtensionError("No brand file found in source", {
+                suggestion: "Ensure the source contains _brand.yml or a brand extension with contributes.metadata.project.brand.",
+            });
+        }
+        // Step 3: Extract referenced file paths.
+        const referencedPaths = extractBrandFilePaths(brandInfo.brandFilePath, (warning) => {
+            onProgress?.({ phase: "detecting", message: warning });
+        });
+        // Step 4: Build file copy list.
+        // The brand file itself (will be renamed to _brand.yml).
+        // Referenced assets maintain their relative paths from the brand file directory.
+        const filesToCopy = [];
+        filesToCopy.push({
+            sourcePath: brandInfo.brandFilePath,
+            targetRel: "_brand.yml",
+        });
+        // Step 5: Determine target directory.
+        const brandDir = path.resolve(projectDir, "_brand");
+        for (const refPath of referencedPaths) {
+            // Normalise to forward slashes for consistent comparison across platforms.
+            const normalisedRefPath = refPath.replace(/\\/g, "/");
+            // Validate that the referenced path does not escape the target directory.
+            // Uses path.relative() for robust cross-platform traversal detection
+            // (handles UNC paths, drive letter casing, etc.).
+            const resolvedTarget = path.resolve(brandDir, normalisedRefPath);
+            const relativeTarget = path.relative(brandDir, resolvedTarget);
+            if (relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
+                onProgress?.({ phase: "detecting", message: `Skipping unsafe path: ${refPath}.` });
+                continue;
+            }
+            // Also verify the resolved source path stays within brandFileDir to prevent
+            // reading files outside the staged source via path traversal.
+            const sourcePath = path.resolve(brandInfo.brandFileDir, normalisedRefPath);
+            const relativeSource = path.relative(brandInfo.brandFileDir, sourcePath);
+            if (relativeSource.startsWith("..") || path.isAbsolute(relativeSource)) {
+                onProgress?.({ phase: "detecting", message: `Skipping unsafe path: ${refPath}.` });
+                continue;
+            }
+            if (fs.existsSync(sourcePath)) {
+                filesToCopy.push({
+                    sourcePath,
+                    targetRel: normalisedRefPath,
+                });
+            }
+        }
+        // Step 6: Check for existing files and confirm overwrite.
+        const existingFileSet = new Set();
+        for (const file of filesToCopy) {
+            const targetPath = path.join(brandDir, file.targetRel);
+            if (fs.existsSync(targetPath)) {
+                existingFileSet.add(file.targetRel);
+            }
+        }
+        // Determine whether to overwrite existing files.
+        // - If confirmOverwrite is provided: ask the user.
+        // - If confirmOverwrite is not provided: skip existing files (safe default).
+        // When the user declines overwrite, only existing files are skipped;
+        // new (non-conflicting) files are still created.
+        let shouldOverwrite = false;
+        if (existingFileSet.size > 0) {
+            if (confirmOverwrite) {
+                shouldOverwrite = await confirmOverwrite([...existingFileSet]);
+            }
+            else {
+                onProgress?.({
+                    phase: "copying",
+                    message: `${existingFileSet.size} existing file(s) will be skipped (no overwrite callback provided).`,
+                });
+            }
+        }
+        // Step 7: Copy files.
+        onProgress?.({ phase: "copying", message: "Copying brand files..." });
+        const created = [];
+        const overwritten = [];
+        const skipped = [];
+        for (const file of filesToCopy) {
+            const targetPath = path.join(brandDir, file.targetRel);
+            const targetDir = path.dirname(targetPath);
+            await fs.promises.mkdir(targetDir, { recursive: true });
+            const exists = existingFileSet.has(file.targetRel);
+            if (exists && !shouldOverwrite) {
+                skipped.push(file.targetRel);
+                onProgress?.({
+                    phase: "copying",
+                    message: `Skipped ${file.targetRel} (already exists).`,
+                    file: file.targetRel,
+                });
+                continue;
+            }
+            await fs.promises.copyFile(file.sourcePath, targetPath);
+            onProgress?.({ phase: "copying", message: `Copied ${file.targetRel}.`, file: file.targetRel });
+            if (exists) {
+                overwritten.push(file.targetRel);
+            }
+            else {
+                created.push(file.targetRel);
+            }
+        }
+        // Step 8: Handle extra files in _brand/ not in source.
+        const cleaned = [];
+        if (fs.existsSync(brandDir)) {
+            const sourceFileSet = new Set(filesToCopy.map((f) => f.targetRel.replace(/\\/g, "/")));
+            const extras = await findExtraFiles(brandDir, sourceFileSet);
+            if (extras.length > 0 && cleanupExtra) {
+                const shouldClean = await cleanupExtra(extras);
+                if (shouldClean) {
+                    for (const extra of extras) {
+                        // extras use forward slashes (via path.posix); path.join
+                        // normalises to OS separators before passing to unlink.
+                        const extraPath = path.join(brandDir, extra);
+                        try {
+                            await fs.promises.unlink(extraPath);
+                            cleaned.push(extra);
+                        }
+                        catch {
+                            // Best-effort removal.
+                        }
+                    }
+                    await cleanupEmptyDirs(brandDir);
+                }
+            }
+        }
+        return {
+            success: true,
+            created,
+            overwritten,
+            skipped,
+            cleaned,
+            source: sourceString,
+        };
+    }
+    finally {
+        // Clean up temporary extraction directory (skip for local directories).
+        if (extractDir && !isLocal) {
+            await (0, extract_js_1.cleanupExtraction)(extractDir);
+        }
+    }
+}
+//# sourceMappingURL=brand.js.map
+
+/***/ }),
+
 /***/ 55570:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -9080,7 +9999,7 @@ __exportStar(__nccwpck_require__(41504), exports);
  * Operations module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getTemplateFiles = exports.use = exports.removeMultiple = exports.remove = exports.update = exports.applyUpdates = exports.checkForUpdates = exports.installSingleExtension = exports.install = exports.formatInstallSource = exports.parseInstallSource = void 0;
+exports.useBrand = exports.getTemplateFiles = exports.use = exports.removeMultiple = exports.remove = exports.normaliseVersion = exports.update = exports.applyUpdates = exports.checkForUpdates = exports.installSingleExtension = exports.install = exports.formatInstallSource = exports.parseInstallSource = void 0;
 var install_js_1 = __nccwpck_require__(83869);
 Object.defineProperty(exports, "parseInstallSource", ({ enumerable: true, get: function () { return install_js_1.parseInstallSource; } }));
 Object.defineProperty(exports, "formatInstallSource", ({ enumerable: true, get: function () { return install_js_1.formatInstallSource; } }));
@@ -9090,12 +10009,15 @@ var update_js_1 = __nccwpck_require__(85637);
 Object.defineProperty(exports, "checkForUpdates", ({ enumerable: true, get: function () { return update_js_1.checkForUpdates; } }));
 Object.defineProperty(exports, "applyUpdates", ({ enumerable: true, get: function () { return update_js_1.applyUpdates; } }));
 Object.defineProperty(exports, "update", ({ enumerable: true, get: function () { return update_js_1.update; } }));
+Object.defineProperty(exports, "normaliseVersion", ({ enumerable: true, get: function () { return update_js_1.normaliseVersion; } }));
 var remove_js_1 = __nccwpck_require__(19940);
 Object.defineProperty(exports, "remove", ({ enumerable: true, get: function () { return remove_js_1.remove; } }));
 Object.defineProperty(exports, "removeMultiple", ({ enumerable: true, get: function () { return remove_js_1.removeMultiple; } }));
 var use_js_1 = __nccwpck_require__(93933);
 Object.defineProperty(exports, "use", ({ enumerable: true, get: function () { return use_js_1.use; } }));
 Object.defineProperty(exports, "getTemplateFiles", ({ enumerable: true, get: function () { return use_js_1.getTemplateFiles; } }));
+var brand_js_1 = __nccwpck_require__(80467);
+Object.defineProperty(exports, "useBrand", ({ enumerable: true, get: function () { return brand_js_1.useBrand; } }));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -9151,6 +10073,8 @@ exports.parseInstallSource = parseInstallSource;
 exports.formatInstallSource = formatInstallSource;
 exports.install = install;
 exports.resolveExtensionId = resolveExtensionId;
+exports.applySourceOwner = applySourceOwner;
+exports.selectExtensionsFromSource = selectExtensionsFromSource;
 exports.installSingleExtension = installSingleExtension;
 const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
@@ -9162,6 +10086,7 @@ const manifest_js_1 = __nccwpck_require__(14222);
 const download_js_1 = __nccwpck_require__(44919);
 const extract_js_1 = __nccwpck_require__(927);
 const fetcher_js_1 = __nccwpck_require__(84476);
+const search_js_1 = __nccwpck_require__(31779);
 /**
  * Parse an install source string.
  *
@@ -9187,12 +10112,24 @@ const fetcher_js_1 = __nccwpck_require__(84476);
  * // { type: "local", path: "./my-extension" }
  * ```
  */
-function parseInstallSource(input) {
+function parseInstallSource(input, checkExists = fs.existsSync) {
     // HTTP/HTTPS URLs
     if (input.startsWith("http://") || input.startsWith("https://")) {
         return { type: "url", url: input };
     }
-    // file:// protocol - strip protocol and treat as local path
+    // file:// protocol - use URL API for correct parsing when the URI has three
+    // slashes (file:///path). For non-standard forms like file://./relative or
+    // file://host/share, fall back to stripping the protocol prefix to preserve
+    // backwards compatibility.
+    if (input.startsWith("file:///")) {
+        try {
+            const fileUrl = new URL(input);
+            return { type: "local", path: decodeURIComponent(fileUrl.pathname) };
+        }
+        catch {
+            return { type: "local", path: input.slice(7) };
+        }
+    }
     if (input.startsWith("file://")) {
         return { type: "local", path: input.slice(7) };
     }
@@ -9222,7 +10159,7 @@ function parseInstallSource(input) {
         return { type: "local", path: input };
     }
     // Filesystem existence check (fallback)
-    if (fs.existsSync(input)) {
+    if (checkExists(input)) {
         return { type: "local", path: input };
     }
     const ref = (0, extension_js_1.parseExtensionRef)(input);
@@ -9290,7 +10227,7 @@ function formatInstallSource(source) {
  * ```
  */
 async function install(source, options) {
-    const { projectDir, auth, onProgress, force = false, keepSourceDir = false, dryRun = false, sourceDisplay } = options;
+    const { projectDir, auth, onProgress, force = false, keepSourceDir = false, dryRun = false, sourceDisplay, signal, } = options;
     let archivePath;
     let extractDir;
     let tagName;
@@ -9304,20 +10241,20 @@ async function install(source, options) {
             let latestCommit;
             try {
                 const registry = await (0, fetcher_js_1.fetchRegistry)(options);
-                const registryKey = `${source.owner}/${source.repo}`;
-                const entry = registry[registryKey] ?? registry[registryKey.toLowerCase()];
+                const entry = (0, search_js_1.lookupRegistryEntry)(registry, `${source.owner}/${source.repo}`);
                 if (entry) {
                     defaultBranch = entry.defaultBranchRef ?? undefined;
                     latestCommit = entry.latestCommit ?? undefined;
                 }
             }
             catch {
-                // Registry fetch failed, use defaults
+                onProgress?.({ phase: "resolving", message: "Registry unavailable, using defaults." });
             }
             const result = await (0, download_js_1.downloadGitHubArchive)(source.owner, source.repo, source.version, {
                 auth,
                 defaultBranch,
                 latestCommit,
+                signal,
                 onProgress: (p) => {
                     onProgress?.({
                         phase: p.phase === "resolving" ? "resolving" : "downloading",
@@ -9332,7 +10269,7 @@ async function install(source, options) {
         }
         else if (source.type === "url") {
             onProgress?.({ phase: "downloading", message: "Downloading archive..." });
-            archivePath = await (0, download_js_1.downloadFromUrl)(source.url, { auth });
+            archivePath = await (0, download_js_1.downloadFromUrl)(source.url, { auth, signal });
         }
         else {
             archivePath = source.path;
@@ -9353,38 +10290,22 @@ async function install(source, options) {
                 suggestion: "Ensure the archive contains a valid Quarto extension",
             });
         }
-        // When installing from GitHub, use the GitHub owner for all extensions
-        // This matches Quarto CLI behaviour where all extensions from a repo
-        // are installed under the repository owner's namespace
-        if (source.type === "github") {
-            for (const ext of allExtensions) {
-                ext.id.owner = source.owner;
-            }
-        }
-        // Handle multiple extensions
-        let selectedExtensions;
-        if (allExtensions.length > 1 && options.selectExtension) {
-            const selected = await options.selectExtension(allExtensions);
-            if (!selected || selected.length === 0) {
-                // User cancelled extension selection - return cancelled result instead of throwing
-                return {
-                    success: false,
-                    cancelled: true,
-                    extension: {
-                        id: allExtensions[0].id,
-                        manifest: {},
-                        manifestPath: "",
-                        directory: "",
-                    },
-                    filesCreated: [],
-                    source: sourceDisplay ?? formatSourceString(source, tagName, commitSha),
-                };
-            }
-            selectedExtensions = selected;
-        }
-        else {
-            // Single extension or no callback - use all found extensions (for single, just the one)
-            selectedExtensions = allExtensions.length === 1 ? allExtensions : [allExtensions[0]];
+        applySourceOwner(allExtensions, source);
+        const selectedExtensions = await selectExtensionsFromSource(allExtensions, options.selectExtension);
+        if (!selectedExtensions) {
+            // User cancelled extension selection
+            return {
+                success: false,
+                cancelled: true,
+                extension: {
+                    id: allExtensions[0].id,
+                    manifest: {},
+                    manifestPath: "",
+                    directory: "",
+                },
+                filesCreated: [],
+                source: sourceDisplay ?? formatSourceString(source, tagName, commitSha),
+            };
         }
         // Use the first selected extension as the primary one
         const extensionRoot = selectedExtensions[0].path;
@@ -9432,7 +10353,7 @@ async function install(source, options) {
         const targetDir = (0, discovery_js_1.getExtensionInstallPath)(projectDir, extensionId);
         // Use sourceDisplay if provided (for relative paths that were resolved), otherwise format from source
         const sourceString = sourceDisplay ?? formatSourceString(source, tagName, commitSha);
-        const alreadyExists = fs.existsSync(targetDir);
+        const alreadyExists = await (0, walk_js_1.pathExists)(targetDir);
         // In dry-run mode, return what would happen without making changes
         if (dryRun) {
             // Collect files that would be created
@@ -9482,37 +10403,31 @@ async function install(source, options) {
             }
             await fs.promises.rm(targetDir, { recursive: true, force: true });
         }
-        // Transaction-like semantics: if manifest update fails after copying,
-        // we clean up the partially installed extension to avoid inconsistent state.
-        let filesCreated;
-        try {
-            filesCreated = await copyExtension(extensionRoot, targetDir);
-            onProgress?.({ phase: "finalizing", message: "Updating manifest..." });
-            const manifestPath = path.join(targetDir, manifestResult.filename);
-            (0, manifest_js_1.updateManifestSource)(manifestPath, sourceString);
-        }
-        catch (error) {
-            // Rollback: remove partially installed extension to maintain consistency.
-            // This ensures we don't leave an extension directory without proper metadata.
-            // eslint-disable-next-line @typescript-eslint/no-empty-function
-            await fs.promises.rm(targetDir, { recursive: true, force: true }).catch(() => { });
-            throw error;
-        }
+        onProgress?.({ phase: "finalizing", message: "Updating manifest..." });
+        const effectiveSourceType = options.sourceType ?? source.type;
+        const filesCreated = await writeExtensionToDisk(extensionRoot, targetDir, manifestResult.filename, sourceString, effectiveSourceType);
         const manifestPath = path.join(targetDir, manifestResult.filename);
         const finalManifest = (0, manifest_js_1.readManifest)(targetDir);
         // Install additional extensions if multiple were selected
         const additionalInstalls = [];
+        const additionalInstallFailures = [];
         if (selectedExtensions.length > 1) {
             for (let i = 1; i < selectedExtensions.length; i++) {
                 const additionalExt = selectedExtensions[i];
+                const extIdString = additionalExt.id.owner
+                    ? `${additionalExt.id.owner}/${additionalExt.id.name}`
+                    : additionalExt.id.name;
                 try {
-                    const additionalResult = await installSingleExtension(additionalExt, projectDir, sourceDisplay ?? formatSourceString(source, tagName, commitSha), force, onProgress, options.confirmOverwrite);
+                    const additionalResult = await installSingleExtension(additionalExt, projectDir, sourceDisplay ?? formatSourceString(source, tagName, commitSha), force, onProgress, options.confirmOverwrite, effectiveSourceType);
                     additionalInstalls.push(additionalResult);
                 }
                 catch (error) {
-                    // Log error but continue with other extensions
-                    const message = error instanceof Error ? error.message : String(error);
-                    onProgress?.({ phase: "installing", message: `Failed to install additional extension: ${message}` });
+                    const message = (0, errors_js_1.getErrorMessage)(error);
+                    additionalInstallFailures.push({ extensionId: additionalExt.id, error: message });
+                    onProgress?.({
+                        phase: "installing",
+                        message: `Failed to install additional extension ${extIdString}: ${message}`,
+                    });
                 }
             }
         }
@@ -9526,8 +10441,10 @@ async function install(source, options) {
             },
             filesCreated,
             source: sourceString,
+            sourceType: effectiveSourceType,
             sourceRoot: keepSourceDir ? repoRoot : undefined,
             additionalInstalls: additionalInstalls.length > 0 ? additionalInstalls : undefined,
+            additionalInstallFailures: additionalInstallFailures.length > 0 ? additionalInstallFailures : undefined,
         };
     }
     finally {
@@ -9549,7 +10466,7 @@ async function install(source, options) {
  * @internal
  * Exported for testing purposes only. Not part of the public API.
  */
-function resolveExtensionId(source, extensionRoot, _manifest) {
+function resolveExtensionId(source, extensionRoot) {
     if (source.type === "github") {
         return { owner: source.owner, name: source.repo };
     }
@@ -9580,6 +10497,38 @@ function resolveExtensionId(source, extensionRoot, _manifest) {
     });
 }
 /**
+ * Apply GitHub owner to all discovered extensions.
+ * When installing from GitHub, extensions are namespaced under the repository owner.
+ *
+ * @param extensions - Discovered extensions to update
+ * @param source - Installation source
+ */
+function applySourceOwner(extensions, source) {
+    if (source.type === "github") {
+        for (const ext of extensions) {
+            ext.id.owner = source.owner;
+        }
+    }
+}
+/**
+ * Select extensions from a list using an optional callback.
+ * Returns null if the user cancelled.
+ *
+ * @param allExtensions - All discovered extensions
+ * @param selectExtension - Optional callback for user selection
+ * @returns Selected extensions, or null if cancelled
+ */
+async function selectExtensionsFromSource(allExtensions, selectExtension) {
+    if (allExtensions.length > 1 && selectExtension) {
+        const selected = await selectExtension(allExtensions);
+        if (!selected || selected.length === 0) {
+            return null;
+        }
+        return selected;
+    }
+    return allExtensions.length === 1 ? allExtensions : [allExtensions[0]];
+}
+/**
  * Format source string for manifest.
  */
 function formatSourceString(source, tagName, commitSha) {
@@ -9594,10 +10543,32 @@ function formatSourceString(source, tagName, commitSha) {
     return formatInstallSource(source);
 }
 /**
- * Copy extension files to target directory.
+ * Write an extension to disk with transactional rollback.
+ *
+ * Copies extension files to the target directory and updates the manifest
+ * source field. If any step fails, the target directory is cleaned up to
+ * avoid leaving an inconsistent state.
+ *
+ * @param sourceDir - Source directory containing the extension
+ * @param targetDir - Destination directory for the extension
+ * @param manifestFilename - Name of the manifest file (e.g., "_extension.yml")
+ * @param sourceString - Source string to write into the manifest
+ * @param sourceType - Type of source (github, url, local, registry)
+ * @returns List of files created
  */
-async function copyExtension(sourceDir, targetDir) {
-    return (0, walk_js_1.copyDirectory)(sourceDir, targetDir);
+async function writeExtensionToDisk(sourceDir, targetDir, manifestFilename, sourceString, sourceType) {
+    try {
+        const filesCreated = await (0, walk_js_1.copyDirectory)(sourceDir, targetDir);
+        const manifestPath = path.join(targetDir, manifestFilename);
+        (0, manifest_js_1.updateManifestSource)(manifestPath, sourceString, sourceType);
+        return filesCreated;
+    }
+    catch (error) {
+        // Rollback: remove partially installed extension to maintain consistency.
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        await fs.promises.rm(targetDir, { recursive: true, force: true }).catch(() => { });
+        throw error;
+    }
 }
 /**
  * Collect extension files for dry-run preview.
@@ -9620,7 +10591,7 @@ async function collectExtensionFiles(sourceDir) {
  * @param confirmOverwrite - Callback to confirm overwrite when extension exists
  * @returns Installation result
  */
-async function installSingleExtension(extension, projectDir, sourceString, force, onProgress, confirmOverwrite) {
+async function installSingleExtension(extension, projectDir, sourceString, force, onProgress, confirmOverwrite, sourceType) {
     const manifestResult = (0, manifest_js_1.readManifest)(extension.path);
     if (!manifestResult) {
         throw new errors_js_1.ExtensionError("Failed to read extension manifest");
@@ -9628,7 +10599,7 @@ async function installSingleExtension(extension, projectDir, sourceString, force
     // Use the pre-computed ID from the discovered extension
     const extensionId = extension.id;
     const targetDir = (0, discovery_js_1.getExtensionInstallPath)(projectDir, extensionId);
-    const alreadyExists = fs.existsSync(targetDir);
+    const alreadyExists = await (0, walk_js_1.pathExists)(targetDir);
     if (alreadyExists) {
         if (!force) {
             throw new errors_js_1.ExtensionError(`Extension already installed: ${extensionId.owner}/${extensionId.name}`, {
@@ -9659,17 +10630,7 @@ async function installSingleExtension(extension, projectDir, sourceString, force
     }
     const extIdString = extensionId.owner ? `${extensionId.owner}/${extensionId.name}` : extensionId.name;
     onProgress?.({ phase: "installing", message: `Installing ${extIdString}...` });
-    let filesCreated;
-    try {
-        filesCreated = await copyExtension(extension.path, targetDir);
-        const manifestPath = path.join(targetDir, manifestResult.filename);
-        (0, manifest_js_1.updateManifestSource)(manifestPath, sourceString);
-    }
-    catch (error) {
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        await fs.promises.rm(targetDir, { recursive: true, force: true }).catch(() => { });
-        throw error;
-    }
+    const filesCreated = await writeExtensionToDisk(extension.path, targetDir, manifestResult.filename, sourceString, sourceType);
     const manifestPath = path.join(targetDir, manifestResult.filename);
     const finalManifest = (0, manifest_js_1.readManifest)(targetDir);
     return {
@@ -9682,6 +10643,7 @@ async function installSingleExtension(extension, projectDir, sourceString, force
         },
         filesCreated,
         source: sourceString,
+        sourceType,
     };
 }
 //# sourceMappingURL=install.js.map
@@ -9801,7 +10763,7 @@ async function removeMultiple(extensionIds, options) {
         catch (error) {
             results.push({
                 extensionId: id,
-                error: error instanceof Error ? error.message : String(error),
+                error: (0, errors_js_1.getErrorMessage)(error),
             });
         }
     }
@@ -9888,11 +10850,14 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.checkForUpdates = checkForUpdates;
 exports.applyUpdates = applyUpdates;
 exports.update = update;
+exports.normaliseVersion = normaliseVersion;
 const semver = __importStar(__nccwpck_require__(62088));
 const extension_js_1 = __nccwpck_require__(85272);
 const discovery_js_1 = __nccwpck_require__(19757);
 const fetcher_js_1 = __nccwpck_require__(84476);
+const search_js_1 = __nccwpck_require__(31779);
 const install_js_1 = __nccwpck_require__(83869);
+const errors_js_1 = __nccwpck_require__(42356);
 /**
  * Check for available updates.
  *
@@ -9916,11 +10881,11 @@ async function checkForUpdates(options) {
         if (!source) {
             continue;
         }
-        const registryKey = findRegistryKey(source, registry);
-        if (!registryKey) {
-            continue;
-        }
-        const entry = registry[registryKey];
+        // Strip @ref unconditionally for registry lookup. Non-registry sources
+        // (URLs, local paths) won't match any registry entry and are skipped.
+        const atIndex = source.lastIndexOf("@");
+        const baseName = atIndex > 0 ? source.substring(0, atIndex) : source;
+        const entry = (0, search_js_1.lookupRegistryEntry)(registry, baseName);
         if (!entry) {
             continue;
         }
@@ -9996,6 +10961,7 @@ async function applyUpdates(updates, options) {
                 projectDir,
                 auth,
                 force: true,
+                sourceType: update.extension.manifest.sourceType,
                 onProgress: (p) => {
                     onProgress?.({
                         extension: extName,
@@ -10013,7 +10979,7 @@ async function applyUpdates(updates, options) {
         catch (error) {
             result.failed.push({
                 extension: update.extension,
-                error: error instanceof Error ? error.message : String(error),
+                error: (0, errors_js_1.getErrorMessage)(error),
             });
         }
     }
@@ -10033,23 +10999,6 @@ async function update(options) {
     return applyUpdates(updates, options);
 }
 /**
- * Find registry key for a source string.
- */
-function findRegistryKey(source, registry) {
-    const atIndex = source.lastIndexOf("@");
-    const baseName = atIndex > 0 ? source.substring(0, atIndex) : source;
-    if (registry[baseName]) {
-        return baseName;
-    }
-    const lowerBase = baseName.toLowerCase();
-    for (const key of Object.keys(registry)) {
-        if (key.toLowerCase() === lowerBase) {
-            return key;
-        }
-    }
-    return null;
-}
-/**
  * Check if a source string represents a commit-based installation.
  * Returns the short commit hash if it is, null otherwise.
  */
@@ -10065,7 +11014,11 @@ function extractCommitFromSource(source) {
     return null;
 }
 /**
- * Normalise version string for comparison.
+ * Normalise a version string for comparison.
+ * Strips leading "v" prefix and coerces to valid semver.
+ *
+ * @param version - Version string to normalise
+ * @returns Normalised semver string, or null if invalid
  */
 function normaliseVersion(version) {
     if (!version) {
@@ -10133,6 +11086,7 @@ const path = __importStar(__nccwpck_require__(76760));
 const glob_1 = __nccwpck_require__(20571);
 const minimatch_1 = __nccwpck_require__(26371);
 const errors_js_1 = __nccwpck_require__(42356);
+const walk_js_1 = __nccwpck_require__(31898);
 const install_js_1 = __nccwpck_require__(83869);
 const extract_js_1 = __nccwpck_require__(927);
 const discovery_js_1 = __nccwpck_require__(19757);
@@ -10246,6 +11200,7 @@ async function twoPhaseUse(source, options) {
             keepSourceDir: true,
             dryRun: true,
             sourceDisplay: effectiveSourceDisplay,
+            sourceType: options.sourceType,
             // Do NOT pass selectExtension here - we'll handle it after file selection
             onProgress: (p) => {
                 onProgress?.({ phase: p.phase, message: p.message });
@@ -10260,9 +11215,9 @@ async function twoPhaseUse(source, options) {
         if (selectTargetSubdir) {
             onProgress?.({ phase: "selecting", message: "Awaiting target directory selection..." });
             const selectedSubdir = await selectTargetSubdir();
-            // undefined means user cancelled (pressed Escape) - stop the operation
+            // undefined means user cancelled (pressed Escape) - stop the operation.
+            // Cleanup is handled by the finally block.
             if (selectedSubdir === undefined) {
-                await (0, extract_js_1.cleanupExtraction)(sourceRoot);
                 return {
                     install: {
                         success: false,
@@ -10293,15 +11248,14 @@ async function twoPhaseUse(source, options) {
         const existingFiles = [];
         for (const file of allFiles) {
             const targetPath = path.join(effectiveTargetDir, file);
-            if (fs.existsSync(targetPath)) {
+            if (await (0, walk_js_1.pathExists)(targetPath)) {
                 existingFiles.push(file);
             }
         }
         onProgress?.({ phase: "selecting", message: "Awaiting file selection..." });
         const selectionResult = await selectFiles(allFiles, existingFiles, DEFAULT_EXCLUDE_PATTERNS.filter((p) => p !== "_extensions/**"));
         if (!selectionResult) {
-            // User cancelled file selection
-            await (0, extract_js_1.cleanupExtraction)(sourceRoot);
+            // User cancelled file selection. Cleanup is handled by the finally block.
             return {
                 install: {
                     success: false,
@@ -10322,42 +11276,28 @@ async function twoPhaseUse(source, options) {
                 suggestion: "Ensure the source contains a valid Quarto extension with _extension.yml",
             });
         }
-        // Apply GitHub owner to extensions if source is from GitHub
-        if (source.type === "github") {
-            for (const ext of allExtensions) {
-                ext.id.owner = source.owner;
-            }
-        }
-        let selectedExtensions;
-        if (allExtensions.length > 1 && selectExtension) {
-            onProgress?.({ phase: "selecting", message: "Awaiting extension selection..." });
-            const selected = await selectExtension(allExtensions);
-            if (!selected || selected.length === 0) {
-                // User cancelled extension selection
-                await (0, extract_js_1.cleanupExtraction)(sourceRoot);
-                return {
-                    install: {
-                        success: false,
-                        extension: dryRunResult.extension,
-                        filesCreated: [],
-                        source: effectiveSourceDisplay,
-                    },
-                    templateFiles: [],
-                    skippedFiles: allFiles,
-                    cancelled: true,
-                };
-            }
-            selectedExtensions = selected;
-        }
-        else {
-            // Single extension or no callback - use all (for single, just the one)
-            selectedExtensions = allExtensions.length === 1 ? allExtensions : [allExtensions[0]];
+        (0, install_js_1.applySourceOwner)(allExtensions, source);
+        onProgress?.({ phase: "selecting", message: "Awaiting extension selection..." });
+        const selectedExtensions = await (0, install_js_1.selectExtensionsFromSource)(allExtensions, selectExtension);
+        if (!selectedExtensions) {
+            // User cancelled extension selection. Cleanup is handled by the finally block.
+            return {
+                install: {
+                    success: false,
+                    extension: dryRunResult.extension,
+                    filesCreated: [],
+                    source: effectiveSourceDisplay,
+                },
+                templateFiles: [],
+                skippedFiles: allFiles,
+                cancelled: true,
+            };
         }
         // STEP 4: Check for existing extensions and prompt for overwrite
         const existingExtensions = [];
         for (const ext of selectedExtensions) {
             const targetDir = (0, discovery_js_1.getExtensionInstallPath)(projectDir, ext.id);
-            if (fs.existsSync(targetDir)) {
+            if (await (0, walk_js_1.pathExists)(targetDir)) {
                 existingExtensions.push(ext);
             }
         }
@@ -10366,8 +11306,7 @@ async function twoPhaseUse(source, options) {
             onProgress?.({ phase: "confirming", message: "Awaiting overwrite confirmation..." });
             const confirmed = await confirmExtensionOverwrite(existingExtensions);
             if (confirmed === null) {
-                // User cancelled overwrite confirmation
-                await (0, extract_js_1.cleanupExtraction)(sourceRoot);
+                // User cancelled overwrite confirmation. Cleanup is handled by the finally block.
                 return {
                     install: {
                         success: false,
@@ -10398,7 +11337,7 @@ async function twoPhaseUse(source, options) {
                 const extIdString = ext.id.owner ? `${ext.id.owner}/${ext.id.name}` : ext.id.name;
                 onProgress?.({ phase: "installing", message: `Installing ${extIdString}...` });
                 const result = await (0, install_js_1.installSingleExtension)(ext, projectDir, effectiveSourceDisplay, true, // force
-                (p) => onProgress?.({ phase: p.phase, message: p.message }));
+                (p) => onProgress?.({ phase: p.phase, message: p.message }), undefined, options.sourceType ?? source.type);
                 if (!primaryInstallResult) {
                     primaryInstallResult = result;
                 }
@@ -10505,7 +11444,7 @@ async function use(source, options) {
             const existingFiles = [];
             for (const file of allFiles) {
                 const targetPath = path.join(effectiveTargetDir, file);
-                if (fs.existsSync(targetPath)) {
+                if (await (0, walk_js_1.pathExists)(targetPath)) {
                     existingFiles.push(file);
                 }
             }
@@ -10537,7 +11476,7 @@ async function use(source, options) {
             const wouldConflict = [];
             for (const file of filesToCopy) {
                 const targetPath = path.join(effectiveTargetDir, file);
-                if (fs.existsSync(targetPath)) {
+                if (await (0, walk_js_1.pathExists)(targetPath)) {
                     wouldConflict.push(file);
                 }
             }
@@ -10590,7 +11529,7 @@ async function copyTemplateFiles(sourceRoot, projectDir, options) {
     const conflictingFiles = [];
     for (const file of filesToCopy) {
         const targetPath = path.join(effectiveTargetDir, file);
-        if (fs.existsSync(targetPath)) {
+        if (await (0, walk_js_1.pathExists)(targetPath)) {
             conflictingFiles.push(file);
         }
     }
@@ -10631,7 +11570,7 @@ async function copyTemplateFiles(sourceRoot, projectDir, options) {
     for (const file of filesToCopy) {
         const sourcePath = path.join(sourceRoot, file);
         const targetPath = path.join(effectiveTargetDir, file);
-        if (fs.existsSync(targetPath)) {
+        if (await (0, walk_js_1.pathExists)(targetPath)) {
             if (!filesToOverwrite.has(file)) {
                 skippedFiles.push(file);
                 continue;
@@ -10844,43 +11783,58 @@ const config_js_1 = __nccwpck_require__(91236);
  */
 const MAX_PROXY_CACHE_SIZE = 10;
 /**
- * Simple LRU cache for ProxyAgent instances.
+ * Default TTL for cached proxy agents (30 minutes).
+ * Ensures stale agents are refreshed when proxy credentials change.
+ */
+const PROXY_CACHE_TTL_MS = 30 * 60 * 1000;
+/**
+ * Simple LRU cache for ProxyAgent instances with TTL expiry.
  * Uses Map's insertion order to track recency.
  */
 class LRUProxyCache {
     cache = new Map();
     maxSize;
-    constructor(maxSize) {
+    ttlMs;
+    constructor(maxSize, ttlMs = PROXY_CACHE_TTL_MS) {
         this.maxSize = maxSize;
+        this.ttlMs = ttlMs;
     }
     get(proxyUrl) {
-        const agent = this.cache.get(proxyUrl);
-        if (agent) {
+        const entry = this.cache.get(proxyUrl);
+        if (entry) {
+            if (Date.now() - entry.createdAt > this.ttlMs) {
+                entry.agent.close();
+                this.cache.delete(proxyUrl);
+                return undefined;
+            }
             // Move to end (most recently used) by re-inserting
             this.cache.delete(proxyUrl);
-            this.cache.set(proxyUrl, agent);
+            this.cache.set(proxyUrl, entry);
+            return entry.agent;
         }
-        return agent;
+        return undefined;
     }
     set(proxyUrl, agent) {
         // If already exists, delete first to update position
         if (this.cache.has(proxyUrl)) {
+            const existing = this.cache.get(proxyUrl);
+            existing?.agent.close();
             this.cache.delete(proxyUrl);
         }
         else if (this.cache.size >= this.maxSize) {
             // Evict least recently used (first entry)
             const firstKey = this.cache.keys().next().value;
             if (firstKey !== undefined) {
-                const evictedAgent = this.cache.get(firstKey);
-                evictedAgent?.close();
+                const evicted = this.cache.get(firstKey);
+                evicted?.agent.close();
                 this.cache.delete(firstKey);
             }
         }
-        this.cache.set(proxyUrl, agent);
+        this.cache.set(proxyUrl, { agent, createdAt: Date.now() });
     }
     clear() {
-        for (const agent of this.cache.values()) {
-            agent.close();
+        for (const entry of this.cache.values()) {
+            entry.agent.close();
         }
         this.cache.clear();
     }
@@ -11016,6 +11970,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_CACHE_TTL = void 0;
 exports.getDefaultCacheDir = getDefaultCacheDir;
 exports.getCacheFilePath = getCacheFilePath;
 exports.readCachedRegistry = readCachedRegistry;
@@ -11026,7 +11981,7 @@ const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
 const os = __importStar(__nccwpck_require__(48161));
 /** Default cache TTL: 24 hours in milliseconds. */
-const DEFAULT_TTL = 24 * 60 * 60 * 1000;
+exports.DEFAULT_CACHE_TTL = 24 * 60 * 60 * 1000;
 /** Cache file name. */
 const CACHE_FILENAME = "quarto-wizard-registry.json";
 /**
@@ -11064,7 +12019,7 @@ function getCacheFilePath(cacheDir) {
  * @param ttl - Cache TTL in milliseconds
  * @returns Cached registry or null if cache is invalid/expired
  */
-async function readCachedRegistry(cacheDir, url, ttl = DEFAULT_TTL) {
+async function readCachedRegistry(cacheDir, url, ttl = exports.DEFAULT_CACHE_TTL) {
     const cacheFile = getCacheFilePath(cacheDir);
     try {
         if (!fs.existsSync(cacheFile)) {
@@ -11077,6 +12032,9 @@ async function readCachedRegistry(cacheDir, url, ttl = DEFAULT_TTL) {
         }
         const age = Date.now() - cached.timestamp;
         if (ttl === 0 || age > ttl) {
+            return null;
+        }
+        if (!isValidCachedRegistry(cached)) {
             return null;
         }
         return cached.registry;
@@ -11104,6 +12062,7 @@ async function writeCachedRegistry(cacheDir, url, registry) {
             timestamp: Date.now(),
             url,
             registry,
+            entryCount: Object.keys(registry).length,
         };
         await fs.promises.writeFile(cacheFile, JSON.stringify(cached), "utf-8");
     }
@@ -11130,6 +12089,35 @@ async function clearRegistryCache(cacheDir) {
         // it doesn't affect functionality. The next cache write will overwrite it
         // or the user can manually delete it if needed.
     }
+}
+/**
+ * Validate cached registry data integrity.
+ *
+ * Checks that:
+ * - The registry is a non-empty object.
+ * - Entry count matches the stored count (when available).
+ * - At least one entry has expected fields.
+ *
+ * @param cached - Cached registry data
+ * @returns True if the cache appears valid
+ */
+function isValidCachedRegistry(cached) {
+    const { registry, entryCount } = cached;
+    if (!registry || typeof registry !== "object" || Array.isArray(registry)) {
+        return false;
+    }
+    const keys = Object.keys(registry);
+    if (keys.length === 0) {
+        return false;
+    }
+    if (entryCount !== undefined && keys.length !== entryCount) {
+        return false;
+    }
+    const sample = registry[keys[0]];
+    if (!sample || typeof sample.fullName !== "string") {
+        return false;
+    }
+    return true;
 }
 /**
  * Get cache status information.
@@ -11183,8 +12171,6 @@ const http_js_1 = __nccwpck_require__(19447);
 const cache_js_1 = __nccwpck_require__(41093);
 /** Default registry URL. */
 const DEFAULT_REGISTRY_URL = "https://m.canouil.dev/quarto-extensions/extensions.json";
-/** Default cache TTL: 24 hours. */
-const DEFAULT_TTL = 24 * 60 * 60 * 1000;
 /**
  * Fetch the extension registry.
  *
@@ -11192,7 +12178,7 @@ const DEFAULT_TTL = 24 * 60 * 60 * 1000;
  * @returns Parsed registry
  */
 async function fetchRegistry(options = {}) {
-    const { registryUrl = DEFAULT_REGISTRY_URL, cacheDir = (0, cache_js_1.getDefaultCacheDir)(), forceRefresh = false, cacheTtl = DEFAULT_TTL, auth, timeout, } = options;
+    const { registryUrl = DEFAULT_REGISTRY_URL, cacheDir = (0, cache_js_1.getDefaultCacheDir)(), forceRefresh = false, cacheTtl = cache_js_1.DEFAULT_CACHE_TTL, auth, timeout, } = options;
     if (!forceRefresh && cacheDir) {
         const cached = await (0, cache_js_1.readCachedRegistry)(cacheDir, registryUrl, cacheTtl);
         if (cached) {
@@ -11238,6 +12224,7 @@ exports.fetchJson = fetchJson;
 exports.fetchText = fetchText;
 const errors_js_1 = __nccwpck_require__(42356);
 const index_js_1 = __nccwpck_require__(41504);
+const constants_js_1 = __nccwpck_require__(96094);
 const DEFAULT_TIMEOUT = 30000;
 const DEFAULT_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 1000;
@@ -11249,9 +12236,15 @@ const DEFAULT_RETRY_DELAY = 1000;
  * @param timeout - Timeout in milliseconds
  * @returns Response
  */
-async function fetchWithTimeout(url, options, timeout) {
+async function fetchWithTimeout(url, options, timeout, externalSignal) {
+    if (externalSignal?.aborted) {
+        throw new errors_js_1.CancellationError();
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    // Link external signal to internal controller so callers can cancel
+    const onExternalAbort = () => controller.abort();
+    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
     try {
         const response = await (0, index_js_1.proxyFetch)(url, {
             ...options,
@@ -11261,12 +12254,17 @@ async function fetchWithTimeout(url, options, timeout) {
     }
     catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
+            // Distinguish user cancellation from timeout
+            if (externalSignal?.aborted) {
+                throw new errors_js_1.CancellationError();
+            }
             throw new errors_js_1.NetworkError(`Request timed out after ${timeout}ms`, { cause: error });
         }
         throw error;
     }
     finally {
         clearTimeout(timeoutId);
+        externalSignal?.removeEventListener("abort", onExternalAbort);
     }
 }
 /**
@@ -11285,8 +12283,59 @@ function isRetryableError(error) {
 /**
  * Sleep for a given number of milliseconds.
  */
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+    if (signal?.aborted) {
+        return Promise.reject(new errors_js_1.CancellationError());
+    }
+    return new Promise((resolve, reject) => {
+        const onAbort = () => {
+            clearTimeout(timeoutId);
+            reject(new errors_js_1.CancellationError());
+        };
+        const timeoutId = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
+}
+/**
+ * Fetch with retry support and a response processor.
+ *
+ * @param url - URL to fetch
+ * @param requestHeaders - Headers to send
+ * @param processResponse - Callback to extract the desired value from the response
+ * @param options - HTTP options
+ * @returns Processed response value
+ */
+async function fetchWithRetry(url, requestHeaders, processResponse, options = {}) {
+    const { timeout = DEFAULT_TIMEOUT, retries = DEFAULT_RETRIES, retryDelay = DEFAULT_RETRY_DELAY, headers = {}, signal, } = options;
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const response = await fetchWithTimeout(url, {
+                method: "GET",
+                headers: {
+                    ...requestHeaders,
+                    ...headers,
+                },
+            }, timeout, signal);
+            if (!response.ok) {
+                throw new errors_js_1.NetworkError(`HTTP ${response.status}: ${response.statusText}`, { statusCode: response.status });
+            }
+            return await processResponse(response);
+        }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (attempt < retries && isRetryableError(error)) {
+                const delay = retryDelay * Math.pow(2, attempt);
+                await sleep(delay, signal);
+                continue;
+            }
+            throw lastError;
+        }
+    }
+    throw lastError ?? new errors_js_1.NetworkError("Request failed after all retries");
 }
 /**
  * Fetch JSON with timeout and retry support.
@@ -11296,34 +12345,7 @@ function sleep(ms) {
  * @returns Parsed JSON response
  */
 async function fetchJson(url, options = {}) {
-    const { timeout = DEFAULT_TIMEOUT, retries = DEFAULT_RETRIES, retryDelay = DEFAULT_RETRY_DELAY, headers = {}, } = options;
-    let lastError;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const response = await fetchWithTimeout(url, {
-                method: "GET",
-                headers: {
-                    Accept: "application/json",
-                    "User-Agent": "quarto-wizard",
-                    ...headers,
-                },
-            }, timeout);
-            if (!response.ok) {
-                throw new errors_js_1.NetworkError(`HTTP ${response.status}: ${response.statusText}`, { statusCode: response.status });
-            }
-            return (await response.json());
-        }
-        catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            if (attempt < retries && isRetryableError(error)) {
-                const delay = retryDelay * Math.pow(2, attempt);
-                await sleep(delay);
-                continue;
-            }
-            throw error;
-        }
-    }
-    throw lastError ?? new errors_js_1.NetworkError("Request failed after all retries");
+    return fetchWithRetry(url, { Accept: "application/json", "User-Agent": constants_js_1.USER_AGENT }, (response) => response.json(), options);
 }
 /**
  * Fetch text with timeout and retry support.
@@ -11333,33 +12355,7 @@ async function fetchJson(url, options = {}) {
  * @returns Response text
  */
 async function fetchText(url, options = {}) {
-    const { timeout = DEFAULT_TIMEOUT, retries = DEFAULT_RETRIES, retryDelay = DEFAULT_RETRY_DELAY, headers = {}, } = options;
-    let lastError;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const response = await fetchWithTimeout(url, {
-                method: "GET",
-                headers: {
-                    "User-Agent": "quarto-wizard",
-                    ...headers,
-                },
-            }, timeout);
-            if (!response.ok) {
-                throw new errors_js_1.NetworkError(`HTTP ${response.status}: ${response.statusText}`, { statusCode: response.status });
-            }
-            return await response.text();
-        }
-        catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            if (attempt < retries && isRetryableError(error)) {
-                const delay = retryDelay * Math.pow(2, attempt);
-                await sleep(delay);
-                continue;
-            }
-            throw error;
-        }
-    }
-    throw lastError ?? new errors_js_1.NetworkError("Request failed after all retries");
+    return fetchWithRetry(url, { "User-Agent": constants_js_1.USER_AGENT }, (response) => response.text(), options);
 }
 //# sourceMappingURL=http.js.map
 
@@ -11374,11 +12370,12 @@ async function fetchText(url, options = {}) {
  * Registry module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getExtensionsByOwner = exports.getExtension = exports.search = exports.listAvailable = exports.getDefaultRegistryUrl = exports.fetchRegistry = exports.getCacheStatus = exports.clearRegistryCache = exports.writeCachedRegistry = exports.readCachedRegistry = exports.getCacheFilePath = exports.getDefaultCacheDir = exports.fetchText = exports.fetchJson = void 0;
+exports.getExtensionsByOwner = exports.getExtension = exports.search = exports.listAvailable = exports.lookupRegistryEntry = exports.getDefaultRegistryUrl = exports.fetchRegistry = exports.getCacheStatus = exports.clearRegistryCache = exports.writeCachedRegistry = exports.readCachedRegistry = exports.getCacheFilePath = exports.getDefaultCacheDir = exports.DEFAULT_CACHE_TTL = exports.fetchText = exports.fetchJson = void 0;
 var http_js_1 = __nccwpck_require__(19447);
 Object.defineProperty(exports, "fetchJson", ({ enumerable: true, get: function () { return http_js_1.fetchJson; } }));
 Object.defineProperty(exports, "fetchText", ({ enumerable: true, get: function () { return http_js_1.fetchText; } }));
 var cache_js_1 = __nccwpck_require__(41093);
+Object.defineProperty(exports, "DEFAULT_CACHE_TTL", ({ enumerable: true, get: function () { return cache_js_1.DEFAULT_CACHE_TTL; } }));
 Object.defineProperty(exports, "getDefaultCacheDir", ({ enumerable: true, get: function () { return cache_js_1.getDefaultCacheDir; } }));
 Object.defineProperty(exports, "getCacheFilePath", ({ enumerable: true, get: function () { return cache_js_1.getCacheFilePath; } }));
 Object.defineProperty(exports, "readCachedRegistry", ({ enumerable: true, get: function () { return cache_js_1.readCachedRegistry; } }));
@@ -11389,6 +12386,7 @@ var fetcher_js_1 = __nccwpck_require__(84476);
 Object.defineProperty(exports, "fetchRegistry", ({ enumerable: true, get: function () { return fetcher_js_1.fetchRegistry; } }));
 Object.defineProperty(exports, "getDefaultRegistryUrl", ({ enumerable: true, get: function () { return fetcher_js_1.getDefaultRegistryUrl; } }));
 var search_js_1 = __nccwpck_require__(31779);
+Object.defineProperty(exports, "lookupRegistryEntry", ({ enumerable: true, get: function () { return search_js_1.lookupRegistryEntry; } }));
 Object.defineProperty(exports, "listAvailable", ({ enumerable: true, get: function () { return search_js_1.listAvailable; } }));
 Object.defineProperty(exports, "search", ({ enumerable: true, get: function () { return search_js_1.search; } }));
 Object.defineProperty(exports, "getExtension", ({ enumerable: true, get: function () { return search_js_1.getExtension; } }));
@@ -11411,11 +12409,32 @@ Object.defineProperty(exports, "getExtensionsByOwner", ({ enumerable: true, get:
  * @module registry
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.lookupRegistryEntry = lookupRegistryEntry;
 exports.listAvailable = listAvailable;
 exports.search = search;
 exports.getExtension = getExtension;
 exports.getExtensionsByOwner = getExtensionsByOwner;
 const fetcher_js_1 = __nccwpck_require__(84476);
+/**
+ * Look up a registry entry by key with case-insensitive fallback.
+ *
+ * @param registry - Registry to search
+ * @param key - Entry key (e.g., "quarto-ext/lightbox")
+ * @returns Matching entry or null
+ */
+function lookupRegistryEntry(registry, key) {
+    const entry = registry[key];
+    if (entry) {
+        return entry;
+    }
+    const lowerKey = key.toLowerCase();
+    for (const [k, v] of Object.entries(registry)) {
+        if (k.toLowerCase() === lowerKey) {
+            return v;
+        }
+    }
+    return null;
+}
 /**
  * List all available extensions from the registry.
  *
@@ -11501,7 +12520,7 @@ async function search(query, options = {}) {
  */
 async function getExtension(id, options = {}) {
     const registry = await (0, fetcher_js_1.fetchRegistry)(options);
-    return registry[id] ?? null;
+    return lookupRegistryEntry(registry, id);
 }
 /**
  * Get extensions by owner.
@@ -11650,10 +12669,15 @@ function createAuthConfig(options = {}) {
         if (colonIndex === -1) {
             throw new Error(`Invalid header format: "${header}". Expected "Name: Value".`);
         }
-        headers.push({
-            name: header.substring(0, colonIndex).trim(),
-            value: header.substring(colonIndex + 1).trim(),
-        });
+        const name = header.substring(0, colonIndex).trim();
+        const value = header.substring(colonIndex + 1).trim();
+        if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+            throw new Error(`Invalid header name "${name}": only alphanumeric characters, hyphens, and underscores are allowed.`);
+        }
+        if (/[\r\n]/.test(value)) {
+            throw new Error(`Invalid header value for "${name}": value must not contain newline characters.`);
+        }
+        headers.push({ name, value });
     }
     const githubToken = options.githubToken ?? process.env["GITHUB_TOKEN"] ?? process.env["QUARTO_WIZARD_TOKEN"];
     return {
@@ -11675,6 +12699,11 @@ function getAuthHeaders(auth, isGitHub) {
     }
     if (auth?.httpHeaders) {
         for (const header of auth.httpHeaders) {
+            // Prevent user-supplied headers from overriding the Authorization
+            // header, which is set from the GitHub token above.
+            if (header.name.toLowerCase() === "authorization" && headers["Authorization"]) {
+                continue;
+            }
             headers[header.name] = header.value;
         }
     }
@@ -11711,11 +12740,31 @@ exports.formatExtensionRef = formatExtensionRef;
  */
 function parseExtensionId(input) {
     const trimmed = input.trim();
-    const parts = trimmed.split("/");
-    if (parts.length === 2 && parts[0] && parts[1]) {
-        return { owner: parts[0], name: parts[1] };
+    if (!trimmed) {
+        throw new Error("Extension ID must not be empty");
     }
+    const slashIndex = trimmed.indexOf("/");
+    if (slashIndex > 0 && trimmed.indexOf("/", slashIndex + 1) === -1) {
+        const owner = trimmed.substring(0, slashIndex);
+        const name = trimmed.substring(slashIndex + 1);
+        if (owner && name) {
+            validateIdSegment(owner, "owner");
+            validateIdSegment(name, "name");
+            return { owner, name };
+        }
+    }
+    validateIdSegment(trimmed, "name");
     return { owner: null, name: trimmed };
+}
+/** Valid characters for extension ID segments: alphanumeric, hyphens, underscores, dots, and @. */
+const ID_SEGMENT_PATTERN = /^[@a-zA-Z0-9._-]+$/;
+/**
+ * Validate that an ID segment contains only allowed characters.
+ */
+function validateIdSegment(segment, label) {
+    if (!ID_SEGMENT_PATTERN.test(segment)) {
+        throw new Error(`Invalid extension ${label} "${segment}": only alphanumeric characters, hyphens, underscores, and dots are allowed`);
+    }
 }
 /**
  * Format an ExtensionId object as a string.
@@ -11881,7 +12930,7 @@ function normaliseManifest(raw) {
     return {
         title: raw.title ?? "",
         author: raw.author ?? "",
-        version: String(raw.version ?? ""),
+        version: typeof raw.version === "string" || typeof raw.version === "number" ? String(raw.version) : "",
         quartoRequired: raw["quarto-required"],
         contributes: {
             filter: raw.contributes?.filters,
@@ -11892,7 +12941,15 @@ function normaliseManifest(raw) {
             metadata: raw.contributes?.metadata,
         },
         source: raw.source,
+        sourceType: parseSourceType(raw["source-type"]),
     };
+}
+const VALID_SOURCE_TYPES = new Set(["github", "url", "local", "registry"]);
+function parseSourceType(value) {
+    if (!value || !VALID_SOURCE_TYPES.has(value)) {
+        return undefined;
+    }
+    return value;
 }
 //# sourceMappingURL=manifest.js.map
 
@@ -12087,10 +13144,40 @@ module.exports.getGlobalDispatcher = getGlobalDispatcher
 
 const fetchImpl = (__nccwpck_require__(51832).fetch)
 
+// Capture __filename at module load time for stack trace augmentation.
+// This may be undefined when bundled in environments like Node.js internals.
+const currentFilename = typeof __filename !== 'undefined' ? __filename : undefined
+
+function appendFetchStackTrace (err, filename) {
+  if (!err || typeof err !== 'object') {
+    return
+  }
+
+  const stack = typeof err.stack === 'string' ? err.stack : ''
+  const normalizedFilename = filename.replace(/\\/g, '/')
+
+  if (stack && (stack.includes(filename) || stack.includes(normalizedFilename))) {
+    return
+  }
+
+  const capture = {}
+  Error.captureStackTrace(capture, appendFetchStackTrace)
+
+  if (!capture.stack) {
+    return
+  }
+
+  const captureLines = capture.stack.split('\n').slice(1).join('\n')
+
+  err.stack = stack ? `${stack}\n${captureLines}` : capture.stack
+}
+
 module.exports.fetch = function fetch (init, options = undefined) {
   return fetchImpl(init, options).catch(err => {
-    if (err && typeof err === 'object') {
-      Error.captureStackTrace(err)
+    if (currentFilename) {
+      appendFetchStackTrace(err, currentFilename)
+    } else if (err && typeof err === 'object') {
+      Error.captureStackTrace(err, module.exports.fetch)
     }
     throw err
   })
@@ -12742,6 +13829,7 @@ class RequestHandler extends AsyncResource {
       try {
         this.runInAsyncScope(callback, null, null, {
           statusCode,
+          statusText: statusMessage,
           headers,
           trailers: this.trailers,
           opaque,
@@ -15959,9 +17047,12 @@ module.exports = {
   kListeners: Symbol('listeners'),
   kHTTPContext: Symbol('http context'),
   kMaxConcurrentStreams: Symbol('max concurrent streams'),
+  kHTTP2InitialWindowSize: Symbol('http2 initial window size'),
+  kHTTP2ConnectionWindowSize: Symbol('http2 connection window size'),
   kEnableConnectProtocol: Symbol('http2session connect protocol'),
   kRemoteSettings: Symbol('http2session remote settings'),
   kHTTP2Stream: Symbol('http2session client stream'),
+  kPingInterval: Symbol('ping interval'),
   kNoProxyAgent: Symbol('no proxy agent'),
   kHttpProxyAgent: Symbol('http proxy agent'),
   kHttpsProxyAgent: Symbol('https proxy agent')
@@ -16202,6 +17293,8 @@ function wrapRequestBody (body) {
     // to determine whether or not it has been disturbed. This is just
     // a workaround.
     return new BodyAsyncIterable(body)
+  } else if (body && isFormDataLike(body)) {
+    return body
   } else if (
     body &&
     typeof body !== 'string' &&
@@ -16573,20 +17666,15 @@ function parseHeaders (headers, obj) {
         val = [val]
         obj[key] = val
       }
-      val.push(headers[i + 1].toString('utf8'))
+      val.push(headers[i + 1].toString('latin1'))
     } else {
       const headersValue = headers[i + 1]
       if (typeof headersValue === 'string') {
         obj[key] = headersValue
       } else {
-        obj[key] = Array.isArray(headersValue) ? headersValue.map(x => x.toString('utf8')) : headersValue.toString('utf8')
+        obj[key] = Array.isArray(headersValue) ? headersValue.map(x => x.toString('latin1')) : headersValue.toString('latin1')
       }
     }
-  }
-
-  // See https://github.com/nodejs/node/pull/46528
-  if ('content-length' in obj && 'content-disposition' in obj) {
-    obj['content-disposition'] = Buffer.from(obj['content-disposition']).toString('latin1')
   }
 
   return obj
@@ -16603,32 +17691,18 @@ function parseRawHeaders (headers) {
    */
   const ret = new Array(headersLength)
 
-  let hasContentLength = false
-  let contentDispositionIdx = -1
   let key
   let val
-  let kLen = 0
 
   for (let n = 0; n < headersLength; n += 2) {
     key = headers[n]
     val = headers[n + 1]
 
     typeof key !== 'string' && (key = key.toString())
-    typeof val !== 'string' && (val = val.toString('utf8'))
+    typeof val !== 'string' && (val = val.toString('latin1'))
 
-    kLen = key.length
-    if (kLen === 14 && key[7] === '-' && (key === 'content-length' || key.toLowerCase() === 'content-length')) {
-      hasContentLength = true
-    } else if (kLen === 19 && key[7] === '-' && (key === 'content-disposition' || key.toLowerCase() === 'content-disposition')) {
-      contentDispositionIdx = n + 1
-    }
     ret[n] = key
     ret[n + 1] = val
-  }
-
-  // See https://github.com/nodejs/node/pull/46528
-  if (hasContentLength && contentDispositionIdx !== -1) {
-    ret[contentDispositionIdx] = Buffer.from(ret[contentDispositionIdx]).toString('latin1')
   }
 
   return ret
@@ -17218,7 +18292,9 @@ class Agent extends DispatcherBase {
           if (connected) result.count -= 1
           if (result.count <= 0) {
             this[kClients].delete(key)
-            result.dispatcher.close()
+            if (!result.dispatcher.destroyed) {
+              result.dispatcher.close()
+            }
           }
           this[kOrigins].delete(key)
         }
@@ -18249,8 +19325,13 @@ class Parser {
   }
 }
 
-function onParserTimeout (parser) {
-  const { socket, timeoutType, client, paused } = parser.deref()
+function onParserTimeout (parserWeakRef) {
+  const parser = parserWeakRef.deref()
+  if (!parser) {
+    return
+  }
+
+  const { socket, timeoutType, client, paused } = parser
 
   if (timeoutType === TIMEOUT_HEADERS) {
     if (!socket[kWriting] || socket.writableNeedDrain || client[kRunning] > 1) {
@@ -19147,7 +20228,10 @@ const {
   kStrictContentLength,
   kOnError,
   kMaxConcurrentStreams,
+  kPingInterval,
   kHTTP2Session,
+  kHTTP2InitialWindowSize,
+  kHTTP2ConnectionWindowSize,
   kResume,
   kSize,
   kHTTPContext,
@@ -19155,7 +20239,8 @@ const {
   kBodyTimeout,
   kEnableConnectProtocol,
   kRemoteSettings,
-  kHTTP2Stream
+  kHTTP2Stream,
+  kHTTP2SessionState
 } = __nccwpck_require__(70885)
 const { channels } = __nccwpck_require__(1224)
 
@@ -19210,25 +20295,39 @@ function parseH2Headers (headers) {
 function connectH2 (client, socket) {
   client[kSocket] = socket
 
+  const http2InitialWindowSize = client[kHTTP2InitialWindowSize]
+  const http2ConnectionWindowSize = client[kHTTP2ConnectionWindowSize]
+
   const session = http2.connect(client[kUrl], {
     createConnection: () => socket,
     peerMaxConcurrentStreams: client[kMaxConcurrentStreams],
     settings: {
       // TODO(metcoder95): add support for PUSH
-      enablePush: false
+      enablePush: false,
+      ...(http2InitialWindowSize != null ? { initialWindowSize: http2InitialWindowSize } : null)
     }
   })
 
+  client[kSocket] = socket
   session[kOpenStreams] = 0
   session[kClient] = client
   session[kSocket] = socket
-  session[kHTTP2Session] = null
+  session[kHTTP2SessionState] = {
+    ping: {
+      interval: client[kPingInterval] === 0 ? null : setInterval(onHttp2SendPing, client[kPingInterval], session).unref()
+    }
+  }
   // We set it to true by default in a best-effort; however once connected to an H2 server
   // we will check if extended CONNECT protocol is supported or not
   // and set this value accordingly.
   session[kEnableConnectProtocol] = false
   // States whether or not we have received the remote settings from the server
   session[kRemoteSettings] = false
+
+  // Apply connection-level flow control once connected (if supported).
+  if (http2ConnectionWindowSize) {
+    util.addListener(session, 'connect', applyConnectionWindowSize.bind(session, http2ConnectionWindowSize))
+  }
 
   util.addListener(session, 'error', onHttp2SessionError)
   util.addListener(session, 'frameError', onHttp2FrameError)
@@ -19334,6 +20433,16 @@ function resumeH2 (client) {
   }
 }
 
+function applyConnectionWindowSize (connectionWindowSize) {
+  try {
+    if (typeof this.setLocalWindowSize === 'function') {
+      this.setLocalWindowSize(connectionWindowSize)
+    }
+  } catch {
+    // Best-effort only.
+  }
+}
+
 function onHttp2RemoteSettings (settings) {
   // Fallbacks are a safe bet, remote setting will always override
   this[kClient][kMaxConcurrentStreams] = settings.maxConcurrentStreams ?? this[kClient][kMaxConcurrentStreams]
@@ -19353,6 +20462,31 @@ function onHttp2RemoteSettings (settings) {
   this[kEnableConnectProtocol] = settings.enableConnectProtocol ?? this[kEnableConnectProtocol]
   this[kRemoteSettings] = true
   this[kClient][kResume]()
+}
+
+function onHttp2SendPing (session) {
+  const state = session[kHTTP2SessionState]
+  if ((session.closed || session.destroyed) && state.ping.interval != null) {
+    clearInterval(state.ping.interval)
+    state.ping.interval = null
+    return
+  }
+
+  // If no ping sent, do nothing
+  session.ping(onPing.bind(session))
+
+  function onPing (err, duration) {
+    const client = this[kClient]
+    const socket = this[kClient]
+
+    if (err != null) {
+      const error = new InformationalError(`HTTP/2: "PING" errored - type ${err.message}`)
+      socket[kError] = error
+      client[kOnError](error)
+    } else {
+      client.emit('ping', duration)
+    }
+  }
 }
 
 function onHttp2SessionError (err) {
@@ -19418,13 +20552,18 @@ function onHttp2SessionGoAway (errorCode) {
 }
 
 function onHttp2SessionClose () {
-  const { [kClient]: client } = this
+  const { [kClient]: client, [kHTTP2SessionState]: state } = this
   const { [kSocket]: socket } = client
 
   const err = this[kSocket][kError] || this[kError] || new SocketError('closed', util.getSocketInfo(socket))
 
   client[kSocket] = null
   client[kHTTPContext] = null
+
+  if (state.ping.interval != null) {
+    clearInterval(state.ping.interval)
+    state.ping.interval = null
+  }
 
   if (client.destroyed) {
     assert(client[kPending] === 0)
@@ -19744,9 +20883,13 @@ function writeH2 (client, request) {
   ++session[kOpenStreams]
   stream.setTimeout(requestTimeout)
 
+  // Track whether we received a response (headers)
+  let responseReceived = false
+
   stream.once('response', headers => {
     const { [HTTP2_HEADER_STATUS]: statusCode, ...realHeaders } = headers
     request.onResponseStarted()
+    responseReceived = true
 
     // Due to the stream nature, it is possible we face a race condition
     // where the stream has been assigned, but the request has been aborted
@@ -19769,14 +20912,10 @@ function writeH2 (client, request) {
     }
   })
 
-  stream.once('end', (err) => {
+  stream.once('end', () => {
     stream.removeAllListeners('data')
-    // When state is null, it means we haven't consumed body and the stream still do not have
-    // a state.
-    // Present specially when using pipeline or stream
-    if (stream.state?.state == null || stream.state.state < 6) {
-      // Do not complete the request if it was aborted
-      // Not prone to happen for as safety net to avoid race conditions with 'trailers'
+    // If we received a response, this is a normal completion
+    if (responseReceived) {
       if (!request.aborted && !request.completed) {
         request.onComplete({})
       }
@@ -19784,15 +20923,9 @@ function writeH2 (client, request) {
       client[kQueue][client[kRunningIdx]++] = null
       client[kResume]()
     } else {
-      // Stream is closed or half-closed-remote (6), decrement counter and cleanup
-      // It does not have sense to continue working with the stream as we do not
-      // have yet RST_STREAM support on client-side
-      --session[kOpenStreams]
-      if (session[kOpenStreams] === 0) {
-        session.unref()
-      }
-
-      abort(err ?? new InformationalError('HTTP/2: stream half-closed (remote)'))
+      // Stream ended without receiving a response - this is an error
+      // (e.g., server destroyed the stream before sending headers)
+      abort(new InformationalError('HTTP/2: stream half-closed (remote)'))
       client[kQueue][client[kRunningIdx]++] = null
       client[kPendingIdx] = client[kRunningIdx]
       client[kResume]()
@@ -20121,7 +21254,10 @@ const {
   kOnError,
   kHTTPContext,
   kMaxConcurrentStreams,
-  kResume
+  kHTTP2InitialWindowSize,
+  kHTTP2ConnectionWindowSize,
+  kResume,
+  kPingInterval
 } = __nccwpck_require__(70885)
 const connectH1 = __nccwpck_require__(91399)
 const connectH2 = __nccwpck_require__(64378)
@@ -20177,7 +21313,10 @@ class Client extends DispatcherBase {
     // h2
     maxConcurrentStreams,
     allowH2,
-    useH2c
+    useH2c,
+    initialWindowSize,
+    connectionWindowSize,
+    pingInterval
   } = {}) {
     if (keepAlive !== undefined) {
       throw new InvalidArgumentError('unsupported keepAlive, use pipelining=0 instead')
@@ -20273,6 +21412,18 @@ class Client extends DispatcherBase {
       throw new InvalidArgumentError('useH2c must be a valid boolean value')
     }
 
+    if (initialWindowSize != null && (!Number.isInteger(initialWindowSize) || initialWindowSize < 1)) {
+      throw new InvalidArgumentError('initialWindowSize must be a positive integer, greater than 0')
+    }
+
+    if (connectionWindowSize != null && (!Number.isInteger(connectionWindowSize) || connectionWindowSize < 1)) {
+      throw new InvalidArgumentError('connectionWindowSize must be a positive integer, greater than 0')
+    }
+
+    if (pingInterval != null && (typeof pingInterval !== 'number' || !Number.isInteger(pingInterval) || pingInterval < 0)) {
+      throw new InvalidArgumentError('pingInterval must be a positive integer, greater or equal to 0')
+    }
+
     super()
 
     if (typeof connect !== 'function') {
@@ -20307,8 +21458,18 @@ class Client extends DispatcherBase {
     this[kMaxRequests] = maxRequestsPerClient
     this[kClosedResolve] = null
     this[kMaxResponseSize] = maxResponseSize > -1 ? maxResponseSize : -1
-    this[kMaxConcurrentStreams] = maxConcurrentStreams != null ? maxConcurrentStreams : 100 // Max peerConcurrentStreams for a Node h2 server
     this[kHTTPContext] = null
+    // h2
+    this[kMaxConcurrentStreams] = maxConcurrentStreams != null ? maxConcurrentStreams : 100 // Max peerConcurrentStreams for a Node h2 server
+    // HTTP/2 window sizes are set to higher defaults than Node.js core for better performance:
+    // - initialWindowSize: 262144 (256KB) vs Node.js default 65535 (64KB - 1)
+    //   Allows more data to be sent before requiring acknowledgment, improving throughput
+    //   especially on high-latency networks. This matches common production HTTP/2 servers.
+    // - connectionWindowSize: 524288 (512KB) vs Node.js default (none set)
+    //   Provides better flow control for the entire connection across multiple streams.
+    this[kHTTP2InitialWindowSize] = initialWindowSize != null ? initialWindowSize : 262144
+    this[kHTTP2ConnectionWindowSize] = connectionWindowSize != null ? connectionWindowSize : 524288
+    this[kPingInterval] = pingInterval != null ? pingInterval : 60e3 // Default ping interval for h2 - 1 minute
 
     // kQueue is built up of 3 sections separated by
     // the kRunningIdx and kPendingIdx indices.
@@ -21020,16 +22181,14 @@ class EnvHttpProxyAgent extends DispatcherBase {
       if (entry.port && entry.port !== port) {
         continue // Skip if ports don't match.
       }
-      if (!/^[.*]/.test(entry.hostname)) {
-        // No wildcards, so don't proxy only if there is not an exact match.
-        if (hostname === entry.hostname) {
-          return false
-        }
-      } else {
-        // Don't proxy if the hostname ends with the no_proxy host.
-        if (hostname.endsWith(entry.hostname.replace(/^\*/, ''))) {
-          return false
-        }
+      // Don't proxy if the hostname is equal with the no_proxy host.
+      if (hostname === entry.hostname) {
+        return false
+      }
+      // Don't proxy if the hostname is the subdomain of the no_proxy host.
+      // Reference - https://github.com/denoland/deno/blob/6fbce91e40cc07fc6da74068e5cc56fdd40f7b4c/ext/fetch/proxy.rs#L485
+      if (hostname.slice(-(entry.hostname.length + 1)) === `.${entry.hostname}`) {
+        return false
       }
     }
 
@@ -21048,7 +22207,8 @@ class EnvHttpProxyAgent extends DispatcherBase {
       }
       const parsed = entry.match(/^(.+):(\d+)$/)
       noProxyEntries.push({
-        hostname: (parsed ? parsed[1] : entry).toLowerCase(),
+        // strip leading dot or asterisk with dot
+        hostname: (parsed ? parsed[1] : entry).replace(/^\*?\./, '').toLowerCase(),
         port: parsed ? Number.parseInt(parsed[2], 10) : 0
       })
     }
@@ -21330,9 +22490,12 @@ class PoolBase extends DispatcherBase {
     }
 
     if (this[kClosedResolve] && queue.isEmpty()) {
-      const closeAll = new Array(this[kClients].length)
+      const closeAll = []
       for (let i = 0; i < this[kClients].length; i++) {
-        closeAll[i] = this[kClients][i].close()
+        const client = this[kClients][i]
+        if (!client.destroyed) {
+          closeAll.push(client.close())
+        }
       }
       return Promise.all(closeAll)
         .then(this[kClosedResolve])
@@ -21401,9 +22564,12 @@ class PoolBase extends DispatcherBase {
 
   [kClose] () {
     if (this[kQueue].isEmpty()) {
-      const closeAll = new Array(this[kClients].length)
+      const closeAll = []
       for (let i = 0; i < this[kClients].length; i++) {
-        closeAll[i] = this[kClients][i].close()
+        const client = this[kClients][i]
+        if (!client.destroyed) {
+          closeAll.push(client.close())
+        }
       }
       return Promise.all(closeAll)
     } else {
@@ -22399,57 +23565,92 @@ class CacheHandler {
     // Not modified, re-use the cached value
     // https://www.rfc-editor.org/rfc/rfc9111.html#name-handling-304-not-modified
     if (statusCode === 304) {
-      /**
-       * @type {import('../../types/cache-interceptor.d.ts').default.CacheValue}
-       */
-      const cachedValue = this.#store.get(this.#cacheKey)
-      if (!cachedValue) {
-        // Do not create a new cache entry, as a 304 won't have a body - so cannot be cached.
-        return downstreamOnHeaders()
-      }
+      const handle304 = (cachedValue) => {
+        if (!cachedValue) {
+          // Do not create a new cache entry, as a 304 won't have a body - so cannot be cached.
+          return downstreamOnHeaders()
+        }
 
-      // Re-use the cached value: statuscode, statusmessage, headers and body
-      value.statusCode = cachedValue.statusCode
-      value.statusMessage = cachedValue.statusMessage
-      value.etag = cachedValue.etag
-      value.headers = { ...cachedValue.headers, ...strippedHeaders }
+        // Re-use the cached value: statuscode, statusmessage, headers and body
+        value.statusCode = cachedValue.statusCode
+        value.statusMessage = cachedValue.statusMessage
+        value.etag = cachedValue.etag
+        value.headers = { ...cachedValue.headers, ...strippedHeaders }
 
-      downstreamOnHeaders()
+        downstreamOnHeaders()
 
-      this.#writeStream = this.#store.createWriteStream(this.#cacheKey, value)
+        this.#writeStream = this.#store.createWriteStream(this.#cacheKey, value)
 
-      if (!this.#writeStream || !cachedValue?.body) {
-        return
-      }
+        if (!this.#writeStream || !cachedValue?.body) {
+          return
+        }
 
-      const bodyIterator = cachedValue.body.values()
+        if (typeof cachedValue.body.values === 'function') {
+          const bodyIterator = cachedValue.body.values()
 
-      const streamCachedBody = () => {
-        for (const chunk of bodyIterator) {
-          const full = this.#writeStream.write(chunk) === false
-          this.#handler.onResponseData?.(controller, chunk)
-          // when stream is full stop writing until we get a 'drain' event
-          if (full) {
-            break
+          const streamCachedBody = () => {
+            for (const chunk of bodyIterator) {
+              const full = this.#writeStream.write(chunk) === false
+              this.#handler.onResponseData?.(controller, chunk)
+              // when stream is full stop writing until we get a 'drain' event
+              if (full) {
+                break
+              }
+            }
           }
+
+          this.#writeStream
+            .on('error', function () {
+              handler.#writeStream = undefined
+              handler.#store.delete(handler.#cacheKey)
+            })
+            .on('drain', () => {
+              streamCachedBody()
+            })
+            .on('close', function () {
+              if (handler.#writeStream === this) {
+                handler.#writeStream = undefined
+              }
+            })
+
+          streamCachedBody()
+        } else if (typeof cachedValue.body.on === 'function') {
+          // Readable stream body (e.g. from async/remote cache stores)
+          cachedValue.body
+            .on('data', (chunk) => {
+              this.#writeStream.write(chunk)
+              this.#handler.onResponseData?.(controller, chunk)
+            })
+            .on('end', () => {
+              this.#writeStream.end()
+            })
+            .on('error', () => {
+              this.#writeStream = undefined
+              this.#store.delete(this.#cacheKey)
+            })
+
+          this.#writeStream
+            .on('error', function () {
+              handler.#writeStream = undefined
+              handler.#store.delete(handler.#cacheKey)
+            })
+            .on('close', function () {
+              if (handler.#writeStream === this) {
+                handler.#writeStream = undefined
+              }
+            })
         }
       }
 
-      this.#writeStream
-        .on('error', function () {
-          handler.#writeStream = undefined
-          handler.#store.delete(handler.#cacheKey)
-        })
-        .on('drain', () => {
-          streamCachedBody()
-        })
-        .on('close', function () {
-          if (handler.#writeStream === this) {
-            handler.#writeStream = undefined
-          }
-        })
-
-      streamCachedBody()
+      /**
+       * @type {import('../../types/cache-interceptor.d.ts').default.CacheValue}
+       */
+      const result = this.#store.get(this.#cacheKey)
+      if (result && typeof result.then === 'function') {
+        result.then(handle304)
+      } else {
+        handle304(result)
+      }
     } else {
       if (typeof resHeaders.etag === 'string' && isEtagUsable(resHeaders.etag)) {
         value.etag = resHeaders.etag
@@ -24034,6 +25235,23 @@ const CacheRevalidationHandler = __nccwpck_require__(77899)
 const { assertCacheStore, assertCacheMethods, makeCacheKey, normalizeHeaders, parseCacheControlHeader } = __nccwpck_require__(61161)
 const { AbortError } = __nccwpck_require__(45253)
 
+/**
+ * @param {(string | RegExp)[] | undefined} origins
+ * @param {string} name
+ */
+function assertCacheOrigins (origins, name) {
+  if (origins === undefined) return
+  if (!Array.isArray(origins)) {
+    throw new TypeError(`expected ${name} to be an array or undefined, got ${typeof origins}`)
+  }
+  for (let i = 0; i < origins.length; i++) {
+    const origin = origins[i]
+    if (typeof origin !== 'string' && !(origin instanceof RegExp)) {
+      throw new TypeError(`expected ${name}[${i}] to be a string or RegExp, got ${typeof origin}`)
+    }
+  }
+}
+
 const nop = () => {}
 
 /**
@@ -24300,7 +25518,7 @@ function handleResult (
 
       // Start background revalidation (fire-and-forget)
       queueMicrotask(() => {
-        let headers = {
+        const headers = {
           ...opts.headers,
           'if-modified-since': new Date(result.cachedAt).toUTCString()
         }
@@ -24310,9 +25528,10 @@ function handleResult (
         }
 
         if (result.vary) {
-          headers = {
-            ...headers,
-            ...result.vary
+          for (const key in result.vary) {
+            if (result.vary[key] != null) {
+              headers[key] = result.vary[key]
+            }
           }
         }
 
@@ -24343,7 +25562,7 @@ function handleResult (
       withinStaleIfErrorThreshold = now < (result.staleAt + (staleIfErrorExpiry * 1000))
     }
 
-    let headers = {
+    const headers = {
       ...opts.headers,
       'if-modified-since': new Date(result.cachedAt).toUTCString()
     }
@@ -24353,9 +25572,10 @@ function handleResult (
     }
 
     if (result.vary) {
-      headers = {
-        ...headers,
-        ...result.vary
+      for (const key in result.vary) {
+        if (result.vary[key] != null) {
+          headers[key] = result.vary[key]
+        }
       }
     }
 
@@ -24397,7 +25617,8 @@ module.exports = (opts = {}) => {
     store = new MemoryCacheStore(),
     methods = ['GET'],
     cacheByDefault = undefined,
-    type = 'shared'
+    type = 'shared',
+    origins = undefined
   } = opts
 
   if (typeof opts !== 'object' || opts === null) {
@@ -24406,6 +25627,7 @@ module.exports = (opts = {}) => {
 
   assertCacheStore(store, 'opts.store')
   assertCacheMethods(methods, 'opts.methods')
+  assertCacheOrigins(origins, 'opts.origins')
 
   if (typeof cacheByDefault !== 'undefined' && typeof cacheByDefault !== 'number') {
     throw new TypeError(`expected opts.cacheByDefault to be number or undefined, got ${typeof cacheByDefault}`)
@@ -24429,6 +25651,29 @@ module.exports = (opts = {}) => {
       if (!opts.origin || safeMethodsToNotCache.includes(opts.method)) {
         // Not a method we want to cache or we don't have the origin, skip
         return dispatch(opts, handler)
+      }
+
+      // Check if origin is in whitelist
+      if (origins !== undefined) {
+        const requestOrigin = opts.origin.toString().toLowerCase()
+        let isAllowed = false
+
+        for (let i = 0; i < origins.length; i++) {
+          const allowed = origins[i]
+          if (typeof allowed === 'string') {
+            if (allowed.toLowerCase() === requestOrigin) {
+              isAllowed = true
+              break
+            }
+          } else if (allowed.test(requestOrigin)) {
+            isAllowed = true
+            break
+          }
+        }
+
+        if (!isAllowed) {
+          return dispatch(opts, handler)
+        }
       }
 
       opts = {
@@ -24517,8 +25762,6 @@ let warningEmitted = /** @type {boolean} */ (false)
 class DecompressHandler extends DecoratorHandler {
   /** @type {Transform[]} */
   #decompressors = []
-  /** @type {NodeJS.WritableStream&NodeJS.ReadableStream|null} */
-  #pipelineStream
   /** @type {Readonly<number[]>} */
   #skipStatusCodes
   /** @type {boolean} */
@@ -24623,7 +25866,7 @@ class DecompressHandler extends DecoratorHandler {
     const lastDecompressor = this.#decompressors[this.#decompressors.length - 1]
     this.#setupDecompressorEvents(lastDecompressor, controller)
 
-    this.#pipelineStream = pipeline(this.#decompressors, (err) => {
+    pipeline(this.#decompressors, (err) => {
       if (err) {
         super.onResponseError(controller, err)
         return
@@ -24638,7 +25881,6 @@ class DecompressHandler extends DecoratorHandler {
    */
   #cleanupDecompressors () {
     this.#decompressors.length = 0
-    this.#pipelineStream = null
   }
 
   /**
@@ -24674,7 +25916,7 @@ class DecompressHandler extends DecoratorHandler {
       this.#setupMultipleDecompressors(controller)
     }
 
-    super.onResponseStart(controller, statusCode, newHeaders, statusMessage)
+    return super.onResponseStart(controller, statusCode, newHeaders, statusMessage)
   }
 
   /**
@@ -24800,8 +26042,6 @@ module.exports = (opts = {}) => {
   // Convert to lowercase Set for case-insensitive header exclusion from deduplication key
   const excludeHeaderNamesSet = new Set(excludeHeaderNames.map(name => name.toLowerCase()))
 
-  const safeMethodsToNotDeduplicate = util.safeHTTPMethods.filter(method => methods.includes(method) === false)
-
   /**
    * Map of pending requests for deduplication
    * @type {Map<string, DeduplicationHandler>}
@@ -24810,7 +26050,7 @@ module.exports = (opts = {}) => {
 
   return dispatch => {
     return (opts, handler) => {
-      if (!opts.origin || safeMethodsToNotDeduplicate.includes(opts.method)) {
+      if (!opts.origin || methods.includes(opts.method) === false) {
         return dispatch(opts, handler)
       }
 
@@ -26261,7 +27501,7 @@ const {
 } = __nccwpck_require__(89327)
 const MockClient = __nccwpck_require__(48667)
 const MockPool = __nccwpck_require__(72594)
-const { matchValue, normalizeSearchParams, buildAndValidateMockOptions } = __nccwpck_require__(42467)
+const { matchValue, normalizeSearchParams, buildAndValidateMockOptions, normalizeOrigin } = __nccwpck_require__(42467)
 const { InvalidArgumentError, UndiciError } = __nccwpck_require__(45253)
 const Dispatcher = __nccwpck_require__(28077)
 const PendingInterceptorsFormatter = __nccwpck_require__(80528)
@@ -26295,9 +27535,9 @@ class MockAgent extends Dispatcher {
   }
 
   get (origin) {
-    const originKey = this[kIgnoreTrailingSlash]
-      ? origin.replace(/\/$/, '')
-      : origin
+    // Normalize origin to handle URL objects and case-insensitive hostnames
+    const normalizedOrigin = normalizeOrigin(origin)
+    const originKey = this[kIgnoreTrailingSlash] ? normalizedOrigin.replace(/\/$/, '') : normalizedOrigin
 
     let dispatcher = this[kMockAgentGet](originKey)
 
@@ -26309,6 +27549,8 @@ class MockAgent extends Dispatcher {
   }
 
   dispatch (opts, handler) {
+    opts.origin = normalizeOrigin(opts.origin)
+
     // Call MockAgent.get to perform additional setup before dispatching as normal
     this.get(opts.origin)
 
@@ -27490,9 +28732,33 @@ function mockDispatch (opts, handler) {
     return true
   }
 
+  // Track whether the request has been aborted
+  let aborted = false
+  let timer = null
+
+  function abort (err) {
+    if (aborted) {
+      return
+    }
+    aborted = true
+
+    // Clear the pending delayed response if any
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+
+    // Notify the handler of the abort
+    handler.onError(err)
+  }
+
+  // Call onConnect to allow the handler to register the abort callback
+  handler.onConnect?.(abort, null)
+
   // Handle the request with a delay if necessary
   if (typeof delay === 'number' && delay > 0) {
-    setTimeout(() => {
+    timer = setTimeout(() => {
+      timer = null
       handleReply(this[kDispatches])
     }, delay)
   } else {
@@ -27500,6 +28766,11 @@ function mockDispatch (opts, handler) {
   }
 
   function handleReply (mockDispatches, _data = data) {
+    // Don't send response if the request was aborted
+    if (aborted) {
+      return
+    }
+
     // fetch's HeadersList is a 1D string array
     const optsHeaders = Array.isArray(opts.headers)
       ? buildHeadersFromArray(opts.headers)
@@ -27518,11 +28789,15 @@ function mockDispatch (opts, handler) {
       return body.then((newData) => handleReply(mockDispatches, newData))
     }
 
+    // Check again if aborted after async body resolution
+    if (aborted) {
+      return
+    }
+
     const responseData = getResponseData(body)
     const responseHeaders = generateKeyValues(headers)
     const responseTrailers = generateKeyValues(trailers)
 
-    handler.onConnect?.(err => handler.onError(err), null)
     handler.onHeaders?.(statusCode, responseHeaders, resume, getStatusText(statusCode))
     handler.onData?.(Buffer.from(responseData))
     handler.onComplete?.(responseTrailers)
@@ -27574,6 +28849,18 @@ function checkNetConnect (netConnect, origin) {
   return false
 }
 
+function normalizeOrigin (origin) {
+  if (typeof origin !== 'string' && !(origin instanceof URL)) {
+    return origin
+  }
+
+  if (origin instanceof URL) {
+    return origin.origin
+  }
+
+  return origin.toLowerCase()
+}
+
 function buildAndValidateMockOptions (opts) {
   const { agent, ...mockOptions } = opts
 
@@ -27608,7 +28895,8 @@ module.exports = {
   buildAndValidateMockOptions,
   getHeaderByName,
   buildHeadersFromArray,
-  normalizeSearchParams
+  normalizeSearchParams,
+  normalizeOrigin
 }
 
 
@@ -31303,9 +32591,9 @@ class Cache {
     // 5.5.2
     for (const response of responses) {
       // 5.5.2.1
-      const responseObject = fromInnerResponse(response, 'immutable')
+      const responseObject = fromInnerResponse(cloneResponse(response), 'immutable')
 
-      responseList.push(responseObject.clone())
+      responseList.push(responseObject)
 
       if (responseList.length >= maxResponses) {
         break
@@ -33405,7 +34693,7 @@ const { FormData, setFormDataState } = __nccwpck_require__(38220)
 const { webidl } = __nccwpck_require__(52109)
 const assert = __nccwpck_require__(34589)
 const { isErrored, isDisturbed } = __nccwpck_require__(57075)
-const { isArrayBuffer } = __nccwpck_require__(73429)
+const { isUint8Array } = __nccwpck_require__(73429)
 const { serializeAMimeType } = __nccwpck_require__(22130)
 const { multipartFormDataParser } = __nccwpck_require__(3474)
 const { createDeferredPromise } = __nccwpck_require__(32302)
@@ -33439,6 +34727,7 @@ const streamRegistry = new FinalizationRegistry((weakRef) => {
 function extractBody (object, keepalive = false) {
   // 1. Let stream be null.
   let stream = null
+  let controller = null
 
   // 2. If object is a ReadableStream object, then set stream to object.
   if (webidl.is.ReadableStream(object)) {
@@ -33451,16 +34740,11 @@ function extractBody (object, keepalive = false) {
     // 4. Otherwise, set stream to a new ReadableStream object, and set
     //    up stream with byte reading support.
     stream = new ReadableStream({
-      pull (controller) {
-        const buffer = typeof source === 'string' ? textEncoder.encode(source) : source
-
-        if (buffer.byteLength) {
-          controller.enqueue(buffer)
-        }
-
-        queueMicrotask(() => readableStreamClose(controller))
+      pull () {},
+      start (c) {
+        controller = c
       },
-      start () {},
+      cancel () {},
       type: 'bytes'
     })
   }
@@ -33502,9 +34786,8 @@ function extractBody (object, keepalive = false) {
     // Set type to `application/x-www-form-urlencoded;charset=UTF-8`.
     type = 'application/x-www-form-urlencoded;charset=UTF-8'
   } else if (webidl.is.BufferSource(object)) {
-    source = isArrayBuffer(object)
-      ? new Uint8Array(object.slice())
-      : new Uint8Array(object.buffer.slice(object.byteOffset, object.byteOffset + object.byteLength))
+    // Set source to a copy of the bytes held by object.
+    source = webidl.util.getCopyOfBytesHeldByBufferSource(object)
   } else if (webidl.is.FormData(object)) {
     const boundary = `----formdata-undici-0${`${random(1e11)}`.padStart(11, '0')}`
     const prefix = `--${boundary}\r\nContent-Disposition: form-data`
@@ -33607,45 +34890,36 @@ function extractBody (object, keepalive = false) {
 
   // 11. If source is a byte sequence, then set action to a
   // step that returns source and length to source’s length.
-  if (typeof source === 'string' || util.isBuffer(source)) {
-    length = Buffer.byteLength(source)
+  if (typeof source === 'string' || isUint8Array(source)) {
+    action = () => {
+      length = typeof source === 'string' ? Buffer.byteLength(source) : source.length
+      return source
+    }
   }
 
-  // 12. If action is non-null, then run these steps in in parallel:
+  // 12. If action is non-null, then run these steps in parallel:
   if (action != null) {
-    // Run action.
-    let iterator
-    stream = new ReadableStream({
-      start () {
-        iterator = action(object)[Symbol.asyncIterator]()
-      },
-      pull (controller) {
-        return iterator.next().then(({ value, done }) => {
-          if (done) {
-            // When running action is done, close stream.
-            queueMicrotask(() => {
-              controller.close()
-              controller.byobRequest?.respond(0)
-            })
-          } else {
-            // Whenever one or more bytes are available and stream is not errored,
-            // enqueue a Uint8Array wrapping an ArrayBuffer containing the available
-            // bytes into stream.
-            if (!isErrored(stream)) {
-              const buffer = new Uint8Array(value)
-              if (buffer.byteLength) {
-                controller.enqueue(buffer)
-              }
-            }
+    ;(async () => {
+      // 1. Run action.
+      const result = action()
+
+      // 2. Whenever one or more bytes are available and stream is not errored,
+      //    enqueue the result of creating a Uint8Array from the available bytes into stream.
+      const iterator = result?.[Symbol.asyncIterator]?.()
+      if (iterator) {
+        for await (const bytes of iterator) {
+          if (isErrored(stream)) break
+          if (bytes.length) {
+            controller.enqueue(new Uint8Array(bytes))
           }
-          return controller.desiredSize > 0
-        })
-      },
-      cancel (reason) {
-        return iterator.return()
-      },
-      type: 'bytes'
-    })
+        }
+      } else if (result?.length && !isErrored(stream)) {
+        controller.enqueue(typeof result === 'string' ? textEncoder.encode(result) : new Uint8Array(result))
+      }
+
+      // 3. When running action is done, close stream.
+      queueMicrotask(() => readableStreamClose(controller))
+    })()
   }
 
   // 13. Let body be a body whose stream is stream, source is source,
@@ -33830,16 +35104,12 @@ function consumeBody (object, convertBytesToJSValue, instance, getInternalState)
     return Promise.reject(e)
   }
 
-  const state = getInternalState(object)
+  object = getInternalState(object)
 
   // 1. If object is unusable, then return a promise rejected
   //    with a TypeError.
-  if (bodyUnusable(state)) {
+  if (bodyUnusable(object)) {
     return Promise.reject(new TypeError('Body is unusable: Body has already been read'))
-  }
-
-  if (state.aborted) {
-    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
   }
 
   // 2. Let promise be a new promise.
@@ -33862,14 +35132,14 @@ function consumeBody (object, convertBytesToJSValue, instance, getInternalState)
 
   // 5. If object’s body is null, then run successSteps with an
   //    empty byte sequence.
-  if (state.body == null) {
+  if (object.body == null) {
     successSteps(Buffer.allocUnsafe(0))
     return promise.promise
   }
 
   // 6. Otherwise, fully read object’s body given successSteps,
   //    errorSteps, and object’s relevant global object.
-  fullyReadBody(state.body, successSteps, errorSteps)
+  fullyReadBody(object.body, successSteps, errorSteps)
 
   // 7. Return promise.
   return promise.promise
@@ -36339,7 +37609,10 @@ const {
   simpleRangeHeaderValue,
   buildContentRange,
   createInflate,
-  extractMimeType
+  extractMimeType,
+  hasAuthenticationEntry,
+  includesCredentials,
+  isTraversableNavigable
 } = __nccwpck_require__(546)
 const assert = __nccwpck_require__(34589)
 const { safelyExtractBody, extractBody } = __nccwpck_require__(13998)
@@ -36451,7 +37724,7 @@ function fetch (input, init = undefined) {
   if (requestObject.signal.aborted) {
     // 1. Abort the fetch() call with p, request, null, and
     //    requestObject’s signal’s abort reason.
-    abortFetch(p, request, null, requestObject.signal.reason)
+    abortFetch(p, request, null, requestObject.signal.reason, null)
 
     // 2. Return p.
     return p.promise
@@ -36494,7 +37767,7 @@ function fetch (input, init = undefined) {
 
       // 4. Abort the fetch() call with p, request, responseObject,
       //    and requestObject’s signal’s abort reason.
-      abortFetch(p, request, realResponse, requestObject.signal.reason)
+      abortFetch(p, request, realResponse, requestObject.signal.reason, controller.controller)
     }
   )
 
@@ -36521,7 +37794,7 @@ function fetch (input, init = undefined) {
       // 2. Abort the fetch() call with p, request, responseObject, and
       //    deserializedError.
 
-      abortFetch(p, request, responseObject, controller.serializedAbortReason)
+      abortFetch(p, request, responseObject, controller.serializedAbortReason, controller.controller)
       return
     }
 
@@ -36621,7 +37894,7 @@ function finalizeAndReportTiming (response, initiatorType = 'other') {
 const markResourceTiming = performance.markResourceTiming
 
 // https://fetch.spec.whatwg.org/#abort-fetch
-function abortFetch (p, request, responseObject, error) {
+function abortFetch (p, request, responseObject, error, controller /* undici-specific */) {
   // 1. Reject promise with error.
   if (p) {
     // We might have already resolved the promise at this stage
@@ -36651,13 +37924,7 @@ function abortFetch (p, request, responseObject, error) {
   // 5. If response’s body is not null and is readable, then error response’s
   // body with error.
   if (response.body?.stream != null && isReadable(response.body.stream)) {
-    response.body.stream.cancel(error).catch((err) => {
-      if (err.code === 'ERR_INVALID_STATE') {
-        // Node bug?
-        return
-      }
-      throw err
-    })
+    controller.error(error)
   }
 }
 
@@ -37615,8 +38882,8 @@ function httpRedirectFetch (fetchParams, response) {
     request.headersList.delete('host', true)
   }
 
-  // 14. If request’s body is non-null, then set request’s body to the first return
-  // value of safely extracting request’s body’s source.
+  // 14. If request's body is non-null, then set request's body to the first return
+  // value of safely extracting request's body's source.
   if (request.body != null) {
     assert(request.body.source != null)
     request.body = safelyExtractBody(request.body.source)[0]
@@ -37821,13 +39088,39 @@ async function httpNetworkOrCacheFetch (
 
   httpRequest.headersList.delete('host', true)
 
-  //    20. If includeCredentials is true, then:
+  //    21. If includeCredentials is true, then:
   if (includeCredentials) {
     // 1. If the user agent is not configured to block cookies for httpRequest
     // (see section 7 of [COOKIES]), then:
     // TODO: credentials
+
     // 2. If httpRequest’s header list does not contain `Authorization`, then:
-    // TODO: credentials
+    if (!httpRequest.headersList.contains('authorization', true)) {
+      // 1. Let authorizationValue be null.
+      let authorizationValue = null
+
+      // 2. If there’s an authentication entry for httpRequest and either
+      //    httpRequest’s use-URL-credentials flag is unset or httpRequest’s
+      //    current URL does not include credentials, then set
+      //    authorizationValue to authentication entry.
+      if (hasAuthenticationEntry(httpRequest) && (
+        httpRequest.useURLCredentials === undefined || !includesCredentials(requestCurrentURL(httpRequest))
+      )) {
+        // TODO
+      } else if (includesCredentials(requestCurrentURL(httpRequest)) && isAuthenticationFetch) {
+        // 3. Otherwise, if httpRequest’s current URL does include credentials
+        //    and isAuthenticationFetch is true, set authorizationValue to
+        //    httpRequest’s current URL, converted to an `Authorization` value
+        const { username, password } = requestCurrentURL(httpRequest)
+        authorizationValue = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+      }
+
+      // 4. If authorizationValue is non-null, then append (`Authorization`,
+      //    authorizationValue) to httpRequest’s header list.
+      if (authorizationValue !== null) {
+        httpRequest.headersList.append('Authorization', authorizationValue, false)
+      }
+    }
   }
 
   //    21. If there’s a proxy-authentication entry, use it as appropriate.
@@ -37909,10 +39202,53 @@ async function httpNetworkOrCacheFetch (
   // 13. Set response’s request-includes-credentials to includeCredentials.
   response.requestIncludesCredentials = includeCredentials
 
-  // 14. If response’s status is 401, httpRequest’s response tainting is not
-  // "cors", includeCredentials is true, and request’s window is an environment
-  // settings object, then:
-  // TODO
+  // 14. If response’s status is 401, httpRequest’s response tainting is not "cors",
+  //     includeCredentials is true, and request’s traversable for user prompts is
+  //     a traversable navigable:
+  if (response.status === 401 && httpRequest.responseTainting !== 'cors' && includeCredentials && isTraversableNavigable(request.traversableForUserPrompts)) {
+    // 2. If request’s body is non-null, then:
+    if (request.body != null) {
+      // 1. If request’s body’s source is null, then return a network error.
+      if (request.body.source == null) {
+        return makeNetworkError('expected non-null body source')
+      }
+
+      // 2. Set request’s body to the body of the result of safely extracting
+      //    request’s body’s source.
+      request.body = safelyExtractBody(request.body.source)[0]
+    }
+
+    // 3. If request’s use-URL-credentials flag is unset or isAuthenticationFetch is
+    //    true, then:
+    if (request.useURLCredentials === undefined || isAuthenticationFetch) {
+      // 1. If fetchParams is canceled, then return the appropriate network error
+      //    for fetchParams.
+      if (isCancelled(fetchParams)) {
+        return makeAppropriateNetworkError(fetchParams)
+      }
+
+      // 2. Let username and password be the result of prompting the end user for a
+      //    username and password, respectively, in request’s traversable for user prompts.
+      // TODO
+
+      // 3. Set the username given request’s current URL and username.
+      // requestCurrentURL(request).username = TODO
+
+      // 4. Set the password given request’s current URL and password.
+      // requestCurrentURL(request).password = TODO
+
+      // In browsers, the user will be prompted to enter a username/password before the request
+      // is re-sent. To prevent an infinite 401 loop, return the response for now.
+      // https://github.com/nodejs/undici/pull/4756
+      return response
+    }
+
+    // 4. Set response to the result of running HTTP-network-or-cache fetch given
+    //    fetchParams and true.
+    fetchParams.controller.connection.destroy()
+
+    response = await httpNetworkOrCacheFetch(fetchParams, true)
+  }
 
   // 15. If response’s status is 407, then:
   if (response.status === 407) {
@@ -38531,6 +39867,41 @@ async function httpNetworkFetch (
           fetchParams.controller.terminate(error)
 
           reject(error)
+        },
+
+        onRequestUpgrade (_controller, status, headers, socket) {
+          // We need to support 200 for websocket over h2 as per RFC-8441
+          // Absence of session means H1
+          if ((socket.session != null && status !== 200) || (socket.session == null && status !== 101)) {
+            return false
+          }
+
+          const headersList = new HeadersList()
+
+          for (const [name, value] of Object.entries(headers)) {
+            if (value == null) {
+              continue
+            }
+
+            const headerName = name.toLowerCase()
+
+            if (Array.isArray(value)) {
+              for (const entry of value) {
+                headersList.append(headerName, String(entry), true)
+              }
+            } else {
+              headersList.append(headerName, String(value), true)
+            }
+          }
+
+          resolve({
+            status,
+            statusText: STATUS_CODES[status],
+            headersList,
+            socket
+          })
+
+          return true
         },
 
         onUpgrade (status, rawHeaders, socket) {
@@ -39494,6 +40865,8 @@ function makeRequest (init) {
     preventNoCacheCacheControlHeaderModification: init.preventNoCacheCacheControlHeaderModification ?? false,
     done: init.done ?? false,
     timingAllowFailed: init.timingAllowFailed ?? false,
+    useURLCredentials: init.useURLCredentials ?? undefined,
+    traversableForUserPrompts: init.traversableForUserPrompts ?? 'client',
     urlList: init.urlList,
     url: init.urlList[0],
     headersList: init.headersList
@@ -39939,7 +41312,8 @@ class Response {
     const clonedResponse = cloneResponse(this.#state)
 
     // Note: To re-register because of a new stream.
-    if (this.#state.body?.stream) {
+    // Don't set finalizers other than for fetch responses.
+    if (this.#state.urlList.length !== 0 && this.#state.body?.stream) {
       streamRegistry.register(this, new WeakRef(this.#state.body.stream))
     }
 
@@ -40252,7 +41626,8 @@ function fromInnerResponse (innerResponse, guard) {
   setHeadersList(headers, innerResponse.headersList)
   setHeadersGuard(headers, guard)
 
-  if (innerResponse.body?.stream) {
+  // Note: If innerResponse's urlList contains a URL, it is a fetch response.
+  if (innerResponse.urlList.length !== 0 && innerResponse.body?.stream) {
     // If the target (response) is reclaimed, the cleanup callback may be called at some point with
     // the held value provided for it (innerResponse.body.stream). The held value can be any value:
     // a primitive or an object, even undefined. If the held value is an object, the registry keeps
@@ -41773,6 +43148,28 @@ function getDecodeSplit (name, list) {
   return gettingDecodingSplitting(value)
 }
 
+function hasAuthenticationEntry (request) {
+  return false
+}
+
+/**
+ * @see https://url.spec.whatwg.org/#include-credentials
+ * @param {URL} url
+ */
+function includesCredentials (url) {
+  // A URL includes credentials if its username or password is not the empty string.
+  return !!(url.username || url.password)
+}
+
+/**
+ * @see https://html.spec.whatwg.org/multipage/document-sequences.html#traversable-navigable
+ * @param {object|string} navigable
+ */
+function isTraversableNavigable (navigable) {
+  // TODO
+  return true
+}
+
 class EnvironmentSettingsObjectBase {
   get baseUrl () {
     return getGlobalOrigin()
@@ -41835,7 +43232,10 @@ module.exports = {
   extractMimeType,
   getDecodeSplit,
   environmentSettingsObject,
-  isOriginIPPotentiallyTrustworthy
+  isOriginIPPotentiallyTrustworthy,
+  hasAuthenticationEntry,
+  includesCredentials,
+  isTraversableNavigable
 }
 
 
@@ -42399,6 +43799,7 @@ module.exports = {
 "use strict";
 
 
+const assert = __nccwpck_require__(34589)
 const { types, inspect } = __nccwpck_require__(57975)
 const { runtimeFeatures } = __nccwpck_require__(52231)
 
@@ -42941,6 +44342,57 @@ webidl.is.BufferSource = function (V) {
   )
 }
 
+// https://webidl.spec.whatwg.org/#dfn-get-buffer-source-copy
+webidl.util.getCopyOfBytesHeldByBufferSource = function (bufferSource) {
+  // 1. Let jsBufferSource be the result of converting bufferSource to a JavaScript value.
+  const jsBufferSource = bufferSource
+
+  // 2. Let jsArrayBuffer be jsBufferSource.
+  let jsArrayBuffer = jsBufferSource
+
+  // 3. Let offset be 0.
+  let offset = 0
+
+  // 4. Let length be 0.
+  let length = 0
+
+  // 5. If jsBufferSource has a [[ViewedArrayBuffer]] internal slot, then:
+  if (types.isTypedArray(jsBufferSource) || types.isDataView(jsBufferSource)) {
+    // 5.1. Set jsArrayBuffer to jsBufferSource.[[ViewedArrayBuffer]].
+    jsArrayBuffer = jsBufferSource.buffer
+
+    // 5.2. Set offset to jsBufferSource.[[ByteOffset]].
+    offset = jsBufferSource.byteOffset
+
+    // 5.3. Set length to jsBufferSource.[[ByteLength]].
+    length = jsBufferSource.byteLength
+  } else {
+    // 6. Otherwise:
+
+    // 6.1. Assert: jsBufferSource is an ArrayBuffer or SharedArrayBuffer object.
+    assert(types.isAnyArrayBuffer(jsBufferSource))
+
+    // 6.2. Set length to jsBufferSource.[[ArrayBufferByteLength]].
+    length = jsBufferSource.byteLength
+  }
+
+  // 7. If IsDetachedBuffer(jsArrayBuffer) is true, then return the empty byte sequence.
+  if (jsArrayBuffer.detached) {
+    return new Uint8Array(0)
+  }
+
+  // 8. Let bytes be a new byte sequence of length equal to length.
+  const bytes = new Uint8Array(length)
+
+  // 9. For i in the range offset to offset + length − 1, inclusive,
+  //    set bytes[i − offset] to GetValueFromBuffer(jsArrayBuffer, i, Uint8, true, Unordered).
+  const view = new Uint8Array(jsArrayBuffer, offset, length)
+  bytes.set(view)
+
+  // 10. Return bytes.
+  return bytes
+}
+
 // https://webidl.spec.whatwg.org/#es-DOMString
 webidl.converters.DOMString = function (V, prefix, argument, flags) {
   // 1. If V is null and the conversion is to an IDL type
@@ -43391,7 +44843,7 @@ function establishWebSocketConnection (url, protocols, client, handler, options)
   // 2. Let request be a new request, whose URL is requestURL, client is client,
   //    service-workers mode is "none", referrer is "no-referrer", mode is
   //    "websocket", credentials mode is "include", cache mode is "no-store" ,
-  //    and redirect mode is "error".
+  //    redirect mode is "error", and use-URL-credentials flag is set.
   const request = makeRequest({
     urlList: [requestURL],
     client,
@@ -43400,7 +44852,8 @@ function establishWebSocketConnection (url, protocols, client, handler, options)
     mode: 'websocket',
     credentials: 'include',
     cache: 'no-store',
-    redirect: 'error'
+    redirect: 'error',
+    useURLCredentials: true
   })
 
   // Note: undici extension, allow setting custom headers.
@@ -45437,7 +46890,7 @@ class WebSocketStream {
       this.#openedPromise.reject(new WebSocketError('Socket never opened'))
     }
 
-    const result = this.#parser.closingInfo
+    const result = this.#parser?.closingInfo
 
     // 4. Let code be the WebSocket connection close code .
     // https://datatracker.ietf.org/doc/html/rfc6455#section-7.1.5
@@ -45478,10 +46931,10 @@ class WebSocketStream {
       const error = createUnvalidatedWebSocketError('unclean close', code, reason)
 
       // 7.2. Error stream ’s readable stream with error .
-      this.#readableStreamController.error(error)
+      this.#readableStreamController?.error(error)
 
       // 7.3. Error stream ’s writable stream with error .
-      this.#writableStream.abort(error)
+      this.#writableStream?.abort(error)
 
       // 7.4. Reject stream ’s closed promise with error .
       this.#closedPromise.reject(error)
