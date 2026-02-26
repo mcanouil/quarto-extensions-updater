@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.1 (2026-02-26)
 
 - chore(deps): update `@quarto-wizard/core` to 2.2.0.
 
