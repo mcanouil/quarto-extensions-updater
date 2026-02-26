@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- chore(deps): update `@quarto-wizard/core` to 2.2.0.
+
 ## 2.1.0 (2026-02-21)
 
 - feat: add `scan-directories` input for multi-directory extension scanning.
