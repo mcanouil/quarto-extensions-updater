@@ -7584,7 +7584,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.extractTar = extractTar;
 const fs = __importStar(__nccwpck_require__(73024));
 const path = __importStar(__nccwpck_require__(76760));
-const tar = __importStar(__nccwpck_require__(8116));
+const tar = __importStar(__nccwpck_require__(95942));
 const errors_js_1 = __nccwpck_require__(42356);
 const security_js_1 = __nccwpck_require__(25118);
 /**
@@ -7604,60 +7604,73 @@ async function extractTar(archivePath, destDir, options = {}) {
     let totalSize = 0;
     let entryCount = 0;
     let securityError;
-    await tar.extract({
-        file: archivePath,
-        cwd: destDir,
-        filter: (entryPath, entry) => {
-            if (securityError) {
-                return false;
-            }
-            try {
-                (0, security_js_1.checkPathTraversal)(entryPath);
-            }
-            catch (error) {
-                securityError = error instanceof errors_js_1.SecurityError ? error : new errors_js_1.SecurityError(String(error));
-                return false;
-            }
-            if ("type" in entry && (entry.type === "SymbolicLink" || entry.type === "Link")) {
-                const linkType = entry.type === "SymbolicLink" ? "symbolic link" : "hard link";
-                securityError = new errors_js_1.SecurityError(`Archive contains a ${linkType} ("${entryPath}"), which is not permitted.`);
-                return false;
-            }
-            return true;
-        },
-        onReadEntry: (entry) => {
-            if (securityError) {
-                entry.resume();
-                return;
-            }
-            entryCount++;
-            if (entryCount > security_js_1.MAX_FILE_COUNT) {
-                securityError = new errors_js_1.SecurityError(`Archive contains too many entries: ${entryCount} > ${security_js_1.MAX_FILE_COUNT}. This may indicate a file bomb.`);
-                entry.resume();
-                return;
-            }
-            totalSize += entry.size ?? 0;
-            if (totalSize > maxSize) {
-                securityError = new errors_js_1.SecurityError(`Archive exceeds maximum size: ${(0, security_js_1.formatSize)(totalSize)} > ${(0, security_js_1.formatSize)(maxSize)}`);
-                entry.resume();
-                return;
-            }
-            // Check compression ratio incrementally to detect tar bombs early.
-            if (compressedSize > 0) {
-                const ratio = totalSize / compressedSize;
-                if (ratio > security_js_1.MAX_COMPRESSION_RATIO) {
-                    securityError = new errors_js_1.SecurityError(`Suspicious compression ratio detected: ${ratio.toFixed(1)}:1. ` + "This may indicate a tar bomb.");
+    try {
+        await tar.extract({
+            file: archivePath,
+            cwd: destDir,
+            filter: (entryPath, entry) => {
+                if (securityError) {
+                    return false;
+                }
+                try {
+                    (0, security_js_1.checkPathTraversal)(entryPath);
+                }
+                catch (error) {
+                    securityError = error instanceof errors_js_1.SecurityError ? error : new errors_js_1.SecurityError(String(error));
+                    return false;
+                }
+                if ("type" in entry && (entry.type === "SymbolicLink" || entry.type === "Link")) {
+                    const linkType = entry.type === "SymbolicLink" ? "symbolic link" : "hard link";
+                    securityError = new errors_js_1.SecurityError(`Archive contains a ${linkType} ("${entryPath}"), which is not permitted.`);
+                    return false;
+                }
+                return true;
+            },
+            onReadEntry: (entry) => {
+                if (securityError) {
                     entry.resume();
                     return;
                 }
-            }
-            const entryPath = entry.path;
-            if (entry.type === "File" || entry.type === "ContiguousFile") {
-                extractedFiles.push(path.join(destDir, entryPath));
-                onProgress?.(entryPath);
-            }
-        },
-    });
+                entryCount++;
+                if (entryCount > security_js_1.MAX_FILE_COUNT) {
+                    securityError = new errors_js_1.SecurityError(`Archive contains too many entries: ${entryCount} > ${security_js_1.MAX_FILE_COUNT}. This may indicate a file bomb.`);
+                    entry.resume();
+                    return;
+                }
+                totalSize += entry.size ?? 0;
+                if (totalSize > maxSize) {
+                    securityError = new errors_js_1.SecurityError(`Archive exceeds maximum size: ${(0, security_js_1.formatSize)(totalSize)} > ${(0, security_js_1.formatSize)(maxSize)}`);
+                    entry.resume();
+                    return;
+                }
+                // Check compression ratio incrementally to detect tar bombs early.
+                if (compressedSize > 0) {
+                    const ratio = totalSize / compressedSize;
+                    if (ratio > security_js_1.MAX_COMPRESSION_RATIO) {
+                        securityError = new errors_js_1.SecurityError(`Suspicious compression ratio detected: ${ratio.toFixed(1)}:1. ` + "This may indicate a tar bomb.");
+                        entry.resume();
+                        return;
+                    }
+                }
+                const entryPath = entry.path;
+                if (entry.type === "File" || entry.type === "ContiguousFile") {
+                    extractedFiles.push(path.join(destDir, entryPath));
+                    onProgress?.(entryPath);
+                }
+            },
+            onwarn: () => {
+                // Swallow non-fatal node-tar warnings; SecurityError is the source of truth.
+            },
+        });
+    }
+    catch (error) {
+        // A security violation aborts the extraction by returning false from `filter`,
+        // which can leave the gzip stream partially consumed. node-tar then surfaces a
+        // late Z_STREAM_ERROR from minizlib. Prefer the original security failure.
+        if (!securityError) {
+            throw error;
+        }
+    }
     if (securityError) {
         throw securityError;
     }
@@ -8053,6 +8066,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.EXTENSIONS_DIR = void 0;
 exports.getExtensionsDir = getExtensionsDir;
 exports.hasExtensionsDir = hasExtensionsDir;
 exports.discoverInstalledExtensions = discoverInstalledExtensions;
@@ -8064,7 +8078,7 @@ const path = __importStar(__nccwpck_require__(76760));
 const manifest_js_1 = __nccwpck_require__(14222);
 const walk_js_1 = __nccwpck_require__(31898);
 /** Name of the extensions directory. */
-const EXTENSIONS_DIR = "_extensions";
+exports.EXTENSIONS_DIR = "_extensions";
 /**
  * Get the extensions directory path for a project.
  *
@@ -8072,7 +8086,7 @@ const EXTENSIONS_DIR = "_extensions";
  * @returns Path to _extensions directory
  */
 function getExtensionsDir(projectDir) {
-    return path.join(projectDir, EXTENSIONS_DIR);
+    return path.join(projectDir, exports.EXTENSIONS_DIR);
 }
 /**
  * Check if an extensions directory exists.
@@ -8254,7 +8268,7 @@ function getExtensionInstallPath(projectDir, extensionId) {
  * Filesystem module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.pathExists = exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.updateManifestSource = exports.writeManifest = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = exports.MANIFEST_FILENAMES = void 0;
+exports.pathExists = exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.EXTENSIONS_DIR = exports.updateManifestSource = exports.writeManifest = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = exports.MANIFEST_FILENAMES = void 0;
 var manifest_js_1 = __nccwpck_require__(14222);
 Object.defineProperty(exports, "MANIFEST_FILENAMES", ({ enumerable: true, get: function () { return manifest_js_1.MANIFEST_FILENAMES; } }));
 Object.defineProperty(exports, "findManifestFile", ({ enumerable: true, get: function () { return manifest_js_1.findManifestFile; } }));
@@ -8265,6 +8279,7 @@ Object.defineProperty(exports, "hasManifest", ({ enumerable: true, get: function
 Object.defineProperty(exports, "writeManifest", ({ enumerable: true, get: function () { return manifest_js_1.writeManifest; } }));
 Object.defineProperty(exports, "updateManifestSource", ({ enumerable: true, get: function () { return manifest_js_1.updateManifestSource; } }));
 var discovery_js_1 = __nccwpck_require__(19757);
+Object.defineProperty(exports, "EXTENSIONS_DIR", ({ enumerable: true, get: function () { return discovery_js_1.EXTENSIONS_DIR; } }));
 Object.defineProperty(exports, "getExtensionsDir", ({ enumerable: true, get: function () { return discovery_js_1.getExtensionsDir; } }));
 Object.defineProperty(exports, "hasExtensionsDir", ({ enumerable: true, get: function () { return discovery_js_1.hasExtensionsDir; } }));
 Object.defineProperty(exports, "discoverInstalledExtensions", ({ enumerable: true, get: function () { return discovery_js_1.discoverInstalledExtensions; } }));
@@ -10887,9 +10902,11 @@ exports.update = update;
 exports.normaliseVersion = normaliseVersion;
 const semver = __importStar(__nccwpck_require__(62088));
 const extension_js_1 = __nccwpck_require__(85272);
+const manifest_js_1 = __nccwpck_require__(88696);
 const discovery_js_1 = __nccwpck_require__(19757);
 const fetcher_js_1 = __nccwpck_require__(84476);
 const search_js_1 = __nccwpck_require__(31779);
+const releases_js_1 = __nccwpck_require__(11741);
 const install_js_1 = __nccwpck_require__(83869);
 const errors_js_1 = __nccwpck_require__(42356);
 /**
@@ -10899,7 +10916,7 @@ const errors_js_1 = __nccwpck_require__(42356);
  * @returns Array of available updates
  */
 async function checkForUpdates(options) {
-    const { projectDir, extension: targetExtension, ...registryOptions } = options;
+    const { projectDir, extension: targetExtension, crossSource = false, ...registryOptions } = options;
     let extensions;
     if (targetExtension) {
         const ext = await (0, discovery_js_1.findInstalledExtension)(projectDir, targetExtension);
@@ -10908,65 +10925,189 @@ async function checkForUpdates(options) {
     else {
         extensions = await (0, discovery_js_1.discoverInstalledExtensions)(projectDir);
     }
-    const registry = await (0, fetcher_js_1.fetchRegistry)(registryOptions);
-    const updates = [];
+    // Group extensions by the path they'll use for update discovery so we only
+    // fetch the registry when something actually needs it.
+    const registryBound = [];
+    const githubBound = [];
     for (const ext of extensions) {
+        if (!ext.manifest.source) {
+            continue;
+        }
+        const effectiveType = (0, manifest_js_1.getEffectiveSourceType)(ext.manifest);
+        if (effectiveType === "github") {
+            githubBound.push(ext);
+        }
+        else if (effectiveType === "registry") {
+            registryBound.push(ext);
+        }
+        // url/local/unknown are intentionally skipped: they aren't resolvable.
+    }
+    const needsRegistry = registryBound.length > 0 || (crossSource && githubBound.length > 0);
+    const registry = needsRegistry ? await (0, fetcher_js_1.fetchRegistry)(registryOptions) : null;
+    const updates = [];
+    for (const ext of registryBound) {
+        const source = ext.manifest.source;
+        if (!source || !registry) {
+            continue;
+        }
+        const update = buildRegistryUpdate(ext, source, registry);
+        if (update) {
+            updates.push(update);
+        }
+    }
+    const githubResults = await Promise.all(githubBound.map(async (ext) => {
         const source = ext.manifest.source;
         if (!source) {
-            continue;
+            return null;
         }
-        // Strip @ref unconditionally for registry lookup. Non-registry sources
-        // (URLs, local paths) won't match any registry entry and are skipped.
-        const atIndex = source.lastIndexOf("@");
-        const baseName = atIndex > 0 ? source.substring(0, atIndex) : source;
-        const entry = (0, search_js_1.lookupRegistryEntry)(registry, baseName);
-        if (!entry) {
-            continue;
+        const update = await buildGitHubUpdate(ext, source, registryOptions);
+        if (update) {
+            return update;
         }
-        // Check for commit-based installation
-        const currentCommit = extractCommitFromSource(source);
-        if (currentCommit && entry.latestCommit) {
-            // Commit-based comparison
-            const latestCommit = entry.latestCommit.substring(0, 7).toLowerCase();
-            if (currentCommit !== latestCommit) {
-                updates.push({
-                    extension: ext,
-                    currentVersion: currentCommit,
-                    latestVersion: latestCommit,
-                    releaseUrl: entry.htmlUrl,
-                    source: `${entry.fullName}@${latestCommit}`,
-                });
-            }
-            continue; // Skip semver comparison for commit-based
+        if (crossSource && registry) {
+            return buildRegistryUpdate(ext, source, registry);
         }
-        // Semver-based comparison for tagged releases
-        if (!entry.latestVersion) {
-            continue;
-        }
-        const currentVersion = normaliseVersion(ext.manifest.version);
-        const latestVersion = normaliseVersion(entry.latestVersion);
-        if (!currentVersion || !latestVersion) {
-            continue;
-        }
-        try {
-            if (semver.gt(latestVersion, currentVersion)) {
-                updates.push({
-                    extension: ext,
-                    currentVersion,
-                    latestVersion,
-                    releaseUrl: entry.latestReleaseUrl,
-                    source: entry.latestTag ? `${entry.fullName}@${entry.latestTag}` : entry.fullName,
-                });
-            }
-        }
-        catch {
-            // semver.gt throws if versions are invalid (e.g., "1.0" vs proper semver "1.0.0").
-            // Skip this extension rather than failing the entire update check since
-            // one malformed version shouldn't prevent checking other extensions.
-            continue;
+        return null;
+    }));
+    for (const update of githubResults) {
+        if (update) {
+            updates.push(update);
         }
     }
     return updates;
+}
+/**
+ * Resolve a registry-sourced extension against the registry, producing an
+ * UpdateInfo only if a newer tag or commit is advertised.
+ */
+function buildRegistryUpdate(ext, source, registry) {
+    const { base: baseName } = (0, manifest_js_1.splitSourceRef)(source);
+    const entry = (0, search_js_1.lookupRegistryEntry)(registry, baseName);
+    if (!entry) {
+        return null;
+    }
+    const currentCommit = extractCommitFromSource(source);
+    if (currentCommit && entry.latestCommit) {
+        const latestCommit = entry.latestCommit.substring(0, 7).toLowerCase();
+        if (currentCommit === latestCommit) {
+            return null;
+        }
+        return {
+            extension: ext,
+            currentVersion: currentCommit,
+            latestVersion: latestCommit,
+            releaseUrl: entry.htmlUrl,
+            source: `${entry.fullName}@${latestCommit}`,
+        };
+    }
+    if (currentCommit) {
+        // Current install is pinned to a commit but the registry doesn't track
+        // commits; we can't meaningfully compare, so report no update.
+        return null;
+    }
+    if (!entry.latestVersion) {
+        return null;
+    }
+    const currentVersion = normaliseVersion(ext.manifest.version);
+    const latestVersion = normaliseVersion(entry.latestVersion);
+    if (!currentVersion || !latestVersion) {
+        return null;
+    }
+    try {
+        if (semver.gt(latestVersion, currentVersion)) {
+            return {
+                extension: ext,
+                currentVersion,
+                latestVersion,
+                releaseUrl: entry.latestReleaseUrl,
+                source: entry.latestTag ? `${entry.fullName}@${entry.latestTag}` : entry.fullName,
+            };
+        }
+    }
+    catch {
+        // Invalid semver — treat as no update rather than aborting the batch.
+        return null;
+    }
+    return null;
+}
+/**
+ * Resolve a github-sourced extension against GitHub's releases/tags APIs
+ * directly, bypassing the registry.
+ */
+async function buildGitHubUpdate(ext, source, registryOptions) {
+    // Commit-pinned installs have no comparable data outside the registry; bail
+    // before issuing any network calls.
+    if (extractCommitFromSource(source)) {
+        return null;
+    }
+    const { base: baseName } = (0, manifest_js_1.splitSourceRef)(source);
+    const slashIndex = baseName.indexOf("/");
+    if (slashIndex <= 0 || slashIndex === baseName.length - 1) {
+        return null;
+    }
+    const owner = baseName.substring(0, slashIndex);
+    // GitHub's releases API only addresses the repository, so drop any
+    // "owner/repo/subdir" suffix and keep the first segment after the owner.
+    const rest = baseName.substring(slashIndex + 1);
+    const nextSlash = rest.indexOf("/");
+    const repo = nextSlash === -1 ? rest : rest.substring(0, nextSlash);
+    const fullName = `${owner}/${repo}`;
+    const htmlUrl = `https://github.com/${fullName}`;
+    const { auth, timeout } = registryOptions;
+    const githubOptions = { auth, timeout };
+    let latestTag;
+    let latestReleaseUrl = null;
+    try {
+        const releases = await (0, releases_js_1.fetchReleases)(owner, repo, githubOptions);
+        const release = releases[0];
+        if (release) {
+            latestTag = release.tagName;
+            latestReleaseUrl = release.htmlUrl;
+        }
+    }
+    catch (error) {
+        // Network or auth failures shouldn't abort the entire update check; the
+        // caller may still fall back to the registry. No logger dependency here.
+        console.error(`Failed to fetch releases for ${fullName}: ${(0, errors_js_1.getErrorMessage)(error)}`);
+    }
+    if (!latestTag) {
+        try {
+            const tags = await (0, releases_js_1.fetchTags)(owner, repo, githubOptions);
+            // Match `fetchReleases`'s default filtering: skip prerelease-style tags
+            // so a repo that only ships v2.0.0-beta.1 via tags doesn't get flagged
+            // as an update.
+            const tag = tags.find((t) => !isPrereleaseTag(t.name));
+            if (tag) {
+                latestTag = tag.name;
+            }
+        }
+        catch (error) {
+            console.error(`Failed to fetch tags for ${fullName}: ${(0, errors_js_1.getErrorMessage)(error)}`);
+        }
+    }
+    if (!latestTag) {
+        return null;
+    }
+    const currentVersion = normaliseVersion(ext.manifest.version);
+    const latestVersion = normaliseVersion(latestTag);
+    if (!currentVersion || !latestVersion) {
+        return null;
+    }
+    try {
+        if (semver.gt(latestVersion, currentVersion)) {
+            return {
+                extension: ext,
+                currentVersion,
+                latestVersion,
+                releaseUrl: latestReleaseUrl ?? htmlUrl,
+                source: `${fullName}@${latestTag}`,
+            };
+        }
+    }
+    catch {
+        return null;
+    }
+    return null;
 }
 /**
  * Apply updates to extensions.
@@ -11046,6 +11187,19 @@ function extractCommitFromSource(source) {
         return ref.toLowerCase();
     }
     return null;
+}
+/**
+ * Determine whether a tag name encodes a prerelease (e.g. `v2.0.0-beta.1`).
+ * `normaliseVersion` runs through `semver.coerce`, which strips prerelease
+ * identifiers, so this check operates on the raw tag.
+ */
+function isPrereleaseTag(tag) {
+    const cleaned = tag.replace(/^v/, "").trim();
+    const parsed = semver.parse(cleaned, { loose: true });
+    if (parsed) {
+        return parsed.prerelease.length > 0;
+    }
+    return semver.prerelease(cleaned, { loose: true }) !== null;
 }
 /**
  * Normalise a version string for comparison.
@@ -12984,7 +13138,7 @@ function formatExtensionRef(ref) {
  * Public type exports for @quarto-wizard/core.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getAuthHeaders = exports.createAuthConfig = exports.parseRegistry = exports.parseRegistryEntry = exports.normaliseManifest = exports.getExtensionTypes = exports.formatExtensionRef = exports.parseExtensionRef = exports.parseVersionSpec = exports.formatExtensionId = exports.parseExtensionId = void 0;
+exports.getAuthHeaders = exports.createAuthConfig = exports.parseRegistry = exports.parseRegistryEntry = exports.splitSourceRef = exports.normaliseManifest = exports.inferSourceType = exports.getExtensionTypes = exports.getEffectiveSourceType = exports.formatExtensionRef = exports.parseExtensionRef = exports.parseVersionSpec = exports.formatExtensionId = exports.parseExtensionId = void 0;
 var extension_js_1 = __nccwpck_require__(85272);
 Object.defineProperty(exports, "parseExtensionId", ({ enumerable: true, get: function () { return extension_js_1.parseExtensionId; } }));
 Object.defineProperty(exports, "formatExtensionId", ({ enumerable: true, get: function () { return extension_js_1.formatExtensionId; } }));
@@ -12992,8 +13146,11 @@ Object.defineProperty(exports, "parseVersionSpec", ({ enumerable: true, get: fun
 Object.defineProperty(exports, "parseExtensionRef", ({ enumerable: true, get: function () { return extension_js_1.parseExtensionRef; } }));
 Object.defineProperty(exports, "formatExtensionRef", ({ enumerable: true, get: function () { return extension_js_1.formatExtensionRef; } }));
 var manifest_js_1 = __nccwpck_require__(88696);
+Object.defineProperty(exports, "getEffectiveSourceType", ({ enumerable: true, get: function () { return manifest_js_1.getEffectiveSourceType; } }));
 Object.defineProperty(exports, "getExtensionTypes", ({ enumerable: true, get: function () { return manifest_js_1.getExtensionTypes; } }));
+Object.defineProperty(exports, "inferSourceType", ({ enumerable: true, get: function () { return manifest_js_1.inferSourceType; } }));
 Object.defineProperty(exports, "normaliseManifest", ({ enumerable: true, get: function () { return manifest_js_1.normaliseManifest; } }));
+Object.defineProperty(exports, "splitSourceRef", ({ enumerable: true, get: function () { return manifest_js_1.splitSourceRef; } }));
 var registry_js_1 = __nccwpck_require__(51442);
 Object.defineProperty(exports, "parseRegistryEntry", ({ enumerable: true, get: function () { return registry_js_1.parseRegistryEntry; } }));
 Object.defineProperty(exports, "parseRegistry", ({ enumerable: true, get: function () { return registry_js_1.parseRegistry; } }));
@@ -13020,6 +13177,9 @@ Object.defineProperty(exports, "getAuthHeaders", ({ enumerable: true, get: funct
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getExtensionTypes = getExtensionTypes;
 exports.normaliseManifest = normaliseManifest;
+exports.splitSourceRef = splitSourceRef;
+exports.inferSourceType = inferSourceType;
+exports.getEffectiveSourceType = getEffectiveSourceType;
 /**
  * Get the extension types from a manifest based on its contributions.
  *
@@ -13079,6 +13239,74 @@ function parseSourceType(value) {
         return undefined;
     }
     return value;
+}
+// Restrict to the characters GitHub permits in owner and repo names so that
+// inputs like `!/!@!@...` don't get misclassified and the pattern isn't
+// susceptible to polynomial backtracking (CodeQL `js/polynomial-redos`).
+// Callers must strip any `@ref` suffix first (see `splitSourceRef`).
+const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+$/;
+/**
+ * Split a source string of the form `base@ref` into its base and an indicator
+ * of whether an explicit ref was present.
+ *
+ * @param source - Raw source string (e.g. `owner/repo@v1.2.3`)
+ * @returns Tuple of base and whether a ref was present
+ */
+function splitSourceRef(source) {
+    const atIndex = source.lastIndexOf("@");
+    if (atIndex <= 0) {
+        return { base: source, hasRef: false };
+    }
+    return {
+        base: source.substring(0, atIndex),
+        hasRef: true,
+    };
+}
+function isLocalSourcePath(source) {
+    return (source.startsWith("file://") ||
+        source.startsWith("/") ||
+        source.startsWith("~/") ||
+        source.startsWith("\\\\") ||
+        source.startsWith(".") ||
+        /^[A-Za-z]:[/\\]/.test(source));
+}
+function isLegacyGitHubSource(source) {
+    return GITHUB_REPOSITORY_PATTERN.test(source) && !source.startsWith(".");
+}
+/**
+ * Infer the source type from a raw source string when no explicit `source-type`
+ * was recorded in the manifest (legacy installations).
+ *
+ * @param source - Raw source string from the manifest
+ * @returns Inferred source type, or undefined if the string is unrecognised
+ */
+function inferSourceType(source) {
+    if (!source) {
+        return undefined;
+    }
+    if (/^https?:\/\//.test(source)) {
+        return "url";
+    }
+    if (isLocalSourcePath(source)) {
+        return "local";
+    }
+    if (isLegacyGitHubSource(splitSourceRef(source).base)) {
+        return "registry";
+    }
+    return undefined;
+}
+/**
+ * Resolve the effective source type for a manifest, preferring the explicit
+ * `sourceType` field and falling back to inference from the source string.
+ *
+ * @param manifest - Parsed extension manifest
+ * @returns The resolved source type, or undefined if it cannot be determined
+ */
+function getEffectiveSourceType(manifest) {
+    if (manifest.sourceType) {
+        return manifest.sourceType;
+    }
+    return inferSourceType(manifest.source);
 }
 //# sourceMappingURL=manifest.js.map
 
@@ -13158,7 +13386,9 @@ const Pool = __nccwpck_require__(15538)
 const BalancedPool = __nccwpck_require__(65995)
 const RoundRobinPool = __nccwpck_require__(44290)
 const Agent = __nccwpck_require__(68135)
+const Dispatcher1Wrapper = __nccwpck_require__(68068)
 const ProxyAgent = __nccwpck_require__(27170)
+const Socks5ProxyAgent = __nccwpck_require__(93585)
 const EnvHttpProxyAgent = __nccwpck_require__(23311)
 const RetryAgent = __nccwpck_require__(16660)
 const H2CClient = __nccwpck_require__(24093)
@@ -13186,7 +13416,9 @@ module.exports.Pool = Pool
 module.exports.BalancedPool = BalancedPool
 module.exports.RoundRobinPool = RoundRobinPool
 module.exports.Agent = Agent
+module.exports.Dispatcher1Wrapper = Dispatcher1Wrapper
 module.exports.ProxyAgent = ProxyAgent
+module.exports.Socks5ProxyAgent = Socks5ProxyAgent
 module.exports.EnvHttpProxyAgent = EnvHttpProxyAgent
 module.exports.RetryAgent = RetryAgent
 module.exports.H2CClient = H2CClient
@@ -13253,14 +13485,14 @@ function makeDispatcher (fn) {
       url = util.parseURL(url)
     }
 
-    const { agent, dispatcher = getGlobalDispatcher() } = opts
+    const { agent, dispatcher = getGlobalDispatcher(), ...restOpts } = opts
 
     if (agent) {
       throw new InvalidArgumentError('unsupported opts.agent. Did you mean opts.client?')
     }
 
     return fn.call(dispatcher, {
-      ...opts,
+      ...restOpts,
       origin: url.origin,
       path: url.search ? `${url.pathname}${url.search}` : url.pathname,
       method: opts.method || (opts.body ? 'PUT' : 'GET')
@@ -13491,45 +13723,48 @@ class ConnectHandler extends AsyncResource {
     addSignal(this, signal)
   }
 
-  onConnect (abort, context) {
+  onRequestStart (controller, context) {
     if (this.reason) {
-      abort(this.reason)
+      controller.abort(this.reason)
       return
     }
 
     assert(this.callback)
 
-    this.abort = abort
+    this.abort = (reason) => controller.abort(reason)
     this.context = context
   }
 
-  onHeaders () {
+  onResponseStart () {
     throw new SocketError('bad connect', null)
   }
 
-  onUpgrade (statusCode, rawHeaders, socket) {
+  onRequestUpgrade (controller, statusCode, headers, socket) {
     const { callback, opaque, context } = this
 
     removeSignal(this)
 
     this.callback = null
 
-    let headers = rawHeaders
+    let responseHeaders = headers
+    const rawHeaders = controller?.rawHeaders
     // Indicates is an HTTP2Session
-    if (headers != null) {
-      headers = this.responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
+    if (responseHeaders != null) {
+      responseHeaders = this.responseHeaders === 'raw'
+        ? util.parseRawHeaders(rawHeaders)
+        : headers
     }
 
     this.runInAsyncScope(callback, null, null, {
       statusCode,
-      headers,
+      headers: responseHeaders,
       socket,
       opaque,
       context
     })
   }
 
-  onError (err) {
+  onResponseError (_controller, err) {
     const { callback, opaque } = this
 
     removeSignal(this)
@@ -13555,7 +13790,6 @@ function connect (opts, callback) {
   try {
     const connectHandler = new ConnectHandler(opts, callback)
     const connectOptions = { ...opts, method: 'CONNECT' }
-
     this.dispatch(connectOptions, connectHandler)
   } catch (err) {
     if (typeof callback !== 'function') {
@@ -13590,6 +13824,7 @@ const {
   RequestAbortedError
 } = __nccwpck_require__(45253)
 const util = __nccwpck_require__(23270)
+const { kBodyUsed } = __nccwpck_require__(70885)
 const { addSignal, removeSignal } = __nccwpck_require__(56524)
 
 function noop () {}
@@ -13601,6 +13836,9 @@ class PipelineRequest extends Readable {
     super({ autoDestroy: true })
 
     this[kResume] = null
+    // Pipeline request bodies come from a live writable side and cannot be
+    // replayed across redirects or retries, even before any bytes are read.
+    this[kBodyUsed] = true
   }
 
   _read () {
@@ -13723,40 +13961,46 @@ class PipelineHandler extends AsyncResource {
     addSignal(this, signal)
   }
 
-  onConnect (abort, context) {
+  onRequestStart (controller, context) {
     const { res } = this
 
     if (this.reason) {
-      abort(this.reason)
+      controller.abort(this.reason)
       return
     }
 
     assert(!res, 'pipeline cannot be retried')
 
-    this.abort = abort
+    this.abort = (reason) => controller.abort(reason)
     this.context = context
   }
 
-  onHeaders (statusCode, rawHeaders, resume) {
+  onResponseStart (controller, statusCode, headers, _statusMessage) {
     const { opaque, handler, context } = this
 
     if (statusCode < 200) {
       if (this.onInfo) {
-        const headers = this.responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
-        this.onInfo({ statusCode, headers })
+        const rawHeaders = controller?.rawHeaders
+        const responseHeaders = this.responseHeaders === 'raw'
+          ? util.parseRawHeaders(rawHeaders)
+          : headers
+        this.onInfo({ statusCode, headers: responseHeaders })
       }
       return
     }
 
-    this.res = new PipelineResponse(resume)
+    this.res = new PipelineResponse(() => controller.resume())
 
     let body
     try {
       this.handler = null
-      const headers = this.responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
+      const rawHeaders = controller?.rawHeaders
+      const responseHeaders = this.responseHeaders === 'raw'
+        ? util.parseRawHeaders(rawHeaders)
+        : headers
       body = this.runInAsyncScope(handler, null, {
         statusCode,
-        headers,
+        headers: responseHeaders,
         opaque,
         body: this.res,
         context
@@ -13799,17 +14043,20 @@ class PipelineHandler extends AsyncResource {
     this.body = body
   }
 
-  onData (chunk) {
+  onResponseData (controller, chunk) {
     const { res } = this
-    return res.push(chunk)
+
+    if (res.push(chunk) === false) {
+      controller.pause()
+    }
   }
 
-  onComplete (trailers) {
+  onResponseEnd (_controller, _trailers) {
     const { res } = this
     res.push(null)
   }
 
-  onError (err) {
+  onResponseError (_controller, err) {
     const { ret } = this
     this.handler = null
     util.destroy(ret, err)
@@ -13858,7 +14105,7 @@ class RequestHandler extends AsyncResource {
         throw new InvalidArgumentError('invalid callback')
       }
 
-      if (highWaterMark && (typeof highWaterMark !== 'number' || highWaterMark < 0)) {
+      if (highWaterMark != null && (!Number.isFinite(highWaterMark) || highWaterMark < 0)) {
         throw new InvalidArgumentError('invalid highWaterMark')
       }
 
@@ -13891,6 +14138,7 @@ class RequestHandler extends AsyncResource {
     this.body = body
     this.trailers = {}
     this.context = null
+    this.controller = null
     this.onInfo = onInfo || null
     this.highWaterMark = highWaterMark
     this.reason = null
@@ -13910,36 +14158,40 @@ class RequestHandler extends AsyncResource {
     }
   }
 
-  onConnect (abort, context) {
+  onRequestStart (controller, context) {
     if (this.reason) {
-      abort(this.reason)
+      controller.abort(this.reason)
       return
     }
 
     assert(this.callback)
 
-    this.abort = abort
+    this.controller = controller
+    this.abort = (reason) => controller.abort(reason)
     this.context = context
   }
 
-  onHeaders (statusCode, rawHeaders, resume, statusMessage) {
-    const { callback, opaque, abort, context, responseHeaders, highWaterMark } = this
+  onResponseStart (controller, statusCode, headers, statusText) {
+    const { callback, opaque, context, responseHeaders, highWaterMark } = this
 
-    const headers = responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
+    const rawHeaders = controller?.rawHeaders
+    const responseHeaderData = responseHeaders === 'raw'
+      ? util.parseRawHeaders(rawHeaders)
+      : headers
 
     if (statusCode < 200) {
       if (this.onInfo) {
-        this.onInfo({ statusCode, headers })
+        this.onInfo({ statusCode, headers: responseHeaderData })
       }
       return
     }
 
-    const parsedHeaders = responseHeaders === 'raw' ? util.parseHeaders(rawHeaders) : headers
-    const contentType = parsedHeaders['content-type']
-    const contentLength = parsedHeaders['content-length']
+    const parsedHeaders = headers
+    const contentType = parsedHeaders?.['content-type']
+    const contentLength = parsedHeaders?.['content-length']
     const res = new Readable({
-      resume,
-      abort,
+      resume: () => controller.resume(),
+      abort: (reason) => controller.abort(reason),
       contentType,
       contentLength: this.method !== 'HEAD' && contentLength
         ? Number(contentLength)
@@ -13958,8 +14210,8 @@ class RequestHandler extends AsyncResource {
       try {
         this.runInAsyncScope(callback, null, null, {
           statusCode,
-          statusText: statusMessage,
-          headers,
+          statusText,
+          headers: responseHeaderData,
           trailers: this.trailers,
           opaque,
           body: res,
@@ -13981,16 +14233,35 @@ class RequestHandler extends AsyncResource {
     }
   }
 
-  onData (chunk) {
-    return this.res.push(chunk)
+  onResponseData (controller, chunk) {
+    if (!this.res) {
+      return
+    }
+
+    if (this.res.push(chunk) === false) {
+      controller.pause()
+    }
   }
 
-  onComplete (trailers) {
-    util.parseHeaders(trailers, this.trailers)
-    this.res.push(null)
+  onResponseEnd (_controller, trailers) {
+    if (trailers && typeof trailers === 'object') {
+      for (const key of Object.keys(trailers)) {
+        if (key === '__proto__') {
+          Object.defineProperty(this.trailers, key, {
+            value: trailers[key],
+            enumerable: true,
+            configurable: true,
+            writable: true
+          })
+        } else {
+          this.trailers[key] = trailers[key]
+        }
+      }
+    }
+    this.res?.push(null)
   }
 
-  onError (err) {
+  onResponseError (_controller, err) {
     const { res, callback, body, opaque } = this
 
     if (callback) {
@@ -14060,13 +14331,60 @@ module.exports.RequestHandler = RequestHandler
 
 
 const assert = __nccwpck_require__(34589)
-const { finished } = __nccwpck_require__(57075)
 const { AsyncResource } = __nccwpck_require__(16698)
 const { InvalidArgumentError, InvalidReturnValueError } = __nccwpck_require__(45253)
 const util = __nccwpck_require__(23270)
 const { addSignal, removeSignal } = __nccwpck_require__(56524)
 
 function noop () {}
+
+function getWritableError (stream) {
+  return stream.errored ?? stream.writableErrored ?? stream._writableState?.errored
+}
+
+function createPrematureCloseError () {
+  const err = new Error('Premature close')
+  err.code = 'ERR_STREAM_PREMATURE_CLOSE'
+  return err
+}
+
+function trackWritableLifecycle (stream, callback) {
+  let done = false
+
+  const cleanup = () => {
+    stream.removeListener('close', onClose)
+    stream.removeListener('error', onError)
+    stream.removeListener('finish', onFinish)
+  }
+
+  const finish = (err, fromErrorEvent = false) => {
+    if (done) {
+      return
+    }
+
+    done = true
+    cleanup()
+    callback(err, fromErrorEvent)
+  }
+
+  const onClose = () => {
+    const err = getWritableError(stream)
+    finish(err ?? (!stream.writableFinished ? createPrematureCloseError() : undefined))
+  }
+
+  const onError = (err) => finish(err, true)
+  const onFinish = () => finish()
+
+  stream.on('close', onClose)
+  stream.on('error', onError)
+  stream.on('finish', onFinish)
+
+  if (stream.closed) {
+    process.nextTick(onClose)
+  } else if (stream.writableFinished) {
+    process.nextTick(onFinish)
+  }
+}
 
 class StreamHandler extends AsyncResource {
   constructor (opts, factory, callback) {
@@ -14112,39 +14430,44 @@ class StreamHandler extends AsyncResource {
     this.res = null
     this.abort = null
     this.context = null
+    this.controller = null
     this.trailers = null
     this.body = body
     this.onInfo = onInfo || null
 
     if (util.isStream(body)) {
       body.on('error', (err) => {
-        this.onError(err)
+        this.onResponseError(this.controller, err)
       })
     }
 
     addSignal(this, signal)
   }
 
-  onConnect (abort, context) {
+  onRequestStart (controller, context) {
     if (this.reason) {
-      abort(this.reason)
+      controller.abort(this.reason)
       return
     }
 
     assert(this.callback)
 
-    this.abort = abort
+    this.controller = controller
+    this.abort = (reason) => controller.abort(reason)
     this.context = context
   }
 
-  onHeaders (statusCode, rawHeaders, resume, statusMessage) {
+  onResponseStart (controller, statusCode, headers, _statusMessage) {
     const { factory, opaque, context, responseHeaders } = this
 
-    const headers = responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
+    const rawHeaders = controller?.rawHeaders
+    const responseHeaderData = responseHeaders === 'raw'
+      ? util.parseRawHeaders(rawHeaders)
+      : headers
 
     if (statusCode < 200) {
       if (this.onInfo) {
-        this.onInfo({ statusCode, headers })
+        this.onInfo({ statusCode, headers: responseHeaderData })
       }
       return
     }
@@ -14157,7 +14480,7 @@ class StreamHandler extends AsyncResource {
 
     const res = this.runInAsyncScope(factory, null, {
       statusCode,
-      headers,
+      headers: responseHeaderData,
       opaque,
       context
     })
@@ -14171,24 +14494,23 @@ class StreamHandler extends AsyncResource {
       throw new InvalidReturnValueError('expected Writable')
     }
 
-    // TODO: Avoid finished. It registers an unnecessary amount of listeners.
-    finished(res, { readable: false }, (err) => {
+    trackWritableLifecycle(res, (err, fromErrorEvent) => {
       const { callback, res, opaque, trailers, abort } = this
 
       this.res = null
       if (err || !res?.readable) {
-        util.destroy(res, err)
+        util.destroy(res, fromErrorEvent ? undefined : err)
       }
 
       this.callback = null
       this.runInAsyncScope(callback, null, err || null, { opaque, trailers })
 
       if (err) {
-        abort()
+        abort(err)
       }
     })
 
-    res.on('drain', resume)
+    res.on('drain', () => controller.resume())
 
     this.res = res
 
@@ -14196,16 +14518,24 @@ class StreamHandler extends AsyncResource {
       ? res.writableNeedDrain
       : res._writableState?.needDrain
 
-    return needDrain !== true
+    if (needDrain === true) {
+      controller.pause()
+    }
   }
 
-  onData (chunk) {
+  onResponseData (controller, chunk) {
     const { res } = this
 
-    return res ? res.write(chunk) : true
+    if (!res) {
+      return
+    }
+
+    if (res.write(chunk) === false) {
+      controller.pause()
+    }
   }
 
-  onComplete (trailers) {
+  onResponseEnd (_controller, trailers) {
     const { res } = this
 
     removeSignal(this)
@@ -14214,12 +14544,14 @@ class StreamHandler extends AsyncResource {
       return
     }
 
-    this.trailers = util.parseHeaders(trailers)
+    if (trailers && typeof trailers === 'object') {
+      this.trailers = trailers
+    }
 
     res.end()
   }
 
-  onError (err) {
+  onResponseError (_controller, err) {
     const { res, callback, opaque, body } = this
 
     removeSignal(this)
@@ -14310,40 +14642,51 @@ class UpgradeHandler extends AsyncResource {
     addSignal(this, signal)
   }
 
-  onConnect (abort, context) {
+  onRequestStart (controller, context) {
     if (this.reason) {
-      abort(this.reason)
+      controller.abort(this.reason)
       return
     }
 
     assert(this.callback)
 
-    this.abort = abort
-    this.context = null
+    this.abort = (reason) => controller.abort(reason)
+    this.context = context
   }
 
-  onHeaders () {
+  onResponseStart () {
     throw new SocketError('bad upgrade', null)
   }
 
-  onUpgrade (statusCode, rawHeaders, socket) {
-    assert(socket[kHTTP2Stream] === true ? statusCode === 200 : statusCode === 101)
+  onRequestUpgrade (controller, statusCode, headers, socket) {
+    const expectedStatusCode = socket[kHTTP2Stream] === true ? 200 : 101
+
+    if (statusCode !== expectedStatusCode) {
+      const socketInfo = socket[kHTTP2Stream] === true ? null : util.getSocketInfo(socket)
+      controller.abort(new SocketError('bad upgrade', socketInfo))
+      return
+    }
 
     const { callback, opaque, context } = this
 
     removeSignal(this)
 
     this.callback = null
-    const headers = this.responseHeaders === 'raw' ? util.parseRawHeaders(rawHeaders) : util.parseHeaders(rawHeaders)
+
+    const rawHeaders = controller?.rawHeaders
+    const responseHeaders = this.responseHeaders === 'raw'
+      ? util.parseRawHeaders(rawHeaders)
+      : headers
+
     this.runInAsyncScope(callback, null, null, {
-      headers,
+      headers: responseHeaders,
       socket,
       opaque,
       context
     })
   }
 
-  onError (err) {
+  onResponseError (_controller, err) {
     const { callback, opaque } = this
 
     removeSignal(this)
@@ -14373,7 +14716,6 @@ function upgrade (opts, callback) {
       method: opts.method || 'GET',
       upgrade: opts.protocol || 'Websocket'
     }
-
     this.dispatch(upgradeOpts, upgradeHandler)
   } catch (err) {
     if (typeof callback !== 'function') {
@@ -14411,6 +14753,7 @@ module.exports.connect = __nccwpck_require__(80146)
 
 
 const assert = __nccwpck_require__(34589)
+const { addAbortListener } = __nccwpck_require__(78474)
 const { Readable } = __nccwpck_require__(57075)
 const { RequestAbortedError, NotSupportedError, InvalidArgumentError, AbortError } = __nccwpck_require__(45253)
 const util = __nccwpck_require__(23270)
@@ -14703,10 +15046,10 @@ class BodyReadable extends Readable {
         const onAbort = () => {
           this.destroy(signal.reason ?? new AbortError())
         }
-        signal.addEventListener('abort', onAbort)
+        const abortListener = addAbortListener(signal, onAbort)
         this
           .on('close', function () {
-            signal.removeEventListener('abort', onAbort)
+            abortListener[Symbol.dispose]()
             if (signal.aborted) {
               reject(signal.reason ?? new AbortError())
             } else {
@@ -15136,7 +15479,7 @@ class MemoryCacheStore extends EventEmitter {
 
         entry.size += chunk.byteLength
 
-        if (entry.size >= store.#maxEntrySize) {
+        if (entry.size > store.#maxEntrySize) {
           this.destroy()
         } else {
           entry.body.push(chunk)
@@ -15413,6 +15756,7 @@ module.exports = class SqliteCacheStore {
         headers = ?,
         etag = ?,
         cacheControlDirectives = ?,
+        vary = ?,
         cachedAt = ?,
         staleAt = ?
       WHERE
@@ -15456,7 +15800,7 @@ module.exports = class SqliteCacheStore {
           SELECT
             id
           FROM cacheInterceptorV${VERSION}
-          ORDER BY cachedAt DESC
+          ORDER BY cachedAt ASC
           LIMIT ?
         )
       `)
@@ -15518,12 +15862,12 @@ module.exports = class SqliteCacheStore {
         value.headers ? JSON.stringify(value.headers) : null,
         value.etag ? value.etag : null,
         value.cacheControlDirectives ? JSON.stringify(value.cacheControlDirectives) : null,
+        value.vary ? JSON.stringify(value.vary) : null,
         value.cachedAt,
         value.staleAt,
         existingValue.id
       )
     } else {
-      this.#prune()
       // New response, let's insert it
       this.#insertValueQuery.run(
         url,
@@ -15539,6 +15883,7 @@ module.exports = class SqliteCacheStore {
         value.cachedAt,
         value.staleAt
       )
+      this.#prune()
     }
   }
 
@@ -15563,7 +15908,7 @@ module.exports = class SqliteCacheStore {
       write (chunk, encoding, callback) {
         size += chunk.byteLength
 
-        if (size < store.#maxEntrySize) {
+        if (size <= store.#maxEntrySize) {
           body.push(chunk)
         } else {
           this.destroy()
@@ -15649,7 +15994,7 @@ module.exports = class SqliteCacheStore {
     const now = Date.now()
     for (const value of values) {
       if (now >= value.deleteAt && !canBeExpired) {
-        return undefined
+        continue
       }
 
       let matches = true
@@ -15747,6 +16092,22 @@ const SessionCache = class WeakSessionCache {
       return
     }
 
+    if (this._sessionCache.has(sessionKey)) {
+      this._sessionCache.delete(sessionKey)
+    } else if (this._sessionCache.size >= this._maxCachedSessions) {
+      for (const [key, ref] of this._sessionCache) {
+        if (ref.deref() === undefined) {
+          this._sessionCache.delete(key)
+          return
+        }
+      }
+
+      const oldest = this._sessionCache.keys().next()
+      if (!oldest.done) {
+        this._sessionCache.delete(oldest.value)
+      }
+    }
+
     this._sessionCache.set(sessionKey, new WeakRef(session))
     this._sessionRegistry.register(session, sessionKey)
   }
@@ -15760,7 +16121,7 @@ function buildConnector ({ allowH2, useH2c, maxCachedSessions, socketPath, timeo
   const options = { path: socketPath, ...opts }
   const sessionCache = new SessionCache(maxCachedSessions == null ? 100 : maxCachedSessions)
   timeout = timeout == null ? 10e3 : timeout
-  allowH2 = allowH2 != null ? allowH2 : false
+  allowH2 = allowH2 != null ? allowH2 : true
   return function connect ({ hostname, host, protocol, port, servername, localAddress, httpSocket }, callback) {
     let socket
     if (protocol === 'https:') {
@@ -15961,28 +16322,6 @@ const headerNameLowerCasedRecord = {}
 // Note: object prototypes should not be able to be referenced. e.g. `Object#hasOwnProperty`.
 Object.setPrototypeOf(headerNameLowerCasedRecord, null)
 
-/**
- * @type {Record<Lowercase<typeof wellknownHeaderNames[number]>, Buffer>}
- */
-const wellknownHeaderNameBuffers = {}
-
-// Note: object prototypes should not be able to be referenced. e.g. `Object#hasOwnProperty`.
-Object.setPrototypeOf(wellknownHeaderNameBuffers, null)
-
-/**
- * @param {string} header Lowercased header
- * @returns {Buffer}
- */
-function getHeaderNameAsBuffer (header) {
-  let buffer = wellknownHeaderNameBuffers[header]
-
-  if (buffer === undefined) {
-    buffer = Buffer.from(header)
-  }
-
-  return buffer
-}
-
 for (let i = 0; i < wellknownHeaderNames.length; ++i) {
   const key = wellknownHeaderNames[i]
   const lowerCasedKey = key.toLowerCase()
@@ -15992,8 +16331,7 @@ for (let i = 0; i < wellknownHeaderNames.length; ++i) {
 
 module.exports = {
   wellknownHeaderNames,
-  headerNameLowerCasedRecord,
-  getHeaderNameAsBuffer
+  headerNameLowerCasedRecord
 }
 
 
@@ -16182,10 +16520,12 @@ function trackWebSocketEvents (debugLog = websocketDebuglog) {
 
   diagnosticsChannel.subscribe('undici:websocket:open',
     evt => {
-      const {
-        address: { address, port }
-      } = evt
-      debugLog('connection opened %s%s', address, port ? `:${port}` : '')
+      if (evt.address != null) {
+        const { address, port } = evt.address
+        debugLog('connection opened %s%s', address, port ? `:${port}` : '')
+      } else {
+        debugLog('connection opened')
+      }
     })
 
   diagnosticsChannel.subscribe('undici:websocket:close',
@@ -16401,8 +16741,8 @@ class RequestAbortedError extends AbortError {
 
 const kInformationalError = Symbol.for('undici.error.UND_ERR_INFO')
 class InformationalError extends UndiciError {
-  constructor (message) {
-    super(message)
+  constructor (message, options) {
+    super(message, options)
     this.name = 'InformationalError'
     this.message = message || 'Request information'
     this.code = 'UND_ERR_INFO'
@@ -16659,6 +16999,33 @@ class MaxOriginsReachedError extends UndiciError {
   }
 }
 
+class Socks5ProxyError extends UndiciError {
+  constructor (message, code) {
+    super(message)
+    this.name = 'Socks5ProxyError'
+    this.message = message || 'SOCKS5 proxy error'
+    this.code = code || 'UND_ERR_SOCKS5'
+  }
+}
+
+const kMessageSizeExceededError = Symbol.for('undici.error.UND_ERR_WS_MESSAGE_SIZE_EXCEEDED')
+class MessageSizeExceededError extends UndiciError {
+  constructor (message) {
+    super(message)
+    this.name = 'MessageSizeExceededError'
+    this.message = message || 'Max decompressed message size exceeded'
+    this.code = 'UND_ERR_WS_MESSAGE_SIZE_EXCEEDED'
+  }
+
+  static [Symbol.hasInstance] (instance) {
+    return instance && instance[kMessageSizeExceededError] === true
+  }
+
+  get [kMessageSizeExceededError] () {
+    return true
+  }
+}
+
 module.exports = {
   AbortError,
   HTTPParserError,
@@ -16682,7 +17049,9 @@ module.exports = {
   RequestRetryError,
   ResponseError,
   SecureProxyConnectionError,
-  MaxOriginsReachedError
+  MaxOriginsReachedError,
+  Socks5ProxyError,
+  MessageSizeExceededError
 }
 
 
@@ -16707,8 +17076,10 @@ const {
   isBuffer,
   isFormDataLike,
   isIterable,
+  hasSafeIterator,
   isBlobLike,
   serializePathWithQuery,
+  parseHeaders,
   assertRequestHandler,
   getServerName,
   normalizedMethodRecords,
@@ -16720,7 +17091,71 @@ const { headerNameLowerCasedRecord } = __nccwpck_require__(55145)
 // Verifies that a given path is valid does not contain control chars \x00 to \x20
 const invalidPathRegex = /[^\u0021-\u00ff]/
 
+function isValidContentLengthHeaderValue (val) {
+  if (typeof val !== 'string' || val.length === 0) {
+    return false
+  }
+
+  for (let i = 0; i < val.length; i++) {
+    const charCode = val.charCodeAt(i)
+    if (charCode < 48 || charCode > 57) {
+      return false
+    }
+  }
+
+  return true
+}
+
 const kHandler = Symbol('handler')
+const kController = Symbol('controller')
+const kResume = Symbol('resume')
+
+class RequestController {
+  #paused = false
+  #reason = null
+  #aborted = false
+  #abort
+
+  [kResume] = null
+
+  rawHeaders = null
+  rawTrailers = null
+
+  constructor (abort) {
+    this.#abort = abort
+  }
+
+  pause () {
+    this.#paused = true
+  }
+
+  resume () {
+    if (this.#paused) {
+      this.#paused = false
+      this[kResume]?.()
+    }
+  }
+
+  abort (reason) {
+    if (!this.#aborted) {
+      this.#aborted = true
+      this.#reason = reason
+      this.#abort(reason)
+    }
+  }
+
+  get aborted () {
+    return this.#aborted
+  }
+
+  get reason () {
+    return this.#reason
+  }
+
+  get paused () {
+    return this.#paused
+  }
+}
 
 class Request {
   constructor (origin, {
@@ -16738,7 +17173,8 @@ class Request {
     expectContinue,
     servername,
     throwOnError,
-    maxRedirections
+    maxRedirections,
+    typeOfService
   }, handler) {
     if (typeof path !== 'string') {
       throw new InvalidArgumentError('path must be a string')
@@ -16760,6 +17196,10 @@ class Request {
 
     if (upgrade && typeof upgrade !== 'string') {
       throw new InvalidArgumentError('upgrade must be a string')
+    }
+
+    if (upgrade && !isValidHeaderValue(upgrade)) {
+      throw new InvalidArgumentError('invalid upgrade header')
     }
 
     if (headersTimeout != null && (!Number.isFinite(headersTimeout) || headersTimeout < 0)) {
@@ -16786,11 +17226,17 @@ class Request {
       throw new InvalidArgumentError('maxRedirections is not supported, use the redirect interceptor')
     }
 
+    if (typeOfService != null && (!Number.isInteger(typeOfService) || typeOfService < 0 || typeOfService > 255)) {
+      throw new InvalidArgumentError('typeOfService must be an integer between 0 and 255')
+    }
+
     this.headersTimeout = headersTimeout
 
     this.bodyTimeout = bodyTimeout
 
     this.method = method
+
+    this.typeOfService = typeOfService ?? 0
 
     this.abort = null
 
@@ -16868,7 +17314,7 @@ class Request {
         processHeader(this, headers[i], headers[i + 1])
       }
     } else if (headers && typeof headers === 'object') {
-      if (headers[Symbol.iterator]) {
+      if (hasSafeIterator(headers)) {
         for (const header of headers) {
           if (!Array.isArray(header) || header.length !== 2) {
             throw new InvalidArgumentError('headers must be in key-value pair format')
@@ -16923,23 +17369,26 @@ class Request {
     }
   }
 
-  onConnect (abort) {
+  onRequestStart (abort, context) {
     assert(!this.aborted)
     assert(!this.completed)
 
+    this[kController] = new RequestController(abort)
+
     if (this.error) {
-      abort(this.error)
-    } else {
-      this.abort = abort
-      return this[kHandler].onConnect(abort)
+      this[kController].abort(this.error)
+      return
     }
+
+    this.abort = abort
+    return this[kHandler].onRequestStart(this[kController], context)
   }
 
   onResponseStarted () {
     return this[kHandler].onResponseStarted?.()
   }
 
-  onHeaders (statusCode, headers, resume, statusText) {
+  onResponseStart (statusCode, headers, resume, statusText) {
     assert(!this.aborted)
     assert(!this.completed)
 
@@ -16947,36 +17396,56 @@ class Request {
       channels.headers.publish({ request: this, response: { statusCode, headers, statusText } })
     }
 
-    try {
-      return this[kHandler].onHeaders(statusCode, headers, resume, statusText)
-    } catch (err) {
-      this.abort(err)
+    const controller = this[kController]
+    if (controller) {
+      controller[kResume] = resume
+      controller.rawHeaders = headers
     }
-  }
 
-  onData (chunk) {
-    assert(!this.aborted)
-    assert(!this.completed)
+    const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers
 
-    if (channels.bodyChunkReceived.hasSubscribers) {
-      channels.bodyChunkReceived.publish({ request: this, chunk })
-    }
     try {
-      return this[kHandler].onData(chunk)
+      this[kHandler].onResponseStart?.(controller, statusCode, parsedHeaders, statusText)
+      return !controller?.paused
     } catch (err) {
       this.abort(err)
       return false
     }
   }
 
-  onUpgrade (statusCode, headers, socket) {
+  onResponseData (chunk) {
     assert(!this.aborted)
     assert(!this.completed)
 
-    return this[kHandler].onUpgrade(statusCode, headers, socket)
+    if (channels.bodyChunkReceived.hasSubscribers) {
+      channels.bodyChunkReceived.publish({ request: this, chunk })
+    }
+
+    const controller = this[kController]
+    try {
+      this[kHandler].onResponseData?.(controller, chunk)
+      return !controller?.paused
+    } catch (err) {
+      this.abort(err)
+      return false
+    }
   }
 
-  onComplete (trailers) {
+  onRequestUpgrade (statusCode, headers, socket) {
+    assert(!this.aborted)
+    assert(!this.completed)
+
+    const controller = this[kController]
+    if (controller) {
+      controller.rawHeaders = headers
+    }
+
+    const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers
+
+    return this[kHandler].onRequestUpgrade?.(controller, statusCode, parsedHeaders, socket)
+  }
+
+  onResponseEnd (trailers) {
     this.onFinally()
 
     assert(!this.aborted)
@@ -16987,15 +17456,22 @@ class Request {
       channels.trailers.publish({ request: this, trailers })
     }
 
+    const controller = this[kController]
+    if (controller) {
+      controller.rawTrailers = trailers
+    }
+
+    const parsedTrailers = Array.isArray(trailers) ? parseHeaders(trailers) : trailers
+
     try {
-      return this[kHandler].onComplete(trailers)
+      return this[kHandler].onResponseEnd?.(controller, parsedTrailers)
     } catch (err) {
       // TODO (fix): This might be a bad idea?
-      this.onError(err)
+      this.onResponseError(err)
     }
   }
 
-  onError (error) {
+  onResponseError (error) {
     this.onFinally()
 
     if (channels.error.hasSubscribers) {
@@ -17007,7 +17483,9 @@ class Request {
     }
     this.aborted = true
 
-    return this[kHandler].onError(error)
+    const controller = this[kController]
+
+    return this[kHandler].onResponseError?.(controller, error)
   }
 
   onFinally () {
@@ -17071,30 +17549,44 @@ function processHeader (request, key, val) {
     val = `${val}`
   }
 
-  if (request.host === null && headerName === 'host') {
+  if (headerName === 'host') {
+    if (request.host !== null) {
+      throw new InvalidArgumentError('duplicate host header')
+    }
     if (typeof val !== 'string') {
       throw new InvalidArgumentError('invalid host header')
     }
     // Consumed by Client
     request.host = val
-  } else if (request.contentLength === null && headerName === 'content-length') {
-    request.contentLength = parseInt(val, 10)
-    if (!Number.isFinite(request.contentLength)) {
+  } else if (headerName === 'content-length') {
+    if (request.contentLength !== null) {
+      throw new InvalidArgumentError('duplicate content-length header')
+    }
+    if (!isValidContentLengthHeaderValue(val)) {
       throw new InvalidArgumentError('invalid content-length header')
     }
+    request.contentLength = parseInt(val, 10)
   } else if (request.contentType === null && headerName === 'content-type') {
     request.contentType = val
     request.headers.push(key, val)
   } else if (headerName === 'transfer-encoding' || headerName === 'keep-alive' || headerName === 'upgrade') {
     throw new InvalidArgumentError(`invalid ${headerName} header`)
   } else if (headerName === 'connection') {
-    const value = typeof val === 'string' ? val.toLowerCase() : null
-    if (value !== 'close' && value !== 'keep-alive') {
+    // Per RFC 7230 Section 6.1, Connection header can contain
+    // a comma-separated list of connection option tokens (header names)
+    const value = typeof val === 'string' ? val : null
+    if (value === null) {
       throw new InvalidArgumentError('invalid connection header')
     }
 
-    if (value === 'close') {
-      request.reset = true
+    for (const token of value.toLowerCase().split(',')) {
+      const trimmed = token.trim()
+      if (!isValidHTTPToken(trimmed)) {
+        throw new InvalidArgumentError('invalid connection header')
+      }
+      if (trimmed === 'close') {
+        request.reset = true
+      }
     }
   } else if (headerName === 'expect') {
     throw new NotSupportedError('expect header not supported')
@@ -17104,6 +17596,656 @@ function processHeader (request, key, val) {
 }
 
 module.exports = Request
+
+
+/***/ }),
+
+/***/ 82664:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const { EventEmitter } = __nccwpck_require__(78474)
+const { Buffer } = __nccwpck_require__(4573)
+const { InvalidArgumentError, Socks5ProxyError } = __nccwpck_require__(45253)
+const { debuglog } = __nccwpck_require__(57975)
+const { parseAddress } = __nccwpck_require__(43546)
+
+const debug = debuglog('undici:socks5')
+const EMPTY_BUFFER = Buffer.alloc(0)
+
+// SOCKS5 constants
+const SOCKS_VERSION = 0x05
+
+// Authentication methods
+const AUTH_METHODS = {
+  NO_AUTH: 0x00,
+  GSSAPI: 0x01,
+  USERNAME_PASSWORD: 0x02,
+  NO_ACCEPTABLE: 0xFF
+}
+
+// SOCKS5 commands
+const COMMANDS = {
+  CONNECT: 0x01,
+  BIND: 0x02,
+  UDP_ASSOCIATE: 0x03
+}
+
+// Address types
+const ADDRESS_TYPES = {
+  IPV4: 0x01,
+  DOMAIN: 0x03,
+  IPV6: 0x04
+}
+
+// Reply codes
+const REPLY_CODES = {
+  SUCCEEDED: 0x00,
+  GENERAL_FAILURE: 0x01,
+  CONNECTION_NOT_ALLOWED: 0x02,
+  NETWORK_UNREACHABLE: 0x03,
+  HOST_UNREACHABLE: 0x04,
+  CONNECTION_REFUSED: 0x05,
+  TTL_EXPIRED: 0x06,
+  COMMAND_NOT_SUPPORTED: 0x07,
+  ADDRESS_TYPE_NOT_SUPPORTED: 0x08
+}
+
+// State machine states
+const STATES = {
+  INITIAL: 'initial',
+  HANDSHAKING: 'handshaking',
+  AUTHENTICATING: 'authenticating',
+  AUTHENTICATED: 'authenticated',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  ERROR: 'error',
+  CLOSED: 'closed'
+}
+
+/**
+ * SOCKS5 client implementation
+ * Handles SOCKS5 protocol negotiation and connection establishment
+ */
+class Socks5Client extends EventEmitter {
+  constructor (socket, options = {}) {
+    super()
+
+    if (!socket) {
+      throw new InvalidArgumentError('socket is required')
+    }
+
+    this.socket = socket
+    this.options = options
+    this.state = STATES.INITIAL
+    this.buffer = EMPTY_BUFFER
+    this.onSocketData = this.onData.bind(this)
+    this.onSocketError = this.onError.bind(this)
+    this.onSocketClose = this.onClose.bind(this)
+
+    // Authentication settings
+    this.authMethods = []
+    if (options.username && options.password) {
+      this.authMethods.push(AUTH_METHODS.USERNAME_PASSWORD)
+    }
+    this.authMethods.push(AUTH_METHODS.NO_AUTH)
+
+    // Socket event handlers
+    this.socket.on('data', this.onSocketData)
+    this.socket.on('error', this.onSocketError)
+    this.socket.on('close', this.onSocketClose)
+  }
+
+  /**
+   * Handle incoming data from the socket
+   */
+  onData (data) {
+    debug('received data', data.length, 'bytes in state', this.state)
+    this.buffer = Buffer.concat([this.buffer, data])
+
+    try {
+      switch (this.state) {
+        case STATES.HANDSHAKING:
+          this.handleHandshakeResponse()
+          break
+        case STATES.AUTHENTICATING:
+          this.handleAuthResponse()
+          break
+        case STATES.CONNECTING:
+          this.handleConnectResponse()
+          break
+      }
+    } catch (err) {
+      this.onError(err)
+    }
+  }
+
+  /**
+   * Handle socket errors
+   */
+  onError (err) {
+    debug('socket error', err)
+    this.state = STATES.ERROR
+    this.emit('error', err)
+    this.destroy()
+  }
+
+  /**
+   * Handle socket close
+   */
+  onClose () {
+    debug('socket closed')
+    this.state = STATES.CLOSED
+    this.emit('close')
+  }
+
+  /**
+   * Destroy the client and underlying socket
+   */
+  destroy () {
+    if (this.socket && !this.socket.destroyed) {
+      this.socket.destroy()
+    }
+  }
+
+  markAuthenticated () {
+    this.state = STATES.AUTHENTICATED
+    this.emit('authenticated')
+  }
+
+  /**
+   * Start the SOCKS5 handshake
+   */
+  handshake () {
+    if (this.state !== STATES.INITIAL) {
+      throw new InvalidArgumentError('Handshake already started')
+    }
+
+    debug('starting handshake with', this.authMethods.length, 'auth methods')
+    this.state = STATES.HANDSHAKING
+
+    // Build handshake request
+    // +----+----------+----------+
+    // |VER | NMETHODS | METHODS  |
+    // +----+----------+----------+
+    // | 1  |    1     | 1 to 255 |
+    // +----+----------+----------+
+    const request = Buffer.alloc(2 + this.authMethods.length)
+    request[0] = SOCKS_VERSION
+    request[1] = this.authMethods.length
+    this.authMethods.forEach((method, i) => {
+      request[2 + i] = method
+    })
+
+    this.socket.write(request)
+  }
+
+  /**
+   * Handle handshake response from server
+   */
+  handleHandshakeResponse () {
+    if (this.buffer.length < 2) {
+      return // Not enough data yet
+    }
+
+    const version = this.buffer[0]
+    const method = this.buffer[1]
+
+    if (version !== SOCKS_VERSION) {
+      throw new Socks5ProxyError(`Invalid SOCKS version: ${version}`, 'UND_ERR_SOCKS5_VERSION')
+    }
+
+    if (method === AUTH_METHODS.NO_ACCEPTABLE) {
+      throw new Socks5ProxyError('No acceptable authentication method', 'UND_ERR_SOCKS5_AUTH_REJECTED')
+    }
+
+    this.buffer = this.buffer.subarray(2)
+    debug('server selected auth method', method)
+
+    if (method === AUTH_METHODS.NO_AUTH) {
+      this.markAuthenticated()
+    } else if (method === AUTH_METHODS.USERNAME_PASSWORD) {
+      this.state = STATES.AUTHENTICATING
+      this.sendAuthRequest()
+    } else {
+      throw new Socks5ProxyError(`Unsupported authentication method: ${method}`, 'UND_ERR_SOCKS5_AUTH_METHOD')
+    }
+  }
+
+  /**
+   * Send username/password authentication request
+   */
+  sendAuthRequest () {
+    const { username, password } = this.options
+
+    if (!username || !password) {
+      throw new InvalidArgumentError('Username and password required for authentication')
+    }
+
+    debug('sending username/password auth')
+
+    // Username/Password authentication request (RFC 1929)
+    // +----+------+----------+------+----------+
+    // |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+    // +----+------+----------+------+----------+
+    // | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+    // +----+------+----------+------+----------+
+    const usernameBuffer = Buffer.from(username)
+    const passwordBuffer = Buffer.from(password)
+
+    if (usernameBuffer.length > 255 || passwordBuffer.length > 255) {
+      throw new InvalidArgumentError('Username or password too long')
+    }
+
+    const request = Buffer.alloc(3 + usernameBuffer.length + passwordBuffer.length)
+    request[0] = 0x01 // Sub-negotiation version
+    request[1] = usernameBuffer.length
+    usernameBuffer.copy(request, 2)
+    request[2 + usernameBuffer.length] = passwordBuffer.length
+    passwordBuffer.copy(request, 3 + usernameBuffer.length)
+
+    this.socket.write(request)
+  }
+
+  /**
+   * Handle authentication response
+   */
+  handleAuthResponse () {
+    if (this.buffer.length < 2) {
+      return // Not enough data yet
+    }
+
+    const version = this.buffer[0]
+    const status = this.buffer[1]
+
+    if (version !== 0x01) {
+      throw new Socks5ProxyError(`Invalid auth sub-negotiation version: ${version}`, 'UND_ERR_SOCKS5_AUTH_VERSION')
+    }
+
+    if (status !== 0x00) {
+      throw new Socks5ProxyError('Authentication failed', 'UND_ERR_SOCKS5_AUTH_FAILED')
+    }
+
+    this.buffer = this.buffer.subarray(2)
+    debug('authentication successful')
+    this.markAuthenticated()
+  }
+
+  /**
+   * Send CONNECT command
+   * @param {string} address - Target address (IP or domain)
+   * @param {number} port - Target port
+   */
+  connect (address, port) {
+    if (this.state === STATES.CONNECTING || this.state === STATES.CONNECTED) {
+      throw new InvalidArgumentError('Connection already in progress')
+    }
+
+    if (this.state !== STATES.AUTHENTICATED) {
+      throw new InvalidArgumentError('Client must be authenticated before CONNECT')
+    }
+
+    debug('connecting to', address, port)
+    this.state = STATES.CONNECTING
+
+    const request = this.buildConnectRequest(COMMANDS.CONNECT, address, port)
+    this.socket.write(request)
+  }
+
+  /**
+   * Build a SOCKS5 request
+   */
+  buildConnectRequest (command, address, port) {
+    // Parse address to determine type and buffer
+    const { type: addressType, buffer: addressBuffer } = parseAddress(address)
+
+    // Build request
+    // +----+-----+-------+------+----------+----------+
+    // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+    // +----+-----+-------+------+----------+----------+
+    // | 1  |  1  | X'00' |  1   | Variable |    2     |
+    // +----+-----+-------+------+----------+----------+
+    const request = Buffer.alloc(4 + addressBuffer.length + 2)
+    request[0] = SOCKS_VERSION
+    request[1] = command
+    request[2] = 0x00 // Reserved
+    request[3] = addressType
+    addressBuffer.copy(request, 4)
+    request.writeUInt16BE(port, 4 + addressBuffer.length)
+
+    return request
+  }
+
+  /**
+   * Handle CONNECT response
+   */
+  handleConnectResponse () {
+    if (this.buffer.length < 4) {
+      return // Not enough data for header
+    }
+
+    const version = this.buffer[0]
+    const reply = this.buffer[1]
+    const addressType = this.buffer[3]
+
+    if (version !== SOCKS_VERSION) {
+      throw new Socks5ProxyError(`Invalid SOCKS version in reply: ${version}`, 'UND_ERR_SOCKS5_REPLY_VERSION')
+    }
+
+    // Calculate the expected response length
+    let responseLength = 4 // VER + REP + RSV + ATYP
+    if (addressType === ADDRESS_TYPES.IPV4) {
+      responseLength += 4 + 2 // IPv4 + port
+    } else if (addressType === ADDRESS_TYPES.DOMAIN) {
+      if (this.buffer.length < 5) {
+        return // Need domain length byte
+      }
+      responseLength += 1 + this.buffer[4] + 2 // length byte + domain + port
+    } else if (addressType === ADDRESS_TYPES.IPV6) {
+      responseLength += 16 + 2 // IPv6 + port
+    } else {
+      throw new Socks5ProxyError(`Invalid address type in reply: ${addressType}`, 'UND_ERR_SOCKS5_ADDR_TYPE')
+    }
+
+    if (this.buffer.length < responseLength) {
+      return // Not enough data for full response
+    }
+
+    if (reply !== REPLY_CODES.SUCCEEDED) {
+      const errorMessage = this.getReplyErrorMessage(reply)
+      throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage}`, `UND_ERR_SOCKS5_REPLY_${reply}`)
+    }
+
+    // Parse bound address and port
+    let boundAddress
+    let offset = 4
+
+    if (addressType === ADDRESS_TYPES.IPV4) {
+      boundAddress = Array.from(this.buffer.subarray(offset, offset + 4)).join('.')
+      offset += 4
+    } else if (addressType === ADDRESS_TYPES.DOMAIN) {
+      const domainLength = this.buffer[offset]
+      offset += 1
+      boundAddress = this.buffer.subarray(offset, offset + domainLength).toString()
+      offset += domainLength
+    } else if (addressType === ADDRESS_TYPES.IPV6) {
+      // Parse IPv6 address from 16-byte buffer
+      const parts = []
+      for (let i = 0; i < 8; i++) {
+        const value = this.buffer.readUInt16BE(offset + i * 2)
+        parts.push(value.toString(16))
+      }
+      boundAddress = parts.join(':')
+      offset += 16
+    }
+
+    const boundPort = this.buffer.readUInt16BE(offset)
+
+    this.buffer = EMPTY_BUFFER
+    this.state = STATES.CONNECTED
+    this.socket.removeListener('data', this.onSocketData)
+
+    debug('connected, bound address:', boundAddress, 'port:', boundPort)
+    this.emit('connected', { address: boundAddress, port: boundPort })
+  }
+
+  /**
+   * Get human-readable error message for reply code
+   */
+  getReplyErrorMessage (reply) {
+    switch (reply) {
+      case REPLY_CODES.GENERAL_FAILURE:
+        return 'General SOCKS server failure'
+      case REPLY_CODES.CONNECTION_NOT_ALLOWED:
+        return 'Connection not allowed by ruleset'
+      case REPLY_CODES.NETWORK_UNREACHABLE:
+        return 'Network unreachable'
+      case REPLY_CODES.HOST_UNREACHABLE:
+        return 'Host unreachable'
+      case REPLY_CODES.CONNECTION_REFUSED:
+        return 'Connection refused'
+      case REPLY_CODES.TTL_EXPIRED:
+        return 'TTL expired'
+      case REPLY_CODES.COMMAND_NOT_SUPPORTED:
+        return 'Command not supported'
+      case REPLY_CODES.ADDRESS_TYPE_NOT_SUPPORTED:
+        return 'Address type not supported'
+      default:
+        return `Unknown error code: ${reply}`
+    }
+  }
+}
+
+module.exports = {
+  Socks5Client,
+  AUTH_METHODS,
+  COMMANDS,
+  ADDRESS_TYPES,
+  REPLY_CODES,
+  STATES
+}
+
+
+/***/ }),
+
+/***/ 43546:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const { Buffer } = __nccwpck_require__(4573)
+const net = __nccwpck_require__(77030)
+const { InvalidArgumentError } = __nccwpck_require__(45253)
+
+/**
+ * Parse an address and determine its type
+ * @param {string} address - The address to parse
+ * @returns {{type: number, buffer: Buffer}} Address type and buffer
+ */
+function parseAddress (address) {
+  // Check if it's an IPv4 address
+  if (net.isIPv4(address)) {
+    const parts = address.split('.').map(Number)
+    return {
+      type: 0x01, // IPv4
+      buffer: Buffer.from(parts)
+    }
+  }
+
+  // Check if it's an IPv6 address
+  if (net.isIPv6(address)) {
+    return {
+      type: 0x04, // IPv6
+      buffer: parseIPv6(address)
+    }
+  }
+
+  // Otherwise, treat as domain name
+  const domainBuffer = Buffer.from(address, 'utf8')
+  if (domainBuffer.length > 255) {
+    throw new InvalidArgumentError('Domain name too long (max 255 bytes)')
+  }
+
+  return {
+    type: 0x03, // Domain
+    buffer: Buffer.concat([Buffer.from([domainBuffer.length]), domainBuffer])
+  }
+}
+
+/**
+ * Parse IPv6 address to buffer
+ * @param {string} address - IPv6 address string
+ * @returns {Buffer} 16-byte buffer
+ */
+function parseIPv6 (address) {
+  const buffer = Buffer.alloc(16)
+  let normalizedAddress = address
+
+  // Expand an embedded IPv4 tail into the last two IPv6 groups.
+  if (address.includes('.')) {
+    const lastColonIndex = address.lastIndexOf(':')
+    const ipv4Part = address.slice(lastColonIndex + 1)
+
+    if (net.isIPv4(ipv4Part)) {
+      const octets = ipv4Part.split('.').map(Number)
+      const high = ((octets[0] << 8) | octets[1]).toString(16)
+      const low = ((octets[2] << 8) | octets[3]).toString(16)
+      normalizedAddress = `${address.slice(0, lastColonIndex)}:${high}:${low}`
+    }
+  }
+
+  // Handle compressed notation (::)
+  const doubleColonIndex = normalizedAddress.indexOf('::')
+  if (doubleColonIndex !== -1) {
+    const before = normalizedAddress.slice(0, doubleColonIndex)
+    const after = normalizedAddress.slice(doubleColonIndex + 2)
+    const beforeParts = before === '' ? [] : before.split(':')
+    const afterParts = after === '' ? [] : after.split(':')
+
+    let bufferIndex = 0
+    for (const part of beforeParts) {
+      buffer.writeUInt16BE(parseInt(part, 16), bufferIndex)
+      bufferIndex += 2
+    }
+    bufferIndex = 16 - afterParts.length * 2
+    for (const part of afterParts) {
+      buffer.writeUInt16BE(parseInt(part, 16), bufferIndex)
+      bufferIndex += 2
+    }
+  } else {
+    const parts = normalizedAddress.split(':')
+    for (let i = 0; i < parts.length; i++) {
+      buffer.writeUInt16BE(parseInt(parts[i], 16), i * 2)
+    }
+  }
+
+  return buffer
+}
+
+/**
+ * Build a SOCKS5 address buffer
+ * @param {number} type - Address type (1=IPv4, 3=Domain, 4=IPv6)
+ * @param {Buffer} addressBuffer - The address data
+ * @param {number} port - Port number
+ * @returns {Buffer} Complete address buffer including type, address, and port
+ */
+function buildAddressBuffer (type, addressBuffer, port) {
+  const portBuffer = Buffer.allocUnsafe(2)
+  portBuffer.writeUInt16BE(port, 0)
+
+  return Buffer.concat([
+    Buffer.from([type]),
+    addressBuffer,
+    portBuffer
+  ])
+}
+
+/**
+ * Parse address from SOCKS5 response
+ * @param {Buffer} buffer - Buffer containing the address
+ * @param {number} offset - Starting offset in buffer
+ * @returns {{address: string, port: number, bytesRead: number}}
+ */
+function parseResponseAddress (buffer, offset = 0) {
+  if (buffer.length < offset + 1) {
+    throw new InvalidArgumentError('Buffer too small to contain address type')
+  }
+
+  const addressType = buffer[offset]
+  let address
+  let currentOffset = offset + 1
+
+  switch (addressType) {
+    case 0x01: { // IPv4
+      if (buffer.length < currentOffset + 6) {
+        throw new InvalidArgumentError('Buffer too small for IPv4 address')
+      }
+      address = Array.from(buffer.subarray(currentOffset, currentOffset + 4)).join('.')
+      currentOffset += 4
+      break
+    }
+
+    case 0x03: { // Domain
+      if (buffer.length < currentOffset + 1) {
+        throw new InvalidArgumentError('Buffer too small for domain length')
+      }
+      const domainLength = buffer[currentOffset]
+      currentOffset += 1
+
+      if (buffer.length < currentOffset + domainLength + 2) {
+        throw new InvalidArgumentError('Buffer too small for domain address')
+      }
+      address = buffer.subarray(currentOffset, currentOffset + domainLength).toString('utf8')
+      currentOffset += domainLength
+      break
+    }
+
+    case 0x04: { // IPv6
+      if (buffer.length < currentOffset + 18) {
+        throw new InvalidArgumentError('Buffer too small for IPv6 address')
+      }
+      // Convert buffer to IPv6 string
+      const parts = []
+      for (let i = 0; i < 8; i++) {
+        const value = buffer.readUInt16BE(currentOffset + i * 2)
+        parts.push(value.toString(16))
+      }
+      address = parts.join(':')
+      currentOffset += 16
+      break
+    }
+
+    default:
+      throw new InvalidArgumentError(`Invalid address type: ${addressType}`)
+  }
+
+  // Parse port
+  if (buffer.length < currentOffset + 2) {
+    throw new InvalidArgumentError('Buffer too small for port')
+  }
+  const port = buffer.readUInt16BE(currentOffset)
+  currentOffset += 2
+
+  return {
+    address,
+    port,
+    bytesRead: currentOffset - offset
+  }
+}
+
+/**
+ * Create error for SOCKS5 reply code
+ * @param {number} replyCode - SOCKS5 reply code
+ * @returns {Error} Appropriate error object
+ */
+function createReplyError (replyCode) {
+  const messages = {
+    0x01: 'General SOCKS server failure',
+    0x02: 'Connection not allowed by ruleset',
+    0x03: 'Network unreachable',
+    0x04: 'Host unreachable',
+    0x05: 'Connection refused',
+    0x06: 'TTL expired',
+    0x07: 'Command not supported',
+    0x08: 'Address type not supported'
+  }
+
+  const message = messages[replyCode] || `Unknown SOCKS5 error code: ${replyCode}`
+  const error = new Error(message)
+  error.code = `SOCKS5_${replyCode}`
+  return error
+}
+
+module.exports = {
+  parseAddress,
+  parseIPv6,
+  buildAddressBuffer,
+  parseResponseAddress,
+  createReplyError
+}
 
 
 /***/ }),
@@ -17176,6 +18318,7 @@ module.exports = {
   kListeners: Symbol('listeners'),
   kHTTPContext: Symbol('http context'),
   kMaxConcurrentStreams: Symbol('max concurrent streams'),
+  kHostAuthority: Symbol('host authority'),
   kHTTP2InitialWindowSize: Symbol('http2 initial window size'),
   kHTTP2ConnectionWindowSize: Symbol('http2 connection window size'),
   kEnableConnectProtocol: Symbol('http2session connect protocol'),
@@ -17184,7 +18327,8 @@ module.exports = {
   kPingInterval: Symbol('ping interval'),
   kNoProxyAgent: Symbol('no proxy agent'),
   kHttpProxyAgent: Symbol('http proxy agent'),
-  kHttpsProxyAgent: Symbol('https proxy agent')
+  kHttpsProxyAgent: Symbol('https proxy agent'),
+  kSocks5ProxyAgent: Symbol('socks5 proxy agent')
 }
 
 
@@ -17370,13 +18514,11 @@ const { IncomingMessage } = __nccwpck_require__(37067)
 const stream = __nccwpck_require__(57075)
 const net = __nccwpck_require__(77030)
 const { stringify } = __nccwpck_require__(41792)
-const { EventEmitter: EE } = __nccwpck_require__(78474)
+const { EventEmitter: EE, addAbortListener: addAbortListenerNative } = __nccwpck_require__(78474)
 const timers = __nccwpck_require__(2941)
 const { InvalidArgumentError, ConnectTimeoutError } = __nccwpck_require__(45253)
 const { headerNameLowerCasedRecord } = __nccwpck_require__(55145)
 const { tree } = __nccwpck_require__(23642)
-
-const [nodeMajor, nodeMinor] = process.versions.node.split('.', 2).map(v => Number(v))
 
 class BodyAsyncIterable {
   constructor (body) {
@@ -17449,23 +18591,9 @@ function isStream (obj) {
 /**
  * @param {*} object
  * @returns {object is Blob}
- * based on https://github.com/node-fetch/fetch-blob/blob/8ab587d34080de94140b54f07168451e7d0b655e/index.js#L229-L241 (MIT License)
  */
 function isBlobLike (object) {
-  if (object === null) {
-    return false
-  } else if (object instanceof Blob) {
-    return true
-  } else if (typeof object !== 'object') {
-    return false
-  } else {
-    const sTag = object[Symbol.toStringTag]
-
-    return (sTag === 'Blob' || sTag === 'File') && (
-      ('stream' in object && typeof object.stream === 'function') ||
-      ('arrayBuffer' in object && typeof object.arrayBuffer === 'function')
-    )
-  }
+  return object instanceof Blob
 }
 
 /**
@@ -17692,6 +18820,20 @@ function isIterable (obj) {
 }
 
 /**
+ * Checks whether an object has a safe Symbol.iterator — i.e. one that is
+ * either own or inherited from a non-Object.prototype chain.  This prevents
+ * prototype-pollution attacks from injecting a fake iterator on
+ * Object.prototype.
+ * @param {object} obj
+ * @returns {boolean}
+ */
+function hasSafeIterator (obj) {
+  const prototype = Object.getPrototypeOf(obj)
+  const ownIterator = Object.hasOwn(obj, Symbol.iterator)
+  return ownIterator || (prototype != null && prototype !== Object.prototype && typeof obj[Symbol.iterator] === 'function')
+}
+
+/**
  * @param {Blob|Buffer|import ('stream').Stream} body
  * @returns {number|null}
  */
@@ -17790,19 +18932,39 @@ function parseHeaders (headers, obj) {
     const key = headerNameToString(headers[i])
     let val = obj[key]
 
-    if (val) {
-      if (typeof val === 'string') {
-        val = [val]
-        obj[key] = val
-      }
-      val.push(headers[i + 1].toString('latin1'))
-    } else {
-      const headersValue = headers[i + 1]
-      if (typeof headersValue === 'string') {
-        obj[key] = headersValue
+    if (val !== undefined) {
+      if (!Object.hasOwn(obj, key)) {
+        const headersValue = typeof headers[i + 1] === 'string'
+          ? headers[i + 1]
+          : Array.isArray(headers[i + 1])
+            ? headers[i + 1].map(x => x.toString('latin1'))
+            : headers[i + 1].toString('latin1')
+
+        if (key === '__proto__') {
+          Object.defineProperty(obj, key, {
+            value: headersValue,
+            enumerable: true,
+            configurable: true,
+            writable: true
+          })
+        } else {
+          obj[key] = headersValue
+        }
       } else {
-        obj[key] = Array.isArray(headersValue) ? headersValue.map(x => x.toString('latin1')) : headersValue.toString('latin1')
+        if (typeof val === 'string') {
+          val = [val]
+          obj[key] = val
+        }
+        val.push(headers[i + 1].toString('latin1'))
       }
+    } else {
+      const headersValue = typeof headers[i + 1] === 'string'
+        ? headers[i + 1]
+        : Array.isArray(headers[i + 1])
+          ? headers[i + 1].map(x => x.toString('latin1'))
+          : headers[i + 1].toString('latin1')
+
+      obj[key] = headersValue
     }
   }
 
@@ -17810,10 +18972,30 @@ function parseHeaders (headers, obj) {
 }
 
 /**
- * @param {Buffer[]} headers
+ * @param {Buffer[] | string[] | Record<string, string | string[]> | null | undefined} headers
  * @returns {string[]}
  */
 function parseRawHeaders (headers) {
+  if (headers == null) {
+    return []
+  }
+
+  if (!Array.isArray(headers)) {
+    const rawHeaders = []
+
+    for (const [name, value] of Object.entries(headers)) {
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          rawHeaders.push(name, `${entry}`)
+        }
+      } else {
+        rawHeaders.push(name, `${value}`)
+      }
+    }
+
+    return rawHeaders
+  }
+
   const headersLength = headers.length
   /**
    * @type {string[]}
@@ -17835,6 +19017,26 @@ function parseRawHeaders (headers) {
   }
 
   return ret
+}
+
+/**
+ * @param {Record<string, string | string[]>} headers
+ * @returns {Buffer[]}
+ */
+function toRawHeaders (headers) {
+  const rawHeaders = []
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        rawHeaders.push(Buffer.from(name, 'latin1'), Buffer.from(`${entry}`, 'latin1'))
+      }
+    } else {
+      rawHeaders.push(Buffer.from(name, 'latin1'), Buffer.from(`${value}`, 'latin1'))
+    }
+  }
+
+  return rawHeaders
 }
 
 /**
@@ -17870,38 +19072,37 @@ function assertRequestHandler (handler, method, upgrade) {
     throw new InvalidArgumentError('handler must be an object')
   }
 
-  if (typeof handler.onRequestStart === 'function') {
-    // TODO (fix): More checks...
-    return
+  if (typeof handler.onRequestStart !== 'function') {
+    throw new InvalidArgumentError('invalid onRequestStart method')
   }
 
-  if (typeof handler.onConnect !== 'function') {
-    throw new InvalidArgumentError('invalid onConnect method')
-  }
-
-  if (typeof handler.onError !== 'function') {
-    throw new InvalidArgumentError('invalid onError method')
+  if (typeof handler.onResponseError !== 'function') {
+    throw new InvalidArgumentError('invalid onResponseError method')
   }
 
   if (typeof handler.onBodySent !== 'function' && handler.onBodySent !== undefined) {
     throw new InvalidArgumentError('invalid onBodySent method')
   }
 
+  if (typeof handler.onRequestSent !== 'function' && handler.onRequestSent !== undefined) {
+    throw new InvalidArgumentError('invalid onRequestSent method')
+  }
+
   if (upgrade || method === 'CONNECT') {
-    if (typeof handler.onUpgrade !== 'function') {
-      throw new InvalidArgumentError('invalid onUpgrade method')
+    if (typeof handler.onRequestUpgrade !== 'function') {
+      throw new InvalidArgumentError('invalid onRequestUpgrade method')
     }
   } else {
-    if (typeof handler.onHeaders !== 'function') {
-      throw new InvalidArgumentError('invalid onHeaders method')
+    if (typeof handler.onResponseStart !== 'function') {
+      throw new InvalidArgumentError('invalid onResponseStart method')
     }
 
-    if (typeof handler.onData !== 'function') {
-      throw new InvalidArgumentError('invalid onData method')
+    if (typeof handler.onResponseData !== 'function') {
+      throw new InvalidArgumentError('invalid onResponseData method')
     }
 
-    if (typeof handler.onComplete !== 'function') {
-      throw new InvalidArgumentError('invalid onComplete method')
+    if (typeof handler.onResponseEnd !== 'function') {
+      throw new InvalidArgumentError('invalid onResponseEnd method')
     }
   }
 }
@@ -18005,7 +19206,12 @@ function isFormDataLike (object) {
 }
 
 function addAbortListener (signal, listener) {
-  if ('addEventListener' in signal) {
+  if (signal instanceof AbortSignal) {
+    const disposable = addAbortListenerNative(signal, listener)
+    return () => disposable[Symbol.dispose]()
+  }
+
+  if (typeof signal.addEventListener === 'function') {
     signal.addEventListener('abort', listener, { once: true })
     return () => signal.removeEventListener('abort', listener)
   }
@@ -18078,7 +19284,7 @@ function isValidHeaderValue (characters) {
   return !headerCharRegex.test(characters)
 }
 
-const rangeHeaderRegex = /^bytes (\d+)-(\d+)\/(\d+)?$/
+const rangeHeaderRegex = /^bytes (\d+)-(\d+)\/(\d+|\*)?$/
 
 /**
  * @typedef {object} RangeHeader
@@ -18101,7 +19307,7 @@ function parseRangeHeader (range) {
     ? {
         start: parseInt(m[1]),
         end: m[2] ? parseInt(m[2]) : null,
-        size: m[3] ? parseInt(m[3]) : null
+        size: m[3] && m[3] !== '*' ? parseInt(m[3]) : null
       }
     : null
 }
@@ -18142,7 +19348,7 @@ function removeAllListeners (obj) {
  */
 function errorRequest (client, request, err) {
   try {
-    request.onError(err)
+    request.onResponseError(err)
     assert(request.aborted)
   } catch (err) {
     client.emit('error', err)
@@ -18282,6 +19488,7 @@ module.exports = {
   getServerName,
   isStream,
   isIterable,
+  hasSafeIterator,
   isAsyncIterable,
   isDestroyed,
   headerNameToString,
@@ -18290,6 +19497,7 @@ module.exports = {
   removeAllListeners,
   errorRequest,
   parseRawHeaders,
+  toRawHeaders,
   encodeRawHeaders,
   parseHeaders,
   parseKeepAliveTimeout,
@@ -18312,8 +19520,6 @@ module.exports = {
   normalizedMethodRecords,
   isValidPort,
   isHttpOrHttpsPrefixed,
-  nodeMajor,
-  nodeMinor,
   safeHTTPMethods: Object.freeze(['GET', 'HEAD', 'OPTIONS', 'TRACE']),
   wrapRequestBody,
   setupConnectTimeout,
@@ -18330,7 +19536,7 @@ module.exports = {
 
 
 const { InvalidArgumentError, MaxOriginsReachedError } = __nccwpck_require__(45253)
-const { kClients, kRunning, kClose, kDestroy, kDispatch, kUrl } = __nccwpck_require__(70885)
+const { kBusy, kClients, kConnected, kRunning, kClose, kDestroy, kDispatch, kUrl } = __nccwpck_require__(70885)
 const DispatcherBase = __nccwpck_require__(97727)
 const Pool = __nccwpck_require__(15538)
 const Client = __nccwpck_require__(22779)
@@ -18364,7 +19570,7 @@ class Agent extends DispatcherBase {
       throw new InvalidArgumentError('maxOrigins must be a number greater than 0')
     }
 
-    super()
+    super(options)
 
     if (connect && typeof connect !== 'function') {
       connect = { ...connect }
@@ -18394,60 +19600,74 @@ class Agent extends DispatcherBase {
 
   get [kRunning] () {
     let ret = 0
-    for (const { dispatcher } of this[kClients].values()) {
+    for (const dispatcher of this[kClients].values()) {
       ret += dispatcher[kRunning]
     }
     return ret
   }
 
   [kDispatch] (opts, handler) {
-    let key
+    let origin
     if (opts.origin && (typeof opts.origin === 'string' || opts.origin instanceof URL)) {
-      key = String(opts.origin)
+      origin = String(opts.origin)
     } else {
       throw new InvalidArgumentError('opts.origin must be a non-empty string or URL.')
     }
 
-    if (this[kOrigins].size >= this[kOptions].maxOrigins && !this[kOrigins].has(key)) {
+    const allowH2 = opts.allowH2 ?? this[kOptions].allowH2
+    const key = allowH2 === false ? `${origin}#http1-only` : origin
+
+    if (this[kOrigins].size >= this[kOptions].maxOrigins && !this[kOrigins].has(origin)) {
       throw new MaxOriginsReachedError()
     }
 
-    const result = this[kClients].get(key)
-    let dispatcher = result && result.dispatcher
+    let dispatcher = this[kClients].get(key)
     if (!dispatcher) {
-      const closeClientIfUnused = (connected) => {
-        const result = this[kClients].get(key)
-        if (result) {
-          if (connected) result.count -= 1
-          if (result.count <= 0) {
-            this[kClients].delete(key)
-            if (!result.dispatcher.destroyed) {
-              result.dispatcher.close()
-            }
+      dispatcher = this[kFactory](opts.origin, allowH2 === false
+        ? { ...this[kOptions], allowH2: false }
+        : this[kOptions])
+
+      const closeClientIfUnused = () => {
+        if (this[kClients].get(key) !== dispatcher) {
+          return
+        }
+
+        if (dispatcher[kConnected] > 0 || dispatcher[kBusy]) {
+          return
+        }
+
+        this[kClients].delete(key)
+        if (!dispatcher.destroyed) {
+          dispatcher.close()
+        }
+
+        let hasOrigin = false
+        for (const client of this[kClients].values()) {
+          if (client[kUrl].origin === dispatcher[kUrl].origin) {
+            hasOrigin = true
+            break
           }
-          this[kOrigins].delete(key)
+        }
+
+        if (!hasOrigin) {
+          this[kOrigins].delete(dispatcher[kUrl].origin)
         }
       }
-      dispatcher = this[kFactory](opts.origin, this[kOptions])
+
+      dispatcher
         .on('drain', this[kOnDrain])
-        .on('connect', (origin, targets) => {
-          const result = this[kClients].get(key)
-          if (result) {
-            result.count += 1
-          }
-          this[kOnConnect](origin, targets)
-        })
+        .on('connect', this[kOnConnect])
         .on('disconnect', (origin, targets, err) => {
-          closeClientIfUnused(true)
+          closeClientIfUnused()
           this[kOnDisconnect](origin, targets, err)
         })
         .on('connectionError', (origin, targets, err) => {
-          closeClientIfUnused(false)
+          closeClientIfUnused()
           this[kOnConnectionError](origin, targets, err)
         })
 
-      this[kClients].set(key, { count: 0, dispatcher })
-      this[kOrigins].add(key)
+      this[kClients].set(key, dispatcher)
+      this[kOrigins].add(origin)
     }
 
     return dispatcher.dispatch(opts, handler)
@@ -18455,7 +19675,7 @@ class Agent extends DispatcherBase {
 
   [kClose] () {
     const closePromises = []
-    for (const { dispatcher } of this[kClients].values()) {
+    for (const dispatcher of this[kClients].values()) {
       closePromises.push(dispatcher.close())
     }
     this[kClients].clear()
@@ -18465,7 +19685,7 @@ class Agent extends DispatcherBase {
 
   [kDestroy] (err) {
     const destroyPromises = []
-    for (const { dispatcher } of this[kClients].values()) {
+    for (const dispatcher of this[kClients].values()) {
       destroyPromises.push(dispatcher.destroy(err))
     }
     this[kClients].clear()
@@ -18475,7 +19695,7 @@ class Agent extends DispatcherBase {
 
   get stats () {
     const allClientStats = {}
-    for (const { dispatcher } of this[kClients].values()) {
+    for (const dispatcher of this[kClients].values()) {
       if (dispatcher.stats) {
         allClientStats[dispatcher[kUrl].origin] = dispatcher.stats
       }
@@ -18509,7 +19729,7 @@ const {
 } = __nccwpck_require__(7146)
 const Pool = __nccwpck_require__(15538)
 const { kUrl } = __nccwpck_require__(70885)
-const { parseOrigin } = __nccwpck_require__(23270)
+const util = __nccwpck_require__(23270)
 const kFactory = Symbol('factory')
 
 const kOptions = Symbol('options')
@@ -18551,7 +19771,7 @@ class BalancedPool extends PoolBase {
 
     super()
 
-    this[kOptions] = opts
+    this[kOptions] = { ...util.deepClone(opts) }
     this[kIndex] = -1
     this[kCurrentWeight] = 0
 
@@ -18571,7 +19791,7 @@ class BalancedPool extends PoolBase {
   }
 
   addUpstream (upstream) {
-    const upstreamOrigin = parseOrigin(upstream).origin
+    const upstreamOrigin = util.parseOrigin(upstream).origin
 
     if (this[kClients].find((pool) => (
       pool[kUrl].origin === upstreamOrigin &&
@@ -18580,7 +19800,7 @@ class BalancedPool extends PoolBase {
     ))) {
       return this
     }
-    const pool = this[kFactory](upstreamOrigin, Object.assign({}, this[kOptions]))
+    const pool = this[kFactory](upstreamOrigin, this[kOptions])
 
     this[kAddClient](pool)
     pool.on('connect', () => {
@@ -18620,7 +19840,7 @@ class BalancedPool extends PoolBase {
   }
 
   removeUpstream (upstream) {
-    const upstreamOrigin = parseOrigin(upstream).origin
+    const upstreamOrigin = util.parseOrigin(upstream).origin
 
     const pool = this[kClients].find((pool) => (
       pool[kUrl].origin === upstreamOrigin &&
@@ -18636,7 +19856,7 @@ class BalancedPool extends PoolBase {
   }
 
   getUpstream (upstream) {
-    const upstreamOrigin = parseOrigin(upstream).origin
+    const upstreamOrigin = util.parseOrigin(upstream).origin
 
     return this[kClients].find((pool) => (
       pool[kUrl].origin === upstreamOrigin &&
@@ -18659,34 +19879,13 @@ class BalancedPool extends PoolBase {
       throw new BalancedPoolMissingUpstreamError()
     }
 
-    const dispatcher = this[kClients].find(dispatcher => (
-      !dispatcher[kNeedDrain] &&
-      dispatcher.closed !== true &&
-      dispatcher.destroyed !== true
-    ))
-
-    if (!dispatcher) {
-      return
-    }
-
-    const allClientsBusy = this[kClients].map(pool => pool[kNeedDrain]).reduce((a, b) => a && b, true)
-
-    if (allClientsBusy) {
-      return
-    }
-
     let counter = 0
 
-    let maxWeightIndex = this[kClients].findIndex(pool => !pool[kNeedDrain])
+    let maxWeightIndex = -1
 
     while (counter++ < this[kClients].length) {
       this[kIndex] = (this[kIndex] + 1) % this[kClients].length
       const pool = this[kClients][this[kIndex]]
-
-      // find pool index with the largest weight
-      if (pool[kWeight] > this[kClients][maxWeightIndex][kWeight] && !pool[kNeedDrain]) {
-        maxWeightIndex = this[kIndex]
-      }
 
       // decrease the current weight every `this[kClients].length`.
       if (this[kIndex] === 0) {
@@ -18697,9 +19896,28 @@ class BalancedPool extends PoolBase {
           this[kCurrentWeight] = this[kMaxWeightPerServer]
         }
       }
-      if (pool[kWeight] >= this[kCurrentWeight] && (!pool[kNeedDrain])) {
+
+      // Skip unavailable pools after updating the current weight for this cycle.
+      if (
+        pool[kNeedDrain] ||
+        pool.closed === true ||
+        pool.destroyed === true
+      ) {
+        continue
+      }
+
+      // Track the best fallback if no pool matches the current weight.
+      if (maxWeightIndex === -1 || pool[kWeight] > this[kClients][maxWeightIndex][kWeight]) {
+        maxWeightIndex = this[kIndex]
+      }
+
+      if (pool[kWeight] >= this[kCurrentWeight]) {
         return pool
       }
+    }
+
+    if (maxWeightIndex === -1) {
+      return
     }
 
     this[kCurrentWeight] = this[kClients][maxWeightIndex][kWeight]
@@ -18788,9 +20006,9 @@ function lazyllhttp () {
   let useWasmSIMD = process.arch !== 'ppc64'
   // The Env Variable UNDICI_NO_WASM_SIMD allows explicitly overriding the default behavior
   if (process.env.UNDICI_NO_WASM_SIMD === '1') {
-    useWasmSIMD = true
-  } else if (process.env.UNDICI_NO_WASM_SIMD === '0') {
     useWasmSIMD = false
+  } else if (process.env.UNDICI_NO_WASM_SIMD === '0') {
+    useWasmSIMD = true
   }
 
   if (useWasmSIMD) {
@@ -18907,6 +20125,7 @@ let currentBufferRef = null
  */
 let currentBufferSize = 0
 let currentBufferPtr = null
+let currentBuffer = null
 
 const USE_NATIVE_TIMER = 0
 const USE_FAST_TIMER = 1
@@ -18935,6 +20154,7 @@ class Parser {
      */
     this.socket = socket
     this.timeout = null
+    this.timeoutWeakRef = new WeakRef(this)
     this.timeoutValue = null
     this.timeoutType = null
     this.statusCode = 0
@@ -18950,8 +20170,8 @@ class Parser {
     this.bytesRead = 0
 
     this.keepAlive = ''
-    this.contentLength = ''
-    this.connection = ''
+    this.contentLength = -1
+    this.connectionKeepAlive = false
     this.maxResponseSize = client[kMaxResponseSize]
   }
 
@@ -18972,9 +20192,9 @@ class Parser {
 
       if (delay) {
         if (type & USE_FAST_TIMER) {
-          this.timeout = timers.setFastTimeout(onParserTimeout, delay, new WeakRef(this))
+          this.timeout = timers.setFastTimeout(onParserTimeout, delay, this.timeoutWeakRef)
         } else {
-          this.timeout = setTimeout(onParserTimeout, delay, new WeakRef(this))
+          this.timeout = setTimeout(onParserTimeout, delay, this.timeoutWeakRef)
           this.timeout?.unref()
         }
       }
@@ -19041,7 +20261,16 @@ class Parser {
       currentBufferPtr = llhttp.malloc(currentBufferSize)
     }
 
-    new Uint8Array(llhttp.memory.buffer, currentBufferPtr, currentBufferSize).set(chunk)
+    if (
+      currentBuffer === null ||
+      currentBuffer.buffer !== llhttp.memory.buffer ||
+      currentBuffer.byteOffset !== currentBufferPtr ||
+      currentBuffer.byteLength !== currentBufferSize
+    ) {
+      currentBuffer = new Uint8Array(llhttp.memory.buffer, currentBufferPtr, currentBufferSize)
+    }
+
+    currentBuffer.set(chunk)
 
     // Call `execute` on the wasm parser.
     // We pass the `llhttp_parser` pointer address, the pointer address of buffer view data,
@@ -19068,21 +20297,60 @@ class Parser {
           this.paused = true
           socket.unshift(data)
         } else {
-          const ptr = llhttp.llhttp_get_error_reason(this.ptr)
-          let message = ''
-          if (ptr) {
-            const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0)
-            message =
-              'Response does not match the HTTP/1.1 protocol (' +
-              Buffer.from(llhttp.memory.buffer, ptr, len).toString() +
-              ')'
-          }
-          throw new HTTPParserError(message, constants.ERROR[ret], data)
+          throw this.createError(ret, data)
         }
       }
     } catch (err) {
       util.destroy(socket, err)
     }
+  }
+
+  finish () {
+    assert(currentParser === null)
+    assert(this.ptr != null)
+    assert(!this.paused)
+
+    const { llhttp } = this
+
+    let ret
+
+    try {
+      currentParser = this
+      ret = llhttp.llhttp_finish(this.ptr)
+    } finally {
+      currentParser = null
+    }
+
+    if (ret === constants.ERROR.OK) {
+      return null
+    }
+
+    if (ret === constants.ERROR.PAUSED || ret === constants.ERROR.PAUSED_UPGRADE) {
+      this.paused = true
+      return null
+    }
+
+    return this.createError(ret, EMPTY_BUF)
+  }
+
+  createError (ret, data) {
+    const { llhttp, contentLength, bytesRead } = this
+
+    if (contentLength !== -1 && bytesRead !== contentLength) {
+      return new ResponseContentLengthMismatchError()
+    }
+
+    const ptr = llhttp.llhttp_get_error_reason(this.ptr)
+    let message = ''
+    if (ptr) {
+      const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0)
+      message =
+        'Response does not match the HTTP/1.1 protocol (' +
+        Buffer.from(llhttp.memory.buffer, ptr, len).toString() +
+        ')'
+    }
+
+    return new HTTPParserError(message, constants.ERROR[ret], data)
   }
 
   destroy () {
@@ -19166,10 +20434,17 @@ class Parser {
       if (headerName === 'keep-alive') {
         this.keepAlive += buf.toString()
       } else if (headerName === 'connection') {
-        this.connection += buf.toString()
+        this.connectionKeepAlive =
+          this.headers[len - 1].length === 10 &&
+          util.bufferToLowerCasedHeaderName(this.headers[len - 1]) === 'keep-alive'
       }
     } else if (key.length === 14 && util.bufferToLowerCasedHeaderName(key) === 'content-length') {
-      this.contentLength += buf.toString()
+      if (this.contentLength === -1) {
+        this.contentLength = 0
+      }
+      for (let i = 0; i < buf.length; i++) {
+        this.contentLength = (this.contentLength * 10) + (buf[i] - 0x30)
+      }
     }
 
     this.trackHeader(buf.length)
@@ -19226,7 +20501,7 @@ class Parser {
     client.emit('disconnect', client[kUrl], [client], new InformationalError('upgrade'))
 
     try {
-      request.onUpgrade(statusCode, headers, socket)
+      request.onRequestUpgrade(statusCode, headers, socket)
     } catch (err) {
       util.destroy(socket, err)
     }
@@ -19273,7 +20548,7 @@ class Parser {
     this.shouldKeepAlive = (
       shouldKeepAlive ||
       // Override llhttp value which does not allow keepAlive for HEAD.
-      (request.method === 'HEAD' && !socket[kReset] && this.connection.toLowerCase() === 'keep-alive')
+      (request.method === 'HEAD' && !socket[kReset] && this.connectionKeepAlive)
     )
 
     if (this.statusCode >= 200) {
@@ -19324,7 +20599,7 @@ class Parser {
       socket[kReset] = true
     }
 
-    const pause = request.onHeaders(statusCode, headers, this.resume, statusText) === false
+    const pause = request.onResponseStart(statusCode, headers, this.resume, statusText) === false
 
     if (request.aborted) {
       return -1
@@ -19376,7 +20651,7 @@ class Parser {
 
     this.bytesRead += buf.length
 
-    if (request.onData(buf) === false) {
+    if (request.onResponseData(buf) === false) {
       return constants.ERROR.PAUSED
     }
 
@@ -19406,9 +20681,9 @@ class Parser {
     this.statusCode = 0
     this.statusText = ''
     this.bytesRead = 0
-    this.contentLength = ''
+    this.contentLength = -1
     this.keepAlive = ''
-    this.connection = ''
+    this.connectionKeepAlive = false
 
     this.headers = []
     this.headersSize = 0
@@ -19417,12 +20692,12 @@ class Parser {
       return 0
     }
 
-    if (request.method !== 'HEAD' && contentLength && bytesRead !== parseInt(contentLength, 10)) {
+    if (request.method !== 'HEAD' && contentLength !== -1 && bytesRead !== contentLength) {
       util.destroy(socket, new ResponseContentLengthMismatchError())
       return -1
     }
 
-    request.onComplete(headers)
+    request.onResponseEnd(headers)
 
     client[kQueue][client[kRunningIdx]++] = null
 
@@ -19589,8 +20864,11 @@ function onHttpSocketError (err) {
   // On Mac OS, we get an ECONNRESET even if there is a full body to be forwarded
   // to the user.
   if (err.code === 'ECONNRESET' && parser.statusCode && !parser.shouldKeepAlive) {
-    // We treat all incoming data so for as a valid response.
-    parser.onMessageComplete()
+    const parserErr = parser.finish()
+    if (parserErr) {
+      this[kError] = parserErr
+      this[kClient][kOnError](parserErr)
+    }
     return
   }
 
@@ -19607,8 +20885,10 @@ function onHttpSocketEnd () {
   const parser = this[kParser]
 
   if (parser.statusCode && !parser.shouldKeepAlive) {
-    // We treat all incoming data so far as a valid response.
-    parser.onMessageComplete()
+    const parserErr = parser.finish()
+    if (parserErr) {
+      util.destroy(this, parserErr)
+    }
     return
   }
 
@@ -19620,8 +20900,7 @@ function onHttpSocketClose () {
 
   if (parser) {
     if (!this[kError] && parser.statusCode && !parser.shouldKeepAlive) {
-      // We treat all incoming data so far as a valid response.
-      parser.onMessageComplete()
+      this[kError] = parser.finish() || this[kError]
     }
 
     this[kParser].destroy()
@@ -19797,7 +21076,7 @@ function writeH1 (client, request) {
   }
 
   try {
-    request.onConnect(abort)
+    request.onRequestStart(abort, null)
   } catch (err) {
     util.errorRequest(client, request, err)
   }
@@ -19825,12 +21104,16 @@ function writeH1 (client, request) {
     socket[kReset] = reset
   }
 
-  if (client[kMaxRequests] && socket[kCounter]++ >= client[kMaxRequests]) {
+  if (client[kMaxRequests] && ++socket[kCounter] >= client[kMaxRequests]) {
     socket[kReset] = true
   }
 
   if (blocking) {
     socket[kBlocking] = true
+  }
+
+  if (socket.setTypeOfService) {
+    socket.setTypeOfService(request.typeOfService)
   }
 
   let header = `${method} ${path} HTTP/1.1\r\n`
@@ -20079,8 +21362,6 @@ function writeBuffer (abort, body, client, request, socket, contentLength, heade
  * @returns {Promise<void>}
  */
 async function writeBlob (abort, body, client, request, socket, contentLength, header, expectsPayload) {
-  assert(contentLength === body.size, 'blob body must have content length')
-
   try {
     if (contentLength != null && contentLength !== body.size) {
       throw new RequestContentLengthMismatchError()
@@ -20192,7 +21473,7 @@ class AsyncWriter {
   }
 
   /**
-   * @param {Buffer} chunk
+   * @param {string|Uint8Array} chunk
    * @returns
    */
   write (chunk) {
@@ -20206,7 +21487,7 @@ class AsyncWriter {
       return false
     }
 
-    const len = Buffer.byteLength(chunk)
+    const len = chunk instanceof Uint8Array ? chunk.byteLength : Buffer.byteLength(chunk)
     if (!len) {
       return true
     }
@@ -20361,6 +21642,7 @@ const {
   kHTTP2Session,
   kHTTP2InitialWindowSize,
   kHTTP2ConnectionWindowSize,
+  kHostAuthority,
   kResume,
   kSize,
   kHTTPContext,
@@ -20374,6 +21656,11 @@ const {
 const { channels } = __nccwpck_require__(1224)
 
 const kOpenStreams = Symbol('open streams')
+const kRequestStreamId = Symbol('request stream id')
+const kRequestStream = Symbol('request stream')
+const kRequestStreamCleanup = Symbol('request stream cleanup')
+const kRequestStreamState = Symbol('request stream state')
+const kReceivedGoAway = Symbol('received goaway')
 
 let extractBody
 
@@ -20396,29 +21683,75 @@ const {
     HTTP2_HEADER_EXPECT,
     HTTP2_HEADER_STATUS,
     HTTP2_HEADER_PROTOCOL,
-    NGHTTP2_REFUSED_STREAM,
-    NGHTTP2_CANCEL
+    NGHTTP2_NO_ERROR,
+    NGHTTP2_REFUSED_STREAM
   }
 } = http2
 
-function parseH2Headers (headers) {
-  const result = []
+function getGoAwayError (session, errorCode) {
+  return session[kError] ||
+    (errorCode === NGHTTP2_NO_ERROR
+      ? new InformationalError(`HTTP/2: "GOAWAY" frame received with code ${errorCode}`)
+      : new SocketError(`HTTP/2: "GOAWAY" frame received with code ${errorCode}`, util.getSocketInfo(session[kSocket])))
+}
 
-  for (const [name, value] of Object.entries(headers)) {
-    // h2 may concat the header value by array
-    // e.g. Set-Cookie
-    if (Array.isArray(value)) {
-      for (const subvalue of value) {
-        // we need to provide each header value of header name
-        // because the headers handler expect name-value pair
-        result.push(Buffer.from(name), Buffer.from(subvalue))
-      }
-    } else {
-      result.push(Buffer.from(name), Buffer.from(value))
+function getGoAwayPendingIdx (client, lastStreamID) {
+  const maxAcceptedStreamID = Number.isInteger(lastStreamID) ? lastStreamID : Number.MAX_SAFE_INTEGER
+
+  for (let i = client[kRunningIdx]; i < client[kPendingIdx]; i++) {
+    const request = client[kQueue][i]
+
+    if (request == null) {
+      continue
+    }
+
+    if (typeof request[kRequestStreamId] !== 'number' || request[kRequestStreamId] > maxAcceptedStreamID) {
+      return i
     }
   }
 
-  return result
+  return client[kPendingIdx]
+}
+
+function detachRequestFromStream (request) {
+  request[kRequestStreamId] = null
+  request[kRequestStream] = null
+  request[kRequestStreamCleanup] = null
+}
+
+function bindRequestToStream (request, stream, cleanup) {
+  const previousCleanup = request[kRequestStreamCleanup]
+  const previousStream = request[kRequestStream]
+  detachRequestFromStream(request)
+  previousCleanup?.(previousStream)
+  request[kRequestStreamId] = stream.id
+  request[kRequestStream] = stream
+  request[kRequestStreamCleanup] = cleanup
+}
+
+function clearRequestStream (request) {
+  const cleanup = request[kRequestStreamCleanup]
+  const stream = request[kRequestStream]
+  detachRequestFromStream(request)
+  cleanup?.(stream)
+}
+
+function canRetryRequestAfterGoAway (request) {
+  const { body } = request
+
+  return body == null || util.isBuffer(body) || util.isBlobLike(body)
+}
+
+function closeRequestStream (request, code = NGHTTP2_REFUSED_STREAM) {
+  const stream = request[kRequestStream]
+
+  clearRequestStream(request)
+
+  if (stream != null && !stream.destroyed && !stream.closed) {
+    try {
+      stream.close(code)
+    } catch {}
+  }
 }
 
 function connectH2 (client, socket) {
@@ -20446,6 +21779,7 @@ function connectH2 (client, socket) {
       interval: client[kPingInterval] === 0 ? null : setInterval(onHttp2SendPing, client[kPingInterval], session).unref()
     }
   }
+  session[kReceivedGoAway] = false
   // We set it to true by default in a best-effort; however once connected to an H2 server
   // we will check if extended CONNECT protocol is supported or not
   // and set this value accordingly.
@@ -20517,6 +21851,14 @@ function connectH2 (client, socket) {
      * @returns {boolean}
     */
     busy (request) {
+      if (session[kRemoteSettings] === false && client[kRunning] > 0) {
+        return true
+      }
+
+      if (client[kRunning] >= client[kMaxConcurrentStreams]) {
+        return true
+      }
+
       if (request != null) {
         if (client[kRunning] > 0) {
           // We are already processing requests
@@ -20606,7 +21948,7 @@ function onHttp2SendPing (session) {
 
   function onPing (err, duration) {
     const client = this[kClient]
-    const socket = this[kClient]
+    const socket = this[kSocket]
 
     if (err != null) {
       const error = new InformationalError(`HTTP/2: "PING" errored - type ${err.message}`)
@@ -20646,48 +21988,68 @@ function onHttp2SessionEnd () {
  *
  * @this {import('http2').ClientHttp2Session}
  * @param {number} errorCode
+ * @param {number} lastStreamID
  */
-function onHttp2SessionGoAway (errorCode) {
-  // TODO(mcollina): Verify if GOAWAY implements the spec correctly:
-  // https://datatracker.ietf.org/doc/html/rfc7540#section-6.8
-  // Specifically, we do not verify the "valid" stream id.
-
-  const err = this[kError] || new SocketError(`HTTP/2: "GOAWAY" frame received with code ${errorCode}`, util.getSocketInfo(this[kSocket]))
-  const client = this[kClient]
-
-  client[kSocket] = null
-  client[kHTTPContext] = null
-
-  // this is an HTTP2 session
-  this.close()
-  this[kHTTP2Session] = null
-
-  util.destroy(this[kSocket], err)
-
-  // Fail head of pipeline.
-  if (client[kRunningIdx] < client[kQueue].length) {
-    const request = client[kQueue][client[kRunningIdx]]
-    client[kQueue][client[kRunningIdx]++] = null
-    util.errorRequest(client, request, err)
-    client[kPendingIdx] = client[kRunningIdx]
+function onHttp2SessionGoAway (errorCode, lastStreamID) {
+  if (this[kReceivedGoAway]) {
+    return
   }
 
-  assert(client[kRunning] === 0)
+  this[kReceivedGoAway] = true
+
+  const err = getGoAwayError(this, errorCode)
+  const client = this[kClient]
+  const previousPendingIdx = client[kPendingIdx]
+  const pendingIdx = getGoAwayPendingIdx(client, lastStreamID)
+  const retriableRequests = []
+
+  for (let i = pendingIdx; i < previousPendingIdx; i++) {
+    const request = client[kQueue][i]
+
+    if (request != null) {
+      closeRequestStream(request)
+
+      if (canRetryRequestAfterGoAway(request)) {
+        retriableRequests.push(request)
+      } else {
+        util.errorRequest(client, request, err)
+      }
+    }
+  }
+
+  if (pendingIdx !== previousPendingIdx) {
+    const remainingPendingRequests = client[kQueue].slice(previousPendingIdx)
+    client[kQueue].length = pendingIdx
+    client[kQueue].push(...retriableRequests, ...remainingPendingRequests)
+  }
+
+  if (client[kHTTP2Session] === this) {
+    client[kSocket] = null
+    client[kHTTPContext] = null
+    client[kHTTP2Session] = null
+  }
+
+  if (!this.closed && !this.destroyed) {
+    this.close()
+  }
+
+  client[kPendingIdx] = pendingIdx
 
   client.emit('disconnect', client[kUrl], [client], err)
-  client.emit('connectionError', client[kUrl], [client], err)
 
   client[kResume]()
 }
 
 function onHttp2SessionClose () {
-  const { [kClient]: client, [kHTTP2SessionState]: state } = this
-  const { [kSocket]: socket } = client
+  const { [kClient]: client, [kHTTP2SessionState]: state, [kSocket]: socket } = this
 
-  const err = this[kSocket][kError] || this[kError] || new SocketError('closed', util.getSocketInfo(socket))
+  const err = socket[kError] || this[kError] || new SocketError('closed', util.getSocketInfo(socket))
 
-  client[kSocket] = null
-  client[kHTTPContext] = null
+  if (client[kHTTP2Session] === this) {
+    client[kSocket] = null
+    client[kHTTPContext] = null
+    client[kHTTP2Session] = null
+  }
 
   if (state.ping.interval != null) {
     clearInterval(state.ping.interval)
@@ -20709,14 +22071,26 @@ function onHttp2SessionClose () {
 function onHttp2SocketClose () {
   const err = this[kError] || new SocketError('closed', util.getSocketInfo(this))
 
-  const client = this[kHTTP2Session][kClient]
+  const session = this[kHTTP2Session]
+  const client = session[kClient]
+
+  if (client[kSocket] !== this) {
+    // Ignore stale socket closes from a detached GOAWAY session and from any
+    // session that has already been replaced. If the session was detached
+    // without a GOAWAY and there is no replacement yet, we still need the
+    // close event to flush the client state.
+    if (session[kReceivedGoAway] || (client[kHTTP2Session] != null && client[kHTTP2Session] !== session)) {
+      return
+    }
+  }
 
   client[kSocket] = null
   client[kHTTPContext] = null
-
-  if (this[kHTTP2Session] !== null) {
-    this[kHTTP2Session].destroy(err)
+  if (client[kHTTP2Session] === session) {
+    client[kHTTP2Session] = null
   }
+
+  session.destroy(err)
 
   client[kPendingIdx] = client[kRunningIdx]
 
@@ -20743,9 +22117,173 @@ function onSocketClose () {
   this[kClosed] = true
 }
 
+function noop () {}
+
+function closeStreamSession (stream) {
+  const session = stream[kHTTP2Session]
+
+  stream[kHTTP2Session] = null
+  session[kOpenStreams] -= 1
+  if (session[kOpenStreams] === 0) {
+    session.unref()
+  }
+}
+
+function onUpgradeStreamClose () {
+  this.off('error', noop)
+
+  const state = this[kRequestStreamState]
+  this[kRequestStreamState] = null
+
+  failUpgradeStream(state, new InformationalError('HTTP/2: stream closed before response headers'))
+  closeStreamSession(this)
+}
+
+function onRequestStreamClose () {
+  this.off('data', onData)
+  this.off('error', noop)
+  closeStreamSession(this)
+  this[kRequestStreamState] = null
+}
+
 // https://www.rfc-editor.org/rfc/rfc7230#section-3.3.2
 function shouldSendContentLength (method) {
   return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' && method !== 'TRACE' && method !== 'CONNECT'
+}
+
+function buildRequestHeaders (reqHeaders) {
+  const headers = {}
+
+  for (let n = 0; n < reqHeaders.length; n += 2) {
+    const key = reqHeaders[n + 0]
+    const val = reqHeaders[n + 1]
+    const current = headers[key]
+
+    if (key === 'cookie') {
+      if (current != null) {
+        headers[key] = Array.isArray(current) ? (current.push(val), current) : [current, val]
+      } else {
+        headers[key] = val
+      }
+
+      continue
+    }
+
+    if (typeof val === 'string') {
+      headers[key] = current ? `${current}, ${val}` : val
+      continue
+    }
+
+    for (let i = 0; i < val.length; i++) {
+      headers[key] = headers[key] ? `${headers[key]}, ${val[i]}` : val[i]
+    }
+  }
+
+  return headers
+}
+
+function removeUpgradeStreamListeners (stream) {
+  stream.off('response', onUpgradeResponse)
+  stream.off('error', onUpgradeStreamError)
+  stream.off('end', onUpgradeStreamEnd)
+  stream.off('timeout', onUpgradeStreamTimeout)
+  stream.off('error', noop)
+}
+
+function releaseUpgradeStream (stream) {
+  if (stream == null) {
+    return
+  }
+
+  const state = stream[kRequestStreamState]
+  if (state == null) {
+    return
+  }
+
+  const { request } = state
+
+  if (request[kRequestStream] === stream) {
+    detachRequestFromStream(request)
+  }
+
+  removeUpgradeStreamListeners(stream)
+
+  if (!stream.destroyed && !stream.closed) {
+    stream.once('error', noop)
+  }
+}
+
+function failUpgradeStream (state, err) {
+  if (state == null) {
+    return
+  }
+
+  const { request } = state
+  if (state.responseReceived || request.aborted || request.completed) {
+    return
+  }
+
+  releaseUpgradeStream(state.stream)
+  state.abort(err, true)
+}
+
+function onUpgradeStreamError () {
+  const state = this[kRequestStreamState]
+
+  if (typeof this.rstCode === 'number' && this.rstCode !== 0) {
+    failUpgradeStream(state, new InformationalError(`HTTP/2: "stream error" received - code ${this.rstCode}`))
+  } else {
+    failUpgradeStream(state, new InformationalError('HTTP/2: stream errored before response headers'))
+  }
+}
+
+function onUpgradeStreamEnd () {
+  failUpgradeStream(this[kRequestStreamState], new InformationalError('HTTP/2: stream half-closed (remote)'))
+}
+
+function onUpgradeStreamTimeout () {
+  const state = this[kRequestStreamState]
+  failUpgradeStream(state, new InformationalError(`HTTP/2: "stream timeout after ${state.requestTimeout}"`))
+}
+
+function onUpgradeResponse (headers, _flags) {
+  const stream = this
+  const state = stream[kRequestStreamState]
+  const { request } = state
+
+  state.responseReceived = true
+
+  const statusCode = headers[HTTP2_HEADER_STATUS]
+  delete headers[HTTP2_HEADER_STATUS]
+
+  request.onRequestUpgrade(statusCode, headers, stream)
+
+  if (request.aborted || request.completed) {
+    return
+  }
+
+  removeUpgradeStreamListeners(stream)
+  detachRequestFromStream(request)
+  state.finalizeRequest()
+}
+
+function setupUpgradeStream (stream, state) {
+  const { request, requestTimeout, session } = state
+
+  stream[kHTTP2Stream] = true
+  stream[kHTTP2Session] = session
+  stream[kRequestStreamState] = state
+  state.stream = stream
+
+  bindRequestToStream(request, stream, releaseUpgradeStream)
+  stream.once('response', onUpgradeResponse)
+  stream.on('error', onUpgradeStreamError)
+  stream.once('end', onUpgradeStreamEnd)
+  stream.on('timeout', onUpgradeStreamTimeout)
+  stream.once('close', onUpgradeStreamClose)
+
+  ++session[kOpenStreams]
+  stream.setTimeout(requestTimeout)
 }
 
 function writeH2 (client, request) {
@@ -20759,45 +22297,31 @@ function writeH2 (client, request) {
     return false
   }
 
-  const headers = {}
-  for (let n = 0; n < reqHeaders.length; n += 2) {
-    const key = reqHeaders[n + 0]
-    const val = reqHeaders[n + 1]
-
-    if (key === 'cookie') {
-      if (headers[key] != null) {
-        headers[key] = Array.isArray(headers[key]) ? (headers[key].push(val), headers[key]) : [headers[key], val]
-      } else {
-        headers[key] = val
-      }
-
-      continue
-    }
-
-    if (Array.isArray(val)) {
-      for (let i = 0; i < val.length; i++) {
-        if (headers[key]) {
-          headers[key] += `, ${val[i]}`
-        } else {
-          headers[key] = val[i]
-        }
-      }
-    } else if (headers[key]) {
-      headers[key] += `, ${val}`
-    } else {
-      headers[key] = val
-    }
-  }
+  const headers = buildRequestHeaders(reqHeaders)
 
   /** @type {import('node:http2').ClientHttp2Stream} */
   let stream = null
 
-  const { hostname, port } = client[kUrl]
-
-  headers[HTTP2_HEADER_AUTHORITY] = host || `${hostname}${port ? `:${port}` : ''}`
+  headers[HTTP2_HEADER_AUTHORITY] = host || client[kHostAuthority]
   headers[HTTP2_HEADER_METHOD] = method
 
-  const abort = (err) => {
+  let requestFinalized = false
+  const finalizeRequest = (resetPendingIdx = false) => {
+    if (requestFinalized) {
+      return
+    }
+
+    requestFinalized = true
+    client[kQueue][client[kRunningIdx]++] = null
+
+    if (resetPendingIdx) {
+      client[kPendingIdx] = client[kRunningIdx]
+    }
+
+    client[kResume]()
+  }
+
+  const abort = (err, resetPendingIdx = false) => {
     if (request.aborted || request.completed) {
       return
     }
@@ -20807,16 +22331,14 @@ function writeH2 (client, request) {
     util.errorRequest(client, request, err)
 
     if (stream != null) {
-      // Some chunks might still come after abort,
-      // let's ignore them
-      stream.removeAllListeners('data')
+      clearRequestStream(request)
 
       // On Abort, we close the stream to send RST_STREAM frame
       stream.close()
 
       // We move the running index to the next request
       client[kOnError](err)
-      client[kResume]()
+      finalizeRequest(resetPendingIdx)
     }
 
     // We do not destroy the socket as we can continue using the session
@@ -20824,10 +22346,30 @@ function writeH2 (client, request) {
     util.destroy(body, err)
   }
 
+  const requestStream = (headers, options) => {
+    try {
+      return session.request(headers, options)
+    } catch (err) {
+      if (err?.code !== 'ERR_HTTP2_INVALID_CONNECTION_HEADERS') {
+        throw err
+      }
+
+      const wrappedErr = new InformationalError(err.message, { cause: err })
+      session[kError] = wrappedErr
+      session[kSocket][kError] = wrappedErr
+
+      session.destroy(wrappedErr)
+      util.destroy(session[kSocket], wrappedErr)
+      abort(wrappedErr)
+
+      return null
+    }
+  }
+
   try {
     // We are already connected, streams are pending.
     // We can call on connect, and wait for abort
-    request.onConnect(abort)
+    request.onRequestStart(abort, null)
   } catch (err) {
     util.errorRequest(client, request, err)
   }
@@ -20838,6 +22380,16 @@ function writeH2 (client, request) {
 
   if (upgrade || method === 'CONNECT') {
     session.ref()
+
+    const upgradeState = {
+      abort,
+      finalizeRequest,
+      request,
+      requestTimeout,
+      responseReceived: false,
+      session,
+      stream: null
+    }
 
     if (upgrade === 'websocket') {
       // We cannot upgrade to websocket if extended CONNECT protocol is not supported
@@ -20861,33 +22413,12 @@ function writeH2 (client, request) {
         headers[HTTP2_HEADER_SCHEME] = protocol === 'http:' ? 'http' : 'https'
       }
 
-      stream = session.request(headers, { endStream: false, signal })
-      stream[kHTTP2Stream] = true
-
-      stream.once('response', (headers, _flags) => {
-        const { [HTTP2_HEADER_STATUS]: statusCode, ...realHeaders } = headers
-
-        request.onUpgrade(statusCode, parseH2Headers(realHeaders), stream)
-
-        ++session[kOpenStreams]
-        client[kQueue][client[kRunningIdx]++] = null
-      })
-
-      stream.on('error', () => {
-        if (stream.rstCode === NGHTTP2_REFUSED_STREAM || stream.rstCode === NGHTTP2_CANCEL) {
-          // NGHTTP2_REFUSED_STREAM (7) or NGHTTP2_CANCEL (8)
-          // We do not treat those as errors as the server might
-          // not support websockets and refuse the stream
-          abort(new InformationalError(`HTTP/2: "stream error" received - code ${stream.rstCode}`))
-        }
-      })
-
-      stream.once('close', () => {
-        session[kOpenStreams] -= 1
-        if (session[kOpenStreams] === 0) session.unref()
-      })
-
-      stream.setTimeout(requestTimeout)
+      stream = requestStream(headers, { endStream: false, signal })
+      if (stream == null) {
+        session.unref()
+        return false
+      }
+      setupUpgradeStream(stream, upgradeState)
       return true
     }
 
@@ -20896,20 +22427,12 @@ function writeH2 (client, request) {
     // will create a new stream. We trigger a request to create the stream and wait until
     // `ready` event is triggered
     // We disabled endStream to allow the user to write to the stream
-    stream = session.request(headers, { endStream: false, signal })
-    stream[kHTTP2Stream] = true
-    stream.on('response', headers => {
-      const { [HTTP2_HEADER_STATUS]: statusCode, ...realHeaders } = headers
-
-      request.onUpgrade(statusCode, parseH2Headers(realHeaders), stream)
-      ++session[kOpenStreams]
-      client[kQueue][client[kRunningIdx]++] = null
-    })
-    stream.once('close', () => {
-      session[kOpenStreams] -= 1
-      if (session[kOpenStreams] === 0) session.unref()
-    })
-    stream.setTimeout(requestTimeout)
+    stream = requestStream(headers, { endStream: false, signal })
+    if (stream == null) {
+      session.unref()
+      return false
+    }
+    setupUpgradeStream(stream, upgradeState)
 
     return true
   }
@@ -20931,7 +22454,10 @@ function writeH2 (client, request) {
   const expectsPayload = (
     method === 'PUT' ||
     method === 'POST' ||
-    method === 'PATCH'
+    method === 'PATCH' ||
+    method === 'QUERY' ||
+    method === 'PROPFIND' ||
+    method === 'PROPPATCH'
   )
 
   if (body && typeof body.read === 'function') {
@@ -20955,7 +22481,7 @@ function writeH2 (client, request) {
     contentLength = request.contentLength
   }
 
-  if (!expectsPayload) {
+  if (contentLength === 0 && !expectsPayload) {
     // https://tools.ietf.org/html/rfc7230#section-3.3.2
     // A user agent SHOULD NOT send a Content-Length header field when
     // the request message does not contain a payload body and the method
@@ -20991,183 +22517,243 @@ function writeH2 (client, request) {
   }
 
   // TODO(metcoder95): add support for sending trailers
-  const shouldEndStream = method === 'GET' || method === 'HEAD' || body === null
+  const shouldEndStream = body === null || contentLength === 0
+  const state = {
+    abort,
+    body,
+    client,
+    contentLength,
+    expectsPayload,
+    finalizeRequest,
+    request,
+    requestTimeout,
+    responseReceived: false,
+    session,
+    stream: null
+  }
+
   if (expectContinue) {
     headers[HTTP2_HEADER_EXPECT] = '100-continue'
-    stream = session.request(headers, { endStream: shouldEndStream, signal })
-    stream[kHTTP2Stream] = true
-
-    stream.once('continue', writeBodyH2)
-  } else {
-    stream = session.request(headers, {
-      endStream: shouldEndStream,
-      signal
-    })
-    stream[kHTTP2Stream] = true
-
-    writeBodyH2()
   }
+
+  stream = requestStream(headers, { endStream: shouldEndStream, signal })
+  if (stream == null) {
+    return false
+  }
+  stream[kHTTP2Stream] = true
+  stream[kRequestStreamState] = state
+  state.stream = stream
+  bindRequestToStream(request, stream, null)
 
   // Increment counter as we have new streams open
   ++session[kOpenStreams]
   stream.setTimeout(requestTimeout)
 
-  // Track whether we received a response (headers)
-  let responseReceived = false
+  stream[kHTTP2Session] = session
+  stream.once('close', onRequestStreamClose)
 
-  stream.once('response', headers => {
-    const { [HTTP2_HEADER_STATUS]: statusCode, ...realHeaders } = headers
-    request.onResponseStarted()
-    responseReceived = true
+  bindRequestToStream(request, stream, releaseRequestStream)
+  if (expectContinue) {
+    stream.once('continue', writeBodyH2)
+  }
+  stream.once('response', onResponse)
+  stream.once('end', onEnd)
+  stream.once('error', onError)
+  stream.once('frameError', onFrameError)
+  stream.on('aborted', onAborted)
+  stream.on('timeout', onTimeout)
+  stream.once('trailers', onTrailers)
 
-    // Due to the stream nature, it is possible we face a race condition
-    // where the stream has been assigned, but the request has been aborted
-    // the request remains in-flight and headers hasn't been received yet
-    // for those scenarios, best effort is to destroy the stream immediately
-    // as there's no value to keep it open.
-    if (request.aborted) {
-      stream.removeAllListeners('data')
-      return
-    }
-
-    if (request.onHeaders(Number(statusCode), parseH2Headers(realHeaders), stream.resume.bind(stream), '') === false) {
-      stream.pause()
-    }
-  })
-
-  stream.on('data', (chunk) => {
-    if (request.onData(chunk) === false) {
-      stream.pause()
-    }
-  })
-
-  stream.once('end', () => {
-    stream.removeAllListeners('data')
-    // If we received a response, this is a normal completion
-    if (responseReceived) {
-      if (!request.aborted && !request.completed) {
-        request.onComplete({})
-      }
-
-      client[kQueue][client[kRunningIdx]++] = null
-      client[kResume]()
-    } else {
-      // Stream ended without receiving a response - this is an error
-      // (e.g., server destroyed the stream before sending headers)
-      abort(new InformationalError('HTTP/2: stream half-closed (remote)'))
-      client[kQueue][client[kRunningIdx]++] = null
-      client[kPendingIdx] = client[kRunningIdx]
-      client[kResume]()
-    }
-  })
-
-  stream.once('close', () => {
-    stream.removeAllListeners('data')
-    session[kOpenStreams] -= 1
-    if (session[kOpenStreams] === 0) {
-      session.unref()
-    }
-  })
-
-  stream.once('error', function (err) {
-    stream.removeAllListeners('data')
-    abort(err)
-  })
-
-  stream.once('frameError', (type, code) => {
-    stream.removeAllListeners('data')
-    abort(new InformationalError(`HTTP/2: "frameError" received - type ${type}, code ${code}`))
-  })
-
-  stream.on('aborted', () => {
-    stream.removeAllListeners('data')
-  })
-
-  stream.on('timeout', () => {
-    const err = new InformationalError(`HTTP/2: "stream timeout after ${requestTimeout}"`)
-    stream.removeAllListeners('data')
-    session[kOpenStreams] -= 1
-
-    if (session[kOpenStreams] === 0) {
-      session.unref()
-    }
-
-    abort(err)
-  })
-
-  stream.once('trailers', trailers => {
-    if (request.aborted || request.completed) {
-      return
-    }
-
-    request.onComplete(trailers)
-  })
+  if (!expectContinue) {
+    writeBodyH2.call(stream)
+  }
 
   return true
+}
 
-  function writeBodyH2 () {
-    if (!body || contentLength === 0) {
-      writeBuffer(
-        abort,
-        stream,
-        null,
-        client,
-        request,
-        client[kSocket],
-        contentLength,
-        expectsPayload
-      )
-    } else if (util.isBuffer(body)) {
-      writeBuffer(
-        abort,
-        stream,
-        body,
-        client,
-        request,
-        client[kSocket],
-        contentLength,
-        expectsPayload
-      )
-    } else if (util.isBlobLike(body)) {
-      if (typeof body.stream === 'function') {
-        writeIterable(
-          abort,
-          stream,
-          body.stream(),
-          client,
-          request,
-          client[kSocket],
-          contentLength,
-          expectsPayload
-        )
-      } else {
-        writeBlob(
-          abort,
-          stream,
-          body,
-          client,
-          request,
-          client[kSocket],
-          contentLength,
-          expectsPayload
-        )
-      }
-    } else if (util.isStream(body)) {
-      writeStream(
-        abort,
-        client[kSocket],
-        expectsPayload,
-        stream,
-        body,
-        client,
-        request,
-        contentLength
-      )
-    } else if (util.isIterable(body)) {
+function removeRequestStreamListeners (stream) {
+  stream.off('error', noop)
+  stream.off('continue', writeBodyH2)
+  stream.off('response', onResponse)
+  stream.off('end', onEnd)
+  stream.off('error', onError)
+  stream.off('frameError', onFrameError)
+  stream.off('aborted', onAborted)
+  stream.off('timeout', onTimeout)
+  stream.off('trailers', onTrailers)
+  stream.off('data', onData)
+}
+
+function releaseRequestStream (stream) {
+  if (stream == null) {
+    return
+  }
+
+  const state = stream[kRequestStreamState]
+  if (state == null) {
+    return
+  }
+
+  const { request } = state
+
+  if (request[kRequestStream] === stream) {
+    detachRequestFromStream(request)
+  }
+
+  removeRequestStreamListeners(stream)
+
+  if (!stream.destroyed && !stream.closed) {
+    stream.once('error', noop)
+  }
+}
+
+function onData (chunk) {
+  const stream = this
+  const { request } = stream[kRequestStreamState]
+
+  if (request.aborted || request.completed) {
+    return
+  }
+
+  if (request.onResponseData(chunk) === false) {
+    stream.pause()
+  }
+}
+
+function onResponse (headers) {
+  const stream = this
+  const state = stream[kRequestStreamState]
+  const { request } = state
+
+  stream.off('response', onResponse)
+
+  const statusCode = headers[HTTP2_HEADER_STATUS]
+  delete headers[HTTP2_HEADER_STATUS]
+  request.onResponseStarted()
+  state.responseReceived = true
+
+  // Due to the stream nature, it is possible we face a race condition
+  // where the stream has been assigned, but the request has been aborted
+  // the request remains in-flight and headers hasn't been received yet
+  // for those scenarios, best effort is to destroy the stream immediately
+  // as there's no value to keep it open.
+  if (request.aborted) {
+    releaseRequestStream(stream)
+    return
+  }
+
+  if (request.onResponseStart(Number(statusCode), headers, stream.resume.bind(stream), '') === false) {
+    stream.pause()
+  }
+
+  stream.on('data', onData)
+}
+
+function onEnd () {
+  const stream = this
+  const state = stream[kRequestStreamState]
+  const { request } = state
+
+  stream.off('end', onEnd)
+
+  releaseRequestStream(stream)
+  // If we received a response, this is a normal completion
+  if (state.responseReceived) {
+    if (!request.aborted && !request.completed) {
+      request.onResponseEnd({})
+    }
+
+    state.finalizeRequest()
+  } else {
+    // Stream ended without receiving a response - this is an error
+    // (e.g., server destroyed the stream before sending headers)
+    state.abort(new InformationalError('HTTP/2: stream half-closed (remote)'), true)
+  }
+}
+
+function onError (err) {
+  const stream = this
+  const state = stream[kRequestStreamState]
+
+  stream.off('error', onError)
+
+  releaseRequestStream(stream)
+  state.abort(err)
+}
+
+function onFrameError (type, code) {
+  const stream = this
+  const state = stream[kRequestStreamState]
+
+  stream.off('frameError', onFrameError)
+
+  releaseRequestStream(stream)
+  state.abort(new InformationalError(`HTTP/2: "frameError" received - type ${type}, code ${code}`))
+}
+
+function onAborted () {
+  this.off('data', onData)
+}
+
+function onTimeout () {
+  const stream = this
+  const state = stream[kRequestStreamState]
+
+  releaseRequestStream(stream)
+
+  const err = new InformationalError(`HTTP/2: "stream timeout after ${state.requestTimeout}"`)
+  state.abort(err)
+}
+
+function onTrailers (trailers) {
+  const stream = this
+  const state = stream[kRequestStreamState]
+  const { request } = state
+
+  stream.off('trailers', onTrailers)
+
+  if (request.aborted || request.completed) {
+    return
+  }
+
+  releaseRequestStream(stream)
+  request.onResponseEnd(trailers)
+  state.finalizeRequest()
+}
+
+function writeBodyH2 () {
+  const stream = this
+  const state = stream[kRequestStreamState]
+  const { abort, body, client, contentLength, expectsPayload, request } = state
+
+  if (!body || contentLength === 0) {
+    writeBuffer(
+      abort,
+      stream,
+      null,
+      client,
+      request,
+      client[kSocket],
+      contentLength,
+      expectsPayload
+    )
+  } else if (util.isBuffer(body)) {
+    writeBuffer(
+      abort,
+      stream,
+      body,
+      client,
+      request,
+      client[kSocket],
+      contentLength,
+      expectsPayload
+    )
+  } else if (util.isBlobLike(body)) {
+    if (typeof body.stream === 'function') {
       writeIterable(
         abort,
         stream,
-        body,
+        body.stream(),
         client,
         request,
         client[kSocket],
@@ -21175,8 +22761,41 @@ function writeH2 (client, request) {
         expectsPayload
       )
     } else {
-      assert(false)
+      writeBlob(
+        abort,
+        stream,
+        body,
+        client,
+        request,
+        client[kSocket],
+        contentLength,
+        expectsPayload
+      )
     }
+  } else if (util.isStream(body)) {
+    writeStream(
+      abort,
+      client[kSocket],
+      expectsPayload,
+      stream,
+      body,
+      client,
+      request,
+      contentLength
+    )
+  } else if (util.isIterable(body)) {
+    writeIterable(
+      abort,
+      stream,
+      body,
+      client,
+      request,
+      client[kSocket],
+      contentLength,
+      expectsPayload
+    )
+  } else {
+    assert(false)
   }
 }
 
@@ -21235,8 +22854,6 @@ function writeStream (abort, socket, expectsPayload, h2stream, body, client, req
 }
 
 async function writeBlob (abort, h2stream, body, client, request, socket, contentLength, expectsPayload) {
-  assert(contentLength === body.size, 'blob body must have content length')
-
   try {
     if (contentLength != null && contentLength !== body.size) {
       throw new RequestContentLengthMismatchError()
@@ -21383,6 +23000,7 @@ const {
   kOnError,
   kHTTPContext,
   kMaxConcurrentStreams,
+  kHostAuthority,
   kHTTP2InitialWindowSize,
   kHTTP2ConnectionWindowSize,
   kResume,
@@ -21400,7 +23018,7 @@ const getDefaultNodeMaxHeaderSize = http &&
   ? () => http.maxHeaderSize
   : () => { throw new InvalidArgumentError('http module not available or http.maxHeaderSize invalid') }
 
-const noop = () => {}
+const noop = () => { }
 
 function getPipelining (client) {
   return client[kPipelining] ?? client[kHTTPContext]?.defaultPipelining ?? 1
@@ -21445,7 +23063,8 @@ class Client extends DispatcherBase {
     useH2c,
     initialWindowSize,
     connectionWindowSize,
-    pingInterval
+    pingInterval,
+    webSocket
   } = {}) {
     if (keepAlive !== undefined) {
       throw new InvalidArgumentError('unsupported keepAlive, use pipelining=0 instead')
@@ -21553,7 +23172,7 @@ class Client extends DispatcherBase {
       throw new InvalidArgumentError('pingInterval must be a positive integer, greater or equal to 0')
     }
 
-    super()
+    super({ webSocket })
 
     if (typeof connect !== 'function') {
       connect = buildConnector({
@@ -21566,9 +23185,17 @@ class Client extends DispatcherBase {
         ...(typeof autoSelectFamily === 'boolean' ? { autoSelectFamily, autoSelectFamilyAttemptTimeout } : undefined),
         ...connect
       })
+    } else {
+      const customConnect = connect
+      connect = (opts, callback) => customConnect({
+        ...opts,
+        ...(socketPath != null ? { socketPath } : null),
+        ...(allowH2 != null ? { allowH2 } : null)
+      }, callback)
     }
 
     this[kUrl] = util.parseOrigin(url)
+    this[kHostAuthority] = `${this[kUrl].hostname}${this[kUrl].port ? `:${this[kUrl].port}` : ''}`
     this[kConnector] = connect
     this[kPipelining] = pipelining != null ? pipelining : 1
     this[kMaxHeadersSize] = maxHeaderSize
@@ -21580,7 +23207,7 @@ class Client extends DispatcherBase {
     this[kLocalAddress] = localAddress != null ? localAddress : null
     this[kResuming] = 0 // 0, idle, 1, scheduled, 2 resuming
     this[kNeedDrain] = 0 // 0, idle, 1, scheduled, 2 resuming
-    this[kHostHeader] = `host: ${this[kUrl].hostname}${this[kUrl].port ? `:${this[kUrl].port}` : ''}\r\n`
+    this[kHostHeader] = `host: ${this[kHostAuthority]}\r\n`
     this[kBodyTimeout] = bodyTimeout != null ? bodyTimeout : 300e3
     this[kHeadersTimeout] = headersTimeout != null ? headersTimeout : 300e3
     this[kStrictContentLength] = strictContentLength == null ? true : strictContentLength
@@ -21780,65 +23407,70 @@ function connect (client) {
     })
   }
 
-  client[kConnector]({
-    host,
-    hostname,
-    protocol,
-    port,
-    servername: client[kServerName],
-    localAddress: client[kLocalAddress]
-  }, (err, socket) => {
-    if (err) {
-      handleConnectError(client, err, { host, hostname, protocol, port })
+  try {
+    client[kConnector]({
+      host,
+      hostname,
+      protocol,
+      port,
+      servername: client[kServerName],
+      localAddress: client[kLocalAddress]
+    }, (err, socket) => {
+      if (err) {
+        handleConnectError(client, err, { host, hostname, protocol, port })
+        client[kResume]()
+        return
+      }
+
+      if (client.destroyed) {
+        util.destroy(socket.on('error', noop), new ClientDestroyedError())
+        client[kResume]()
+        return
+      }
+
+      assert(socket)
+
+      try {
+        client[kHTTPContext] = socket.alpnProtocol === 'h2'
+          ? connectH2(client, socket)
+          : connectH1(client, socket)
+      } catch (err) {
+        socket.destroy().on('error', noop)
+        handleConnectError(client, err, { host, hostname, protocol, port })
+        client[kResume]()
+        return
+      }
+
+      client[kConnecting] = false
+
+      socket[kCounter] = 0
+      socket[kMaxRequests] = client[kMaxRequests]
+      socket[kClient] = client
+      socket[kError] = null
+
+      if (channels.connected.hasSubscribers) {
+        channels.connected.publish({
+          connectParams: {
+            host,
+            hostname,
+            protocol,
+            port,
+            version: client[kHTTPContext]?.version,
+            servername: client[kServerName],
+            localAddress: client[kLocalAddress]
+          },
+          connector: client[kConnector],
+          socket
+        })
+      }
+
+      client.emit('connect', client[kUrl], [client])
       client[kResume]()
-      return
-    }
-
-    if (client.destroyed) {
-      util.destroy(socket.on('error', noop), new ClientDestroyedError())
-      client[kResume]()
-      return
-    }
-
-    assert(socket)
-
-    try {
-      client[kHTTPContext] = socket.alpnProtocol === 'h2'
-        ? connectH2(client, socket)
-        : connectH1(client, socket)
-    } catch (err) {
-      socket.destroy().on('error', noop)
-      handleConnectError(client, err, { host, hostname, protocol, port })
-      client[kResume]()
-      return
-    }
-
-    client[kConnecting] = false
-
-    socket[kCounter] = 0
-    socket[kMaxRequests] = client[kMaxRequests]
-    socket[kClient] = client
-    socket[kError] = null
-
-    if (channels.connected.hasSubscribers) {
-      channels.connected.publish({
-        connectParams: {
-          host,
-          hostname,
-          protocol,
-          port,
-          version: client[kHTTPContext]?.version,
-          servername: client[kServerName],
-          localAddress: client[kLocalAddress]
-        },
-        connector: client[kConnector],
-        socket
-      })
-    }
-
-    client.emit('connect', client[kUrl], [client])
+    })
+  } catch (err) {
+    handleConnectError(client, err, { host, hostname, protocol, port })
     client[kResume]()
-  })
+  }
 }
 
 function handleConnectError (client, err, { host, hostname, protocol, port }) {
@@ -21938,6 +23570,10 @@ function _resume (client, sync) {
 
     const request = client[kQueue][client[kPendingIdx]]
 
+    if (request === null) {
+      return
+    }
+
     if (client[kUrl].protocol === 'https:' && client[kServerName] !== request.servername) {
       if (client[kRunning] > 0) {
         return
@@ -21987,7 +23623,6 @@ module.exports = Client
 
 
 const Dispatcher = __nccwpck_require__(28077)
-const UnwrapHandler = __nccwpck_require__(91767)
 const {
   ClientDestroyedError,
   ClientClosedError,
@@ -21997,6 +23632,7 @@ const { kDestroy, kClose, kClosed, kDestroyed, kDispatch } = __nccwpck_require__
 
 const kOnDestroyed = Symbol('onDestroyed')
 const kOnClosed = Symbol('onClosed')
+const kWebSocketOptions = Symbol('webSocketOptions')
 
 class DispatcherBase extends Dispatcher {
   /** @type {boolean} */
@@ -22010,6 +23646,23 @@ class DispatcherBase extends Dispatcher {
 
   /** @type {Array<Function>|null} */
   [kOnClosed] = null
+
+  /**
+   * @param {import('../../types/dispatcher').DispatcherOptions} [opts]
+   */
+  constructor (opts) {
+    super()
+    this[kWebSocketOptions] = opts?.webSocket ?? {}
+  }
+
+  /**
+   * @returns {import('../../types/dispatcher').WebSocketOptions}
+   */
+  get webSocketOptions () {
+    return {
+      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024 // 128 MB default
+    }
+  }
 
   /** @returns {boolean} */
   get destroyed () {
@@ -22120,11 +23773,13 @@ class DispatcherBase extends Dispatcher {
       throw new InvalidArgumentError('handler must be an object')
     }
 
-    handler = UnwrapHandler.unwrap(handler)
-
     try {
       if (!opts || typeof opts !== 'object') {
         throw new InvalidArgumentError('opts must be an object.')
+      }
+
+      if (opts.dispatcher) {
+        throw new InvalidArgumentError('opts.dispatcher is not supported by instance methods. Pass opts.dispatcher to the top-level undici functions or call the dispatcher instance method directly.')
       }
 
       if (this[kDestroyed] || this[kOnDestroyed]) {
@@ -22137,11 +23792,11 @@ class DispatcherBase extends Dispatcher {
 
       return this[kDispatch](opts, handler)
     } catch (err) {
-      if (typeof handler.onError !== 'function') {
+      if (typeof handler.onResponseError !== 'function') {
         throw err
       }
 
-      handler.onError(err)
+      handler.onResponseError(null, err)
 
       return false
     }
@@ -22159,9 +23814,6 @@ module.exports = DispatcherBase
 "use strict";
 
 const EventEmitter = __nccwpck_require__(78474)
-const WrapHandler = __nccwpck_require__(14588)
-
-const wrapInterceptor = (dispatch) => (opts, handler) => dispatch(opts, WrapHandler.wrap(handler))
 
 class Dispatcher extends EventEmitter {
   dispatch () {
@@ -22191,7 +23843,6 @@ class Dispatcher extends EventEmitter {
       }
 
       dispatch = interceptor(dispatch)
-      dispatch = wrapInterceptor(dispatch)
 
       if (dispatch == null || typeof dispatch !== 'function' || dispatch.length !== 2) {
         throw new TypeError('invalid interceptor')
@@ -22205,6 +23856,121 @@ class Dispatcher extends EventEmitter {
 }
 
 module.exports = Dispatcher
+
+
+/***/ }),
+
+/***/ 68068:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const Dispatcher = __nccwpck_require__(28077)
+const { InvalidArgumentError } = __nccwpck_require__(45253)
+const { toRawHeaders } = __nccwpck_require__(23270)
+
+class LegacyHandlerWrapper {
+  #handler
+
+  constructor (handler) {
+    this.#handler = handler
+  }
+
+  onRequestStart (controller, context) {
+    this.#handler.onConnect?.((reason) => controller.abort(reason), context)
+  }
+
+  onRequestUpgrade (controller, statusCode, headers, socket) {
+    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
+    this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
+  }
+
+  onResponseStart (controller, statusCode, headers, statusMessage) {
+    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
+
+    if (this.#handler.onHeaders?.(statusCode, rawHeaders, () => controller.resume(), statusMessage) === false) {
+      controller.pause()
+    }
+  }
+
+  onResponseData (controller, chunk) {
+    if (this.#handler.onData?.(chunk) === false) {
+      controller.pause()
+    }
+  }
+
+  onResponseEnd (controller, trailers) {
+    const rawTrailers = controller?.rawTrailers ?? toRawHeaders(trailers ?? {})
+    this.#handler.onComplete?.(rawTrailers)
+  }
+
+  onResponseError (_controller, err) {
+    if (!this.#handler.onError) {
+      throw err
+    }
+
+    this.#handler.onError(err)
+  }
+
+  onBodySent (chunk) {
+    this.#handler.onBodySent?.(chunk)
+  }
+
+  onRequestSent () {
+    this.#handler.onRequestSent?.()
+  }
+
+  onResponseStarted () {
+    this.#handler.onResponseStarted?.()
+  }
+}
+
+class Dispatcher1Wrapper extends Dispatcher {
+  #dispatcher
+
+  constructor (dispatcher) {
+    super()
+
+    if (!dispatcher || typeof dispatcher.dispatch !== 'function') {
+      throw new InvalidArgumentError('Argument dispatcher must implement dispatch')
+    }
+
+    this.#dispatcher = dispatcher
+  }
+
+  static wrapHandler (handler) {
+    if (!handler || typeof handler !== 'object') {
+      throw new InvalidArgumentError('handler must be an object')
+    }
+
+    if (typeof handler.onRequestStart === 'function') {
+      return handler
+    }
+
+    return new LegacyHandlerWrapper(handler)
+  }
+
+  dispatch (opts, handler) {
+    // Legacy (v1) consumers do not support HTTP/2, so force HTTP/1.1.
+    // See https://github.com/nodejs/undici/issues/4989
+    if (opts.allowH2 !== false) {
+      opts = { ...opts, allowH2: false }
+    }
+
+    return this.#dispatcher.dispatch(opts, Dispatcher1Wrapper.wrapHandler(handler))
+  }
+
+  close (...args) {
+    return this.#dispatcher.close(...args)
+  }
+
+  destroy (...args) {
+    return this.#dispatcher.destroy(...args)
+  }
+}
+
+module.exports = Dispatcher1Wrapper
 
 
 /***/ }),
@@ -22527,17 +24293,17 @@ class H2CClient extends Client {
       )
     }
 
-    const { connect, maxConcurrentStreams, pipelining, ...opts } =
+    const { maxConcurrentStreams, pipelining, ...opts } =
             clientOpts ?? {}
-    let defaultMaxConcurrentStreams = 100
+    const defaultMaxConcurrentStreams = maxConcurrentStreams ?? 100
     let defaultPipelining = 100
 
     if (
       maxConcurrentStreams != null &&
-            Number.isInteger(maxConcurrentStreams) &&
-            maxConcurrentStreams > 0
+            (!Number.isInteger(maxConcurrentStreams) ||
+            maxConcurrentStreams < 1)
     ) {
-      defaultMaxConcurrentStreams = maxConcurrentStreams
+      throw new InvalidArgumentError('maxConcurrentStreams must be a positive integer, greater than 0')
     }
 
     if (pipelining != null && Number.isInteger(pipelining) && pipelining > 0) {
@@ -22585,6 +24351,7 @@ const kOnConnect = Symbol('onConnect')
 const kOnDisconnect = Symbol('onDisconnect')
 const kOnConnectionError = Symbol('onConnectionError')
 const kGetDispatcher = Symbol('get dispatcher')
+const kHasDispatcher = Symbol('has dispatcher')
 const kAddClient = Symbol('add client')
 const kRemoveClient = Symbol('remove client')
 
@@ -22714,7 +24481,7 @@ class PoolBase extends DispatcherBase {
       if (!item) {
         break
       }
-      item.handler.onError(err)
+      item.handler.onResponseError(null, err)
     }
 
     const destroyAll = new Array(this[kClients].length)
@@ -22733,10 +24500,26 @@ class PoolBase extends DispatcherBase {
       this[kQueued]++
     } else if (!dispatcher.dispatch(opts, handler)) {
       dispatcher[kNeedDrain] = true
-      this[kNeedDrain] = !this[kGetDispatcher]()
+      this[kNeedDrain] = !this[kHasDispatcher]()
     }
 
     return !this[kNeedDrain]
+  }
+
+  [kHasDispatcher] () {
+    for (let i = 0; i < this[kClients].length; i++) {
+      const dispatcher = this[kClients][i]
+
+      if (
+        !dispatcher[kNeedDrain] &&
+        dispatcher.closed !== true &&
+        dispatcher.destroyed !== true
+      ) {
+        return true
+      }
+    }
+
+    return false
   }
 
   [kAddClient] (client) {
@@ -22760,14 +24543,14 @@ class PoolBase extends DispatcherBase {
   }
 
   [kRemoveClient] (client) {
-    client.close(() => {
-      const idx = this[kClients].indexOf(client)
-      if (idx !== -1) {
-        this[kClients].splice(idx, 1)
-      }
-    })
+    const idx = this[kClients].indexOf(client)
+    if (idx !== -1) {
+      this[kClients].splice(idx, 1)
+    }
 
-    this[kNeedDrain] = this[kClients].some(dispatcher => (
+    client.close(() => {})
+
+    this[kNeedDrain] = !this[kClients].some(dispatcher => (
       !dispatcher[kNeedDrain] &&
       dispatcher.closed !== true &&
       dispatcher.destroyed !== true
@@ -22781,7 +24564,8 @@ module.exports = {
   kNeedDrain,
   kAddClient,
   kRemoveClient,
-  kGetDispatcher
+  kGetDispatcher,
+  kHasDispatcher
 }
 
 
@@ -22799,6 +24583,7 @@ const {
   kNeedDrain,
   kAddClient,
   kGetDispatcher,
+  kHasDispatcher,
   kRemoveClient
 } = __nccwpck_require__(7146)
 const Client = __nccwpck_require__(22779)
@@ -22829,6 +24614,7 @@ class Pool extends PoolBase {
     autoSelectFamily,
     autoSelectFamilyAttemptTimeout,
     allowH2,
+    useH2c,
     clientTtl,
     ...options
   } = {}) {
@@ -22849,6 +24635,7 @@ class Pool extends PoolBase {
         ...tls,
         maxCachedSessions,
         allowH2,
+        useH2c,
         socketPath,
         timeout: connectTimeout,
         ...(typeof autoSelectFamily === 'boolean' ? { autoSelectFamily, autoSelectFamilyAttemptTimeout } : undefined),
@@ -22856,14 +24643,11 @@ class Pool extends PoolBase {
       })
     }
 
-    super()
+    super(options)
 
     this[kConnections] = connections || null
     this[kUrl] = util.parseOrigin(origin)
-    this[kOptions] = { ...util.deepClone(options), connect, allowH2, clientTtl }
-    this[kOptions].interceptors = options.interceptors
-      ? { ...options.interceptors }
-      : undefined
+    this[kOptions] = { ...util.deepClone(options), connect, allowH2, useH2c, clientTtl, socketPath }
     this[kFactory] = factory
 
     this.on('connect', (origin, targets) => {
@@ -22891,10 +24675,13 @@ class Pool extends PoolBase {
 
   [kGetDispatcher] () {
     const clientTtlOption = this[kOptions].clientTtl
-    for (const client of this[kClients]) {
+    for (let i = 0; i < this[kClients].length; i++) {
+      const client = this[kClients][i]
+
       // check ttl of client and if it's stale, remove it from the pool
       if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
         this[kRemoveClient](client)
+        i--
       } else if (!client[kNeedDrain]) {
         return client
       }
@@ -22905,6 +24692,28 @@ class Pool extends PoolBase {
       this[kAddClient](dispatcher)
       return dispatcher
     }
+  }
+
+  [kHasDispatcher] () {
+    const clientTtlOption = this[kOptions].clientTtl
+    for (let i = 0; i < this[kClients].length; i++) {
+      const client = this[kClients][i]
+
+      if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
+        this[kRemoveClient](client)
+        i--
+      } else if (!client[kNeedDrain]) {
+        return true
+      }
+    }
+
+    if (!this[kConnections] || this[kClients].length < this[kConnections]) {
+      const dispatcher = this[kFactory](this[kUrl], this[kOptions])
+      this[kAddClient](dispatcher)
+      return true
+    }
+
+    return false
   }
 }
 
@@ -22927,6 +24736,7 @@ const { InvalidArgumentError, RequestAbortedError, SecureProxyConnectionError } 
 const buildConnector = __nccwpck_require__(61462)
 const Client = __nccwpck_require__(22779)
 const { channels } = __nccwpck_require__(1224)
+const Socks5ProxyAgent = __nccwpck_require__(93585)
 
 const kAgent = Symbol('proxy agent')
 const kClient = Symbol('proxy client')
@@ -22934,7 +24744,9 @@ const kProxyHeaders = Symbol('proxy headers')
 const kRequestTls = Symbol('request tls settings')
 const kProxyTls = Symbol('proxy tls settings')
 const kConnectEndpoint = Symbol('connect endpoint function')
+const kConnectEndpointHTTP1 = Symbol('connect endpoint function (http/1.1 only)')
 const kTunnelProxy = Symbol('tunnel proxy')
+const proxyAuthorization = 'proxy-authorization'
 
 function defaultProtocolPort (protocol) {
   return protocol === 'https:' ? 443 : 80
@@ -22972,15 +24784,15 @@ class Http1ProxyWrapper extends DispatcherBase {
   }
 
   [kDispatch] (opts, handler) {
-    const onHeaders = handler.onHeaders
-    handler.onHeaders = function (statusCode, data, resume) {
+    const onResponseStart = handler.onResponseStart
+    handler.onResponseStart = function (controller, statusCode, data, statusMessage) {
       if (statusCode === 407) {
-        if (typeof handler.onError === 'function') {
-          handler.onError(new InvalidArgumentError('Proxy Authentication Required (407)'))
+        if (typeof handler.onResponseError === 'function') {
+          handler.onResponseError(controller, new InvalidArgumentError('Proxy Authentication Required (407)'))
         }
         return
       }
-      if (onHeaders) onHeaders.call(this, statusCode, data, resume)
+      if (onResponseStart) onResponseStart.call(this, controller, statusCode, data, statusMessage)
     }
 
     // Rewrite request as an HTTP1 Proxy request, without tunneling.
@@ -23021,7 +24833,7 @@ class ProxyAgent extends DispatcherBase {
       throw new InvalidArgumentError('Proxy opts.clientFactory must be a function.')
     }
 
-    const { proxyTunnel = true } = opts
+    const { proxyTunnel = true, connectTimeout } = opts
 
     super()
 
@@ -23043,14 +24855,30 @@ class ProxyAgent extends DispatcherBase {
       this[kProxyHeaders]['proxy-authorization'] = opts.token
     } else if (username && password) {
       this[kProxyHeaders]['proxy-authorization'] = `Basic ${Buffer.from(`${decodeURIComponent(username)}:${decodeURIComponent(password)}`).toString('base64')}`
+    } else if (username) {
+      this[kProxyHeaders]['proxy-authorization'] = `Basic ${Buffer.from(`${decodeURIComponent(username)}:`).toString('base64')}`
     }
 
-    const connect = buildConnector({ ...opts.proxyTls })
-    this[kConnectEndpoint] = buildConnector({ ...opts.requestTls })
+    const connect = buildConnector({ timeout: connectTimeout, ...opts.proxyTls })
+    this[kConnectEndpoint] = buildConnector({ timeout: connectTimeout, ...opts.requestTls })
+    this[kConnectEndpointHTTP1] = buildConnector({ timeout: connectTimeout, ...opts.requestTls, allowH2: false })
 
     const agentFactory = opts.factory || defaultAgentFactory
     const factory = (origin, options) => {
       const { protocol } = new URL(origin)
+
+      // Handle SOCKS5 proxy
+      if (this[kProxy].protocol === 'socks5:' || this[kProxy].protocol === 'socks:') {
+        return new Socks5ProxyAgent(this[kProxy].uri, {
+          headers: this[kProxyHeaders],
+          connect,
+          factory: agentFactory,
+          username: opts.username || username,
+          password: opts.password || password,
+          proxyTls: opts.proxyTls
+        })
+      }
+
       if (!this[kTunnelProxy] && protocol === 'http:' && this[kProxy].protocol === 'http:') {
         return new Http1ProxyWrapper(this[kProxy].uri, {
           headers: this[kProxyHeaders],
@@ -23060,11 +24888,26 @@ class ProxyAgent extends DispatcherBase {
       }
       return agentFactory(origin, options)
     }
-    this[kClient] = clientFactory(url, { connect })
+
+    // For SOCKS5 proxies, we don't need a client to the proxy itself
+    // The SOCKS5 connection is handled within Socks5ProxyAgent
+    if (protocol === 'socks5:' || protocol === 'socks:') {
+      this[kClient] = null
+    } else {
+      this[kClient] = clientFactory(url, { connect })
+    }
+
     this[kAgent] = new Agent({
       ...opts,
       factory,
       connect: async (opts, callback) => {
+        // SOCKS5 proxies handle their own connections via Socks5ProxyAgent,
+        // so this connect function should never be called for them.
+        if (!this[kClient]) {
+          callback(new InvalidArgumentError('Cannot establish tunnel connection without a proxy client'))
+          return
+        }
+
         let requestedPath = opts.host
         if (!opts.port) {
           requestedPath += `:${defaultProtocolPort(opts.protocol)}`
@@ -23106,7 +24949,11 @@ class ProxyAgent extends DispatcherBase {
           } else {
             servername = opts.servername
           }
-          this[kConnectEndpoint]({ ...opts, servername, httpSocket: socket }, callback)
+          const connectEndpoint = opts.allowH2 === false
+            ? this[kConnectEndpointHTTP1]
+            : this[kConnectEndpoint]
+
+          connectEndpoint({ ...opts, servername, httpSocket: socket }, callback)
         } catch (err) {
           if (err.code === 'ERR_TLS_CERT_ALTNAME_INVALID') {
             // Throw a custom error to avoid loop in client.js#connect
@@ -23152,17 +24999,19 @@ class ProxyAgent extends DispatcherBase {
   }
 
   [kClose] () {
-    return Promise.all([
-      this[kAgent].close(),
-      this[kClient].close()
-    ])
+    const promises = [this[kAgent].close()]
+    if (this[kClient]) {
+      promises.push(this[kClient].close())
+    }
+    return Promise.all(promises)
   }
 
   [kDestroy] () {
-    return Promise.all([
-      this[kAgent].destroy(),
-      this[kClient].destroy()
-    ])
+    const promises = [this[kAgent].destroy()]
+    if (this[kClient]) {
+      promises.push(this[kClient].destroy())
+    }
+    return Promise.all(promises)
   }
 }
 
@@ -23178,6 +25027,10 @@ function buildHeaders (headers) {
     const headersPair = {}
 
     for (let i = 0; i < headers.length; i += 2) {
+      if (isProxyAuthorizationHeader(headers[i])) {
+        throwProxyAuthError()
+      }
+
       headersPair[headers[i]] = headers[i + 1]
     }
 
@@ -23196,11 +25049,23 @@ function buildHeaders (headers) {
  * It should be removed in the next major version for performance reasons
  */
 function throwIfProxyAuthIsSent (headers) {
-  const existProxyAuth = headers && Object.keys(headers)
-    .find((key) => key.toLowerCase() === 'proxy-authorization')
-  if (existProxyAuth) {
-    throw new InvalidArgumentError('Proxy-Authorization should be sent in ProxyAgent constructor')
+  for (const key in headers) {
+    if (isProxyAuthorizationHeader(key)) {
+      throwProxyAuthError()
+    }
   }
+}
+
+/**
+ * @param {string} key
+ * @returns {boolean}
+ */
+function isProxyAuthorizationHeader (key) {
+  return key.length === proxyAuthorization.length && key.toLowerCase() === proxyAuthorization
+}
+
+function throwProxyAuthError () {
+  throw new InvalidArgumentError('Proxy-Authorization should be sent in ProxyAgent constructor')
 }
 
 module.exports = ProxyAgent
@@ -23263,6 +25128,7 @@ const {
   kNeedDrain,
   kAddClient,
   kGetDispatcher,
+  kHasDispatcher,
   kRemoveClient
 } = __nccwpck_require__(7146)
 const Client = __nccwpck_require__(22779)
@@ -23325,10 +25191,7 @@ class RoundRobinPool extends PoolBase {
 
     this[kConnections] = connections || null
     this[kUrl] = util.parseOrigin(origin)
-    this[kOptions] = { ...util.deepClone(options), connect, allowH2, clientTtl }
-    this[kOptions].interceptors = options.interceptors
-      ? { ...options.interceptors }
-      : undefined
+    this[kOptions] = { ...util.deepClone(options), connect, allowH2, clientTtl, socketPath }
     this[kFactory] = factory
     this[kIndex] = -1
 
@@ -23352,10 +25215,9 @@ class RoundRobinPool extends PoolBase {
 
   [kGetDispatcher] () {
     const clientTtlOption = this[kOptions].clientTtl
-    const clientsLength = this[kClients].length
 
     // If we have no clients yet, create one
-    if (clientsLength === 0) {
+    if (this[kClients].length === 0) {
       const dispatcher = this[kFactory](this[kUrl], this[kOptions])
       this[kAddClient](dispatcher)
       return dispatcher
@@ -23363,14 +25225,14 @@ class RoundRobinPool extends PoolBase {
 
     // Round-robin through existing clients
     let checked = 0
-    while (checked < clientsLength) {
-      this[kIndex] = (this[kIndex] + 1) % clientsLength
+    while (checked < this[kClients].length) {
+      this[kIndex] = (this[kIndex] + 1) % this[kClients].length
       const client = this[kClients][this[kIndex]]
 
       // Check if client is stale (TTL expired)
       if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
         this[kRemoveClient](client)
-        checked++
+        this[kIndex]--
         continue
       }
 
@@ -23383,15 +25245,312 @@ class RoundRobinPool extends PoolBase {
     }
 
     // All clients are busy, create a new one if we haven't reached the limit
-    if (!this[kConnections] || clientsLength < this[kConnections]) {
+    if (!this[kConnections] || this[kClients].length < this[kConnections]) {
       const dispatcher = this[kFactory](this[kUrl], this[kOptions])
       this[kAddClient](dispatcher)
       return dispatcher
     }
   }
+
+  [kHasDispatcher] () {
+    const clientTtlOption = this[kOptions].clientTtl
+    for (let i = 0; i < this[kClients].length; i++) {
+      const client = this[kClients][i]
+
+      if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
+        this[kRemoveClient](client)
+        if (i <= this[kIndex]) {
+          this[kIndex]--
+        }
+        i--
+      } else if (!client[kNeedDrain]) {
+        return true
+      }
+    }
+
+    if (!this[kConnections] || this[kClients].length < this[kConnections]) {
+      const dispatcher = this[kFactory](this[kUrl], this[kOptions])
+      this[kAddClient](dispatcher)
+      return true
+    }
+
+    return false
+  }
 }
 
 module.exports = RoundRobinPool
+
+
+/***/ }),
+
+/***/ 93585:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const { URL } = __nccwpck_require__(73136)
+
+let tls // include tls conditionally since it is not always available
+const DispatcherBase = __nccwpck_require__(97727)
+const { InvalidArgumentError } = __nccwpck_require__(45253)
+const { Socks5Client, STATES } = __nccwpck_require__(82664)
+const { kDispatch, kClose, kDestroy } = __nccwpck_require__(70885)
+const Pool = __nccwpck_require__(15538)
+const buildConnector = __nccwpck_require__(61462)
+const { debuglog } = __nccwpck_require__(57975)
+
+const debug = debuglog('undici:socks5-proxy')
+
+const kProxyUrl = Symbol('proxy url')
+const kProxyHeaders = Symbol('proxy headers')
+const kProxyAuth = Symbol('proxy auth')
+const kProxyProtocol = Symbol('proxy protocol')
+const kPools = Symbol('pools')
+const kConnector = Symbol('connector')
+
+// Static flag to ensure warning is only emitted once per process
+let experimentalWarningEmitted = false
+
+/**
+ * SOCKS5 proxy agent for dispatching requests through a SOCKS5 proxy
+ */
+class Socks5ProxyAgent extends DispatcherBase {
+  constructor (proxyUrl, options = {}) {
+    super()
+
+    // Emit experimental warning only once
+    if (!experimentalWarningEmitted) {
+      process.emitWarning(
+        'SOCKS5 proxy support is experimental and subject to change',
+        'ExperimentalWarning'
+      )
+      experimentalWarningEmitted = true
+    }
+
+    if (!proxyUrl) {
+      throw new InvalidArgumentError('Proxy URL is mandatory')
+    }
+
+    // Parse proxy URL
+    const url = typeof proxyUrl === 'string' ? new URL(proxyUrl) : proxyUrl
+
+    if (url.protocol !== 'socks5:' && url.protocol !== 'socks:') {
+      throw new InvalidArgumentError('Proxy URL must use socks5:// or socks:// protocol')
+    }
+
+    this[kProxyUrl] = url
+    this[kProxyHeaders] = options.headers || {}
+    this[kProxyProtocol] = options.proxyTls ? 'https:' : 'http:'
+
+    // Extract auth from URL or options
+    this[kProxyAuth] = {
+      username: options.username || (url.username ? decodeURIComponent(url.username) : null),
+      password: options.password || (url.password ? decodeURIComponent(url.password) : null)
+    }
+
+    // Create connector for proxy connection
+    this[kConnector] = options.connect || buildConnector({
+      ...options.proxyTls,
+      servername: options.proxyTls?.servername || url.hostname
+    })
+
+    // Pools for the actual HTTP connections (with SOCKS5 tunnel connect function), keyed by origin
+    this[kPools] = new Map()
+  }
+
+  /**
+   * Create a SOCKS5 connection to the proxy
+   */
+  async createSocks5Connection (targetHost, targetPort) {
+    const proxyHost = this[kProxyUrl].hostname
+    const proxyPort = parseInt(this[kProxyUrl].port) || 1080
+
+    debug('creating SOCKS5 connection to', proxyHost, proxyPort)
+
+    // Connect to the SOCKS5 proxy
+    const socketReady = Promise.withResolvers()
+
+    this[kConnector]({
+      hostname: proxyHost,
+      host: proxyHost,
+      port: proxyPort,
+      protocol: this[kProxyProtocol]
+    }, (err, socket) => {
+      if (err) {
+        socketReady.reject(err)
+      } else {
+        socketReady.resolve(socket)
+      }
+    })
+
+    const socket = await socketReady.promise
+
+    // Create SOCKS5 client
+    const socks5Client = new Socks5Client(socket, this[kProxyAuth])
+
+    // Handle SOCKS5 errors
+    socks5Client.on('error', (err) => {
+      debug('SOCKS5 error:', err)
+      socket.destroy()
+    })
+
+    // Perform SOCKS5 handshake
+    await socks5Client.handshake()
+
+    // Wait for authentication (if required)
+    const authenticationReady = Promise.withResolvers()
+
+    const authenticationTimeout = setTimeout(() => {
+      authenticationReady.reject(new Error('SOCKS5 authentication timeout'))
+    }, 5000)
+
+    const onAuthenticated = () => {
+      clearTimeout(authenticationTimeout)
+      socks5Client.removeListener('error', onAuthenticationError)
+      authenticationReady.resolve()
+    }
+
+    const onAuthenticationError = (err) => {
+      clearTimeout(authenticationTimeout)
+      socks5Client.removeListener('authenticated', onAuthenticated)
+      authenticationReady.reject(err)
+    }
+
+    // Check if already authenticated (for NO_AUTH method)
+    if (socks5Client.state === STATES.AUTHENTICATED) {
+      clearTimeout(authenticationTimeout)
+      authenticationReady.resolve()
+    } else {
+      socks5Client.once('authenticated', onAuthenticated)
+      socks5Client.once('error', onAuthenticationError)
+    }
+
+    await authenticationReady.promise
+
+    // Send CONNECT command
+    await socks5Client.connect(targetHost, targetPort)
+
+    // Wait for connection
+    const connectionReady = Promise.withResolvers()
+
+    const connectionTimeout = setTimeout(() => {
+      connectionReady.reject(new Error('SOCKS5 connection timeout'))
+    }, 5000)
+
+    const onConnected = (info) => {
+      debug('SOCKS5 tunnel established to', targetHost, targetPort, 'via', info)
+      clearTimeout(connectionTimeout)
+      socks5Client.removeListener('error', onConnectionError)
+      connectionReady.resolve()
+    }
+
+    const onConnectionError = (err) => {
+      clearTimeout(connectionTimeout)
+      socks5Client.removeListener('connected', onConnected)
+      connectionReady.reject(err)
+    }
+
+    socks5Client.once('connected', onConnected)
+    socks5Client.once('error', onConnectionError)
+
+    await connectionReady.promise
+
+    return socket
+  }
+
+  /**
+   * Dispatch a request through the SOCKS5 proxy
+   */
+  [kDispatch] (opts, handler) {
+    const { origin } = opts
+
+    debug('dispatching request to', origin, 'via SOCKS5')
+
+    try {
+      const originKey = String(origin)
+      let pool = this[kPools].get(originKey)
+      // Create a Pool per origin so requests are not routed to the wrong host
+      if (!pool || pool.destroyed || pool.closed) {
+        pool = new Pool(origin, {
+          pipelining: opts.pipelining,
+          connections: opts.connections,
+          connect: async (connectOpts, callback) => {
+            try {
+              const url = new URL(origin)
+              const targetHost = url.hostname
+              const targetPort = parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80)
+
+              debug('establishing SOCKS5 connection to', targetHost, targetPort)
+
+              // Create SOCKS5 tunnel
+              const socket = await this.createSocks5Connection(targetHost, targetPort)
+
+              // Handle TLS if needed
+              let finalSocket = socket
+              if (url.protocol === 'https:') {
+                if (!tls) {
+                  tls = __nccwpck_require__(41692)
+                }
+                debug('upgrading to TLS')
+                finalSocket = tls.connect({
+                  socket,
+                  servername: targetHost,
+                  ...connectOpts.tls || {}
+                })
+
+                const tlsReady = Promise.withResolvers()
+                finalSocket.once('secureConnect', tlsReady.resolve)
+                finalSocket.once('error', tlsReady.reject)
+                await tlsReady.promise
+              }
+
+              callback(null, finalSocket)
+            } catch (err) {
+              debug('SOCKS5 connection error:', err)
+              callback(err)
+            }
+          }
+        })
+        this[kPools].set(originKey, pool)
+      }
+
+      // Dispatch the request through the per-origin pool
+      return pool[kDispatch](opts, handler)
+    } catch (err) {
+      debug('dispatch error:', err)
+      if (typeof handler.onResponseError === 'function') {
+        handler.onResponseError(null, err)
+        return false
+      } else if (typeof handler.onError === 'function') {
+        handler.onError(err)
+        return false
+      } else {
+        throw err
+      }
+    }
+  }
+
+  async [kClose] () {
+    const closePromises = []
+    for (const pool of this[kPools].values()) {
+      closePromises.push(pool.close())
+    }
+    this[kPools].clear()
+    await Promise.all(closePromises)
+  }
+
+  async [kDestroy] (err) {
+    const destroyPromises = []
+    for (const pool of this[kPools].values()) {
+      destroyPromises.push(pool.destroy(err))
+    }
+    this[kPools].clear()
+    await Promise.all(destroyPromises)
+  }
+}
+
+module.exports = Socks5ProxyAgent
 
 
 /***/ }),
@@ -23445,9 +25604,11 @@ module.exports = {
 
 // We include a version number for the Dispatcher API. In case of breaking changes,
 // this version number must be increased to avoid conflicts.
-const globalDispatcher = Symbol.for('undici.globalDispatcher.1')
+const globalDispatcher = Symbol.for('undici.globalDispatcher.2')
+const legacyGlobalDispatcher = Symbol.for('undici.globalDispatcher.1')
 const { InvalidArgumentError } = __nccwpck_require__(45253)
 const Agent = __nccwpck_require__(68135)
+const Dispatcher1Wrapper = __nccwpck_require__(68068)
 
 if (getGlobalDispatcher() === undefined) {
   setGlobalDispatcher(new Agent())
@@ -23457,8 +25618,18 @@ function setGlobalDispatcher (agent) {
   if (!agent || typeof agent.dispatch !== 'function') {
     throw new InvalidArgumentError('Argument agent must implement Agent')
   }
+
   Object.defineProperty(globalThis, globalDispatcher, {
     value: agent,
+    writable: true,
+    enumerable: false,
+    configurable: false
+  })
+
+  const legacyAgent = agent instanceof Dispatcher1Wrapper ? agent : new Dispatcher1Wrapper(agent)
+
+  Object.defineProperty(globalThis, legacyGlobalDispatcher, {
+    value: legacyAgent,
     writable: true,
     enumerable: false,
     configurable: false
@@ -23636,7 +25807,7 @@ class CacheHandler {
     }
 
     const cacheControlDirectives = cacheControlHeader ? parseCacheControlHeader(cacheControlHeader) : {}
-    if (!canCacheResponse(this.#cacheType, statusCode, resHeaders, cacheControlDirectives)) {
+    if (!canCacheResponse(this.#cacheType, statusCode, resHeaders, cacheControlDirectives, this.#cacheKey.headers)) {
       return downstreamOnHeaders()
     }
 
@@ -23674,7 +25845,8 @@ class CacheHandler {
       }
     }
 
-    const deleteAt = determineDeleteAt(baseTime, cacheControlDirectives, absoluteStaleAt)
+    const cachedAt = resAge ? now - resAge : now
+    const deleteAt = determineDeleteAt(baseTime, cachedAt, cacheControlDirectives, absoluteStaleAt)
     const strippedHeaders = stripNecessaryHeaders(resHeaders, cacheControlDirectives)
 
     /**
@@ -23686,7 +25858,7 @@ class CacheHandler {
       headers: strippedHeaders,
       vary: varyDirectives,
       cacheControlDirectives,
-      cachedAt: resAge ? now - resAge : now,
+      cachedAt,
       staleAt: absoluteStaleAt,
       deleteAt
     }
@@ -23841,8 +26013,9 @@ class CacheHandler {
  * @param {number} statusCode
  * @param {import('../../types/header.d.ts').IncomingHttpHeaders} resHeaders
  * @param {import('../../types/cache-interceptor.d.ts').default.CacheControlDirectives} cacheControlDirectives
+ * @param {import('../../types/header.d.ts').IncomingHttpHeaders} [reqHeaders]
  */
-function canCacheResponse (cacheType, statusCode, resHeaders, cacheControlDirectives) {
+function canCacheResponse (cacheType, statusCode, resHeaders, cacheControlDirectives, reqHeaders) {
   // Status code must be final and understood.
   if (statusCode < 200 || NOT_UNDERSTOOD_STATUS_CODES.includes(statusCode)) {
     return false
@@ -23873,8 +26046,16 @@ function canCacheResponse (cacheType, statusCode, resHeaders, cacheControlDirect
   }
 
   // https://www.rfc-editor.org/rfc/rfc9111.html#name-storing-responses-to-authen
-  if (resHeaders.authorization) {
-    if (!cacheControlDirectives.public || typeof resHeaders.authorization !== 'string') {
+  if (reqHeaders?.authorization) {
+    if (
+      !cacheControlDirectives.public &&
+      !cacheControlDirectives['s-maxage'] &&
+      !cacheControlDirectives['must-revalidate']
+    ) {
+      return false
+    }
+
+    if (typeof reqHeaders.authorization !== 'string') {
       return false
     }
 
@@ -23970,18 +26151,19 @@ function determineStaleAt (cacheType, now, age, resHeaders, responseDate, cacheC
 
   if (cacheControlDirectives.immutable) {
     // https://www.rfc-editor.org/rfc/rfc8246.html#section-2.2
-    return 31536000
+    return 31536000000
   }
 
   return undefined
 }
 
 /**
- * @param {number} now
+ * @param {number} baseTime
+ * @param {number} cachedAt
  * @param {import('../../types/cache-interceptor.d.ts').default.CacheControlDirectives} cacheControlDirectives
  * @param {number} staleAt
  */
-function determineDeleteAt (now, cacheControlDirectives, staleAt) {
+function determineDeleteAt (baseTime, cachedAt, cacheControlDirectives, staleAt) {
   let staleWhileRevalidate = -Infinity
   let staleIfError = -Infinity
   let immutable = -Infinity
@@ -23994,8 +26176,22 @@ function determineDeleteAt (now, cacheControlDirectives, staleAt) {
     staleIfError = staleAt + (cacheControlDirectives['stale-if-error'] * 1000)
   }
 
-  if (staleWhileRevalidate === -Infinity && staleIfError === -Infinity) {
-    immutable = now + 31536000000
+  if (cacheControlDirectives.immutable && staleWhileRevalidate === -Infinity && staleIfError === -Infinity) {
+    immutable = cachedAt + 31536000000
+  }
+
+  // When no stale directives or immutable flag, add a revalidation buffer
+  // equal to the freshness lifetime so the entry survives past staleAt long
+  // enough to be revalidated instead of silently disappearing.
+  //
+  // Response Date headers only have second precision, so baseTime can trail the
+  // actual cache insertion time by up to ~1s. Pad the buffer by that bounded
+  // skew so short-lived entries do not disappear exactly when they should be
+  // revalidated.
+  if (staleWhileRevalidate === -Infinity && staleIfError === -Infinity && immutable === -Infinity) {
+    const freshnessLifetime = staleAt - baseTime
+    const datePrecisionPadding = Math.min(Math.max(cachedAt - baseTime, 0), 1000)
+    return staleAt + freshnessLifetime + datePrecisionPadding
   }
 
   return Math.max(staleAt, staleWhileRevalidate, staleIfError, immutable)
@@ -24203,7 +26399,6 @@ module.exports = CacheRevalidationHandler
 
 
 const assert = __nccwpck_require__(34589)
-const WrapHandler = __nccwpck_require__(14588)
 
 /**
  * @deprecated
@@ -24218,7 +26413,7 @@ module.exports = class DecoratorHandler {
     if (typeof handler !== 'object' || handler === null) {
       throw new TypeError('handler must be an object')
     }
-    this.#handler = WrapHandler.wrap(handler)
+    this.#handler = handler
   }
 
   onRequestStart (...args) {
@@ -24272,17 +26467,31 @@ module.exports = class DecoratorHandler {
 /***/ }),
 
 /***/ 78589:
-/***/ ((module) => {
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
 
+
+const { RequestAbortedError } = __nccwpck_require__(45253)
 
 /**
  * @typedef {import('../../types/dispatcher.d.ts').default.DispatchHandler} DispatchHandler
  */
 
+const DEFAULT_MAX_BUFFER_SIZE = 5 * 1024 * 1024
+
 /**
- * Handler that buffers response data and notifies multiple waiting handlers.
+ * @typedef {Object} WaitingHandler
+ * @property {DispatchHandler} handler
+ * @property {import('../../types/dispatcher.d.ts').default.DispatchController} controller
+ * @property {Buffer[]} bufferedChunks
+ * @property {number} bufferedBytes
+ * @property {object | null} pendingTrailers
+ * @property {boolean} done
+ */
+
+/**
+ * Handler that forwards response events to multiple waiting handlers.
  * Used for request deduplication.
  *
  * @implements {DispatchHandler}
@@ -24294,14 +26503,14 @@ class DeduplicationHandler {
   #primaryHandler
 
   /**
-   * @type {DispatchHandler[]}
+   * @type {WaitingHandler[]}
    */
   #waitingHandlers = []
 
   /**
-   * @type {Buffer[]}
+   * @type {number}
    */
-  #chunks = []
+  #maxBufferSize = DEFAULT_MAX_BUFFER_SIZE
 
   /**
    * @type {number}
@@ -24324,6 +26533,21 @@ class DeduplicationHandler {
   #aborted = false
 
   /**
+   * @type {boolean}
+   */
+  #responseStarted = false
+
+  /**
+   * @type {boolean}
+   */
+  #responseDataStarted = false
+
+  /**
+   * @type {boolean}
+   */
+  #completed = false
+
+  /**
    * @type {import('../../types/dispatcher.d.ts').default.DispatchController | null}
    */
   #controller = null
@@ -24336,22 +26560,60 @@ class DeduplicationHandler {
   /**
    * @param {DispatchHandler} primaryHandler The primary handler
    * @param {() => void} onComplete Callback when request completes
+   * @param {number} [maxBufferSize] Maximum paused buffer size per waiting handler
    */
-  constructor (primaryHandler, onComplete) {
+  constructor (primaryHandler, onComplete, maxBufferSize = DEFAULT_MAX_BUFFER_SIZE) {
     this.#primaryHandler = primaryHandler
     this.#onComplete = onComplete
+    this.#maxBufferSize = maxBufferSize
   }
 
   /**
-   * Add a waiting handler that will receive the buffered response
+   * Add a waiting handler that will receive response events.
+   * Returns false if deduplication can no longer safely attach this handler.
+   *
    * @param {DispatchHandler} handler
+   * @returns {boolean}
    */
   addWaitingHandler (handler) {
-    this.#waitingHandlers.push(handler)
+    if (this.#completed || this.#responseDataStarted) {
+      return false
+    }
+
+    const waitingHandler = this.#createWaitingHandler(handler)
+    const waitingController = waitingHandler.controller
+
+    try {
+      handler.onRequestStart?.(waitingController, null)
+
+      if (waitingController.aborted) {
+        waitingHandler.done = true
+        return true
+      }
+
+      if (this.#responseStarted) {
+        handler.onResponseStart?.(
+          waitingController,
+          this.#statusCode,
+          this.#headers,
+          this.#statusMessage
+        )
+      }
+    } catch {
+      // Ignore errors from waiting handlers
+      waitingHandler.done = true
+      return true
+    }
+
+    if (!waitingController.aborted) {
+      this.#waitingHandlers.push(waitingHandler)
+    }
+
+    return true
   }
 
   /**
-   * @param {() => void} abort
+   * @param {import('../../types/dispatcher.d.ts').default.DispatchController} controller
    * @param {any} context
    */
   onRequestStart (controller, context) {
@@ -24376,10 +26638,38 @@ class DeduplicationHandler {
    * @param {string} statusMessage
    */
   onResponseStart (controller, statusCode, headers, statusMessage) {
+    this.#responseStarted = true
     this.#statusCode = statusCode
     this.#headers = headers
     this.#statusMessage = statusMessage
+
     this.#primaryHandler.onResponseStart?.(controller, statusCode, headers, statusMessage)
+
+    for (const waitingHandler of this.#waitingHandlers) {
+      const { handler, controller: waitingController } = waitingHandler
+
+      if (waitingHandler.done || waitingController.aborted) {
+        waitingHandler.done = true
+        continue
+      }
+
+      try {
+        handler.onResponseStart?.(
+          waitingController,
+          statusCode,
+          headers,
+          statusMessage
+        )
+      } catch {
+        // Ignore errors from waiting handlers
+      }
+
+      if (waitingController.aborted) {
+        waitingHandler.done = true
+      }
+    }
+
+    this.#pruneDoneWaitingHandlers()
   }
 
   /**
@@ -24387,9 +26677,41 @@ class DeduplicationHandler {
    * @param {Buffer} chunk
    */
   onResponseData (controller, chunk) {
-    // Buffer the chunk for waiting handlers
-    this.#chunks.push(Buffer.from(chunk))
+    if (this.#aborted || this.#completed) {
+      return
+    }
+
+    this.#responseDataStarted = true
+
     this.#primaryHandler.onResponseData?.(controller, chunk)
+
+    for (const waitingHandler of this.#waitingHandlers) {
+      const { handler, controller: waitingController } = waitingHandler
+
+      if (waitingHandler.done || waitingController.aborted) {
+        waitingHandler.done = true
+        continue
+      }
+
+      if (waitingController.paused) {
+        this.#bufferWaitingChunk(waitingHandler, chunk)
+        continue
+      }
+
+      try {
+        handler.onResponseData?.(waitingController, chunk)
+      } catch {
+        // Ignore errors from waiting handlers
+      }
+
+      if (waitingController.aborted) {
+        waitingHandler.done = true
+        waitingHandler.bufferedChunks = []
+        waitingHandler.bufferedBytes = 0
+      }
+    }
+
+    this.#pruneDoneWaitingHandlers()
   }
 
   /**
@@ -24397,8 +26719,41 @@ class DeduplicationHandler {
    * @param {object} trailers
    */
   onResponseEnd (controller, trailers) {
+    if (this.#aborted || this.#completed) {
+      return
+    }
+
+    this.#completed = true
     this.#primaryHandler.onResponseEnd?.(controller, trailers)
-    this.#notifyWaitingHandlers()
+
+    for (const waitingHandler of this.#waitingHandlers) {
+      if (waitingHandler.done || waitingHandler.controller.aborted) {
+        waitingHandler.done = true
+        continue
+      }
+
+      this.#flushWaitingHandler(waitingHandler)
+
+      if (waitingHandler.done || waitingHandler.controller.aborted) {
+        waitingHandler.done = true
+        continue
+      }
+
+      if (waitingHandler.controller.paused && waitingHandler.bufferedChunks.length > 0) {
+        waitingHandler.pendingTrailers = trailers
+        continue
+      }
+
+      try {
+        waitingHandler.handler.onResponseEnd?.(waitingHandler.controller, trailers)
+      } catch {
+        // Ignore errors from waiting handlers
+      }
+
+      waitingHandler.done = true
+    }
+
+    this.#pruneDoneWaitingHandlers()
     this.#onComplete?.()
   }
 
@@ -24407,86 +26762,170 @@ class DeduplicationHandler {
    * @param {Error} err
    */
   onResponseError (controller, err) {
+    if (this.#completed) {
+      return
+    }
+
     this.#aborted = true
+    this.#completed = true
+
     this.#primaryHandler.onResponseError?.(controller, err)
-    this.#notifyWaitingHandlersError(err)
+
+    for (const waitingHandler of this.#waitingHandlers) {
+      this.#errorWaitingHandler(waitingHandler, err)
+    }
+
+    this.#waitingHandlers = []
     this.#onComplete?.()
   }
 
   /**
-   * Notify all waiting handlers with the buffered response
+   * @param {DispatchHandler} handler
+   * @returns {WaitingHandler}
    */
-  #notifyWaitingHandlers () {
-    const body = Buffer.concat(this.#chunks)
+  #createWaitingHandler (handler) {
+    /** @type {WaitingHandler} */
+    const waitingHandler = {
+      handler,
+      controller: null,
+      bufferedChunks: [],
+      bufferedBytes: 0,
+      pendingTrailers: null,
+      done: false
+    }
 
-    for (const handler of this.#waitingHandlers) {
-      // Create a simple controller for each waiting handler
-      const waitingController = {
-        resume () {},
-        pause () {},
-        get paused () { return false },
-        get aborted () { return false },
-        get reason () { return null },
-        abort () {}
-      }
+    const state = {
+      aborted: false,
+      paused: false,
+      reason: null
+    }
 
-      try {
-        handler.onRequestStart?.(waitingController, null)
-
-        if (waitingController.aborted) {
-          continue
+    waitingHandler.controller = {
+      resume: () => {
+        if (state.aborted) {
+          return
         }
 
-        handler.onResponseStart?.(
-          waitingController,
-          this.#statusCode,
-          this.#headers,
-          this.#statusMessage
-        )
+        state.paused = false
+        this.#flushWaitingHandler(waitingHandler)
 
-        if (waitingController.aborted) {
-          continue
+        if (
+          this.#completed &&
+          waitingHandler.pendingTrailers &&
+          waitingHandler.bufferedChunks.length === 0 &&
+          !state.paused &&
+          !state.aborted
+        ) {
+          try {
+            waitingHandler.handler.onResponseEnd?.(waitingHandler.controller, waitingHandler.pendingTrailers)
+          } catch {
+            // Ignore errors from waiting handlers
+          }
+
+          waitingHandler.pendingTrailers = null
+          waitingHandler.done = true
         }
 
-        if (body.length > 0) {
-          handler.onResponseData?.(waitingController, body)
+        this.#pruneDoneWaitingHandlers()
+      },
+      pause: () => {
+        if (!state.aborted) {
+          state.paused = true
         }
-
-        handler.onResponseEnd?.(waitingController, {})
-      } catch {
-        // Ignore errors from waiting handlers
+      },
+      get paused () { return state.paused },
+      get aborted () { return state.aborted },
+      get reason () { return state.reason },
+      abort: (reason) => {
+        state.aborted = true
+        state.reason = reason ?? null
+        waitingHandler.done = true
+        waitingHandler.pendingTrailers = null
+        waitingHandler.bufferedChunks = []
+        waitingHandler.bufferedBytes = 0
       }
     }
 
-    this.#waitingHandlers = []
-    this.#chunks = []
+    return waitingHandler
   }
 
   /**
-   * Notify all waiting handlers of an error
-   * @param {Error} err
+   * @param {WaitingHandler} waitingHandler
+   * @param {Buffer} chunk
    */
-  #notifyWaitingHandlersError (err) {
-    for (const handler of this.#waitingHandlers) {
-      const waitingController = {
-        resume () {},
-        pause () {},
-        get paused () { return false },
-        get aborted () { return true },
-        get reason () { return err },
-        abort () {}
-      }
+  #bufferWaitingChunk (waitingHandler, chunk) {
+    if (waitingHandler.done || waitingHandler.controller.aborted) {
+      waitingHandler.done = true
+      waitingHandler.bufferedChunks = []
+      waitingHandler.bufferedBytes = 0
+      return
+    }
+
+    const bufferedChunk = Buffer.from(chunk)
+    waitingHandler.bufferedChunks.push(bufferedChunk)
+    waitingHandler.bufferedBytes += bufferedChunk.length
+
+    if (waitingHandler.bufferedBytes > this.#maxBufferSize) {
+      const err = new RequestAbortedError(`Deduplicated waiting handler exceeded maxBufferSize (${this.#maxBufferSize} bytes) while paused`)
+      this.#errorWaitingHandler(waitingHandler, err)
+    }
+  }
+
+  /**
+   * @param {WaitingHandler} waitingHandler
+   */
+  #flushWaitingHandler (waitingHandler) {
+    const { handler, controller } = waitingHandler
+
+    while (
+      !waitingHandler.done &&
+      !controller.aborted &&
+      !controller.paused &&
+      waitingHandler.bufferedChunks.length > 0
+    ) {
+      const bufferedChunk = waitingHandler.bufferedChunks.shift()
+      waitingHandler.bufferedBytes -= bufferedChunk.length
 
       try {
-        handler.onRequestStart?.(waitingController, null)
-        handler.onResponseError?.(waitingController, err)
+        handler.onResponseData?.(controller, bufferedChunk)
       } catch {
         // Ignore errors from waiting handlers
       }
+
+      if (controller.aborted) {
+        waitingHandler.done = true
+        waitingHandler.pendingTrailers = null
+        waitingHandler.bufferedChunks = []
+        waitingHandler.bufferedBytes = 0
+        break
+      }
+    }
+  }
+
+  /**
+   * @param {WaitingHandler} waitingHandler
+   * @param {Error} err
+   */
+  #errorWaitingHandler (waitingHandler, err) {
+    if (waitingHandler.done) {
+      return
     }
 
-    this.#waitingHandlers = []
-    this.#chunks = []
+    waitingHandler.done = true
+    waitingHandler.pendingTrailers = null
+    waitingHandler.bufferedChunks = []
+    waitingHandler.bufferedBytes = 0
+
+    try {
+      waitingHandler.controller.abort(err)
+      waitingHandler.handler.onResponseError?.(waitingHandler.controller, err)
+    } catch {
+      // Ignore errors from waiting handlers
+    }
+  }
+
+  #pruneDoneWaitingHandlers () {
+    this.#waitingHandlers = this.#waitingHandlers.filter(waitingHandler => waitingHandler.done === false)
   }
 }
 
@@ -24502,29 +26941,12 @@ module.exports = DeduplicationHandler
 
 
 const util = __nccwpck_require__(23270)
-const { kBodyUsed } = __nccwpck_require__(70885)
 const assert = __nccwpck_require__(34589)
 const { InvalidArgumentError } = __nccwpck_require__(45253)
-const EE = __nccwpck_require__(78474)
 
 const redirectableStatusCodes = [300, 301, 302, 303, 307, 308]
 
-const kBody = Symbol('body')
-
 const noop = () => {}
-
-class BodyAsyncIterable {
-  constructor (body) {
-    this[kBody] = body
-    this[kBodyUsed] = false
-  }
-
-  async * [Symbol.asyncIterator] () {
-    assert(!this[kBodyUsed], 'disturbed')
-    this[kBodyUsed] = true
-    yield * this[kBody]
-  }
-}
 
 class RedirectHandler {
   static buildDispatch (dispatcher, maxRedirections) {
@@ -24541,47 +26963,18 @@ class RedirectHandler {
       throw new InvalidArgumentError('maxRedirections must be a positive number')
     }
 
+    if (opts.throwOnMaxRedirect != null && typeof opts.throwOnMaxRedirect !== 'boolean') {
+      throw new InvalidArgumentError('throwOnMaxRedirect must be a boolean')
+    }
+
     this.dispatch = dispatch
     this.location = null
     const { maxRedirections: _, ...cleanOpts } = opts
     this.opts = cleanOpts // opts must be a copy, exclude maxRedirections
+    this.opts.body = util.wrapRequestBody(this.opts.body)
     this.maxRedirections = maxRedirections
     this.handler = handler
     this.history = []
-
-    if (util.isStream(this.opts.body)) {
-      // TODO (fix): Provide some way for the user to cache the file to e.g. /tmp
-      // so that it can be dispatched again?
-      // TODO (fix): Do we need 100-expect support to provide a way to do this properly?
-      if (util.bodyLength(this.opts.body) === 0) {
-        this.opts.body
-          .on('data', function () {
-            assert(false)
-          })
-      }
-
-      if (typeof this.opts.body.readableDidRead !== 'boolean') {
-        this.opts.body[kBodyUsed] = false
-        EE.prototype.on.call(this.opts.body, 'data', function () {
-          this[kBodyUsed] = true
-        })
-      }
-    } else if (this.opts.body && typeof this.opts.body.pipeTo === 'function') {
-      // TODO (fix): We can't access ReadableStream internal state
-      // to determine whether or not it has been disturbed. This is just
-      // a workaround.
-      this.opts.body = new BodyAsyncIterable(this.opts.body)
-    } else if (
-      this.opts.body &&
-      typeof this.opts.body !== 'string' &&
-      !ArrayBuffer.isView(this.opts.body) &&
-      util.isIterable(this.opts.body) &&
-      !util.isFormDataLike(this.opts.body)
-    ) {
-      // TODO: Should we allow re-using iterable if !this.opts.idempotent
-      // or through some other flag?
-      this.opts.body = new BodyAsyncIterable(this.opts.body)
-    }
   }
 
   onRequestStart (controller, context) {
@@ -24723,7 +27116,8 @@ function cleanRequestHeaders (headers, removeContent, unknownOrigin) {
       }
     }
   } else if (headers && typeof headers === 'object') {
-    const entries = typeof headers[Symbol.iterator] === 'function' ? headers : Object.entries(headers)
+    const entries = util.hasSafeIterator(headers) ? headers : Object.entries(headers)
+
     for (const [key, value] of entries) {
       if (!shouldRemoveHeader(key, removeContent, unknownOrigin)) {
         ret.push(key, value)
@@ -24749,7 +27143,6 @@ const assert = __nccwpck_require__(34589)
 
 const { kRetryHandlerDefaultRetry } = __nccwpck_require__(70885)
 const { RequestRetryError } = __nccwpck_require__(45253)
-const WrapHandler = __nccwpck_require__(14588)
 const {
   isDisturbed,
   parseRangeHeader,
@@ -24781,7 +27174,7 @@ class RetryHandler {
 
     this.error = null
     this.dispatch = dispatch
-    this.handler = WrapHandler.wrap(handler)
+    this.handler = handler
     this.opts = { ...dispatchOpts, body: wrapRequestBody(opts.body) }
     this.retryOpts = {
       throwOnError: throwOnError ?? true,
@@ -24815,6 +27208,8 @@ class RetryHandler {
     this.start = 0
     this.end = null
     this.etag = null
+    this.statusCode = null
+    this.headers = null
   }
 
   onResponseStartWithRetry (controller, statusCode, headers, statusMessage, err) {
@@ -24930,6 +27325,8 @@ class RetryHandler {
   onResponseStart (controller, statusCode, headers, statusMessage) {
     this.error = null
     this.retryCount += 1
+    this.statusCode = statusCode
+    this.headers = headers
 
     if (statusCode >= 300) {
       const err = new RequestRetryError('Request failed', statusCode, {
@@ -25067,6 +27464,16 @@ class RetryHandler {
     }
 
     if (!this.error) {
+      // Verify that the received body length matches the expected range
+      // when we have a finite end position (from Content-Length or Content-Range)
+      if (this.end != null && Number.isFinite(this.end)) {
+        if (this.start !== this.end + 1) {
+          throw new RequestRetryError('Content-Range mismatch', this.statusCode, {
+            headers: this.headers,
+            data: { count: this.retryCount }
+          })
+        }
+      }
       this.retryCount = 0
       return this.handler.onResponseEnd?.(controller, trailers)
     }
@@ -25138,213 +27545,6 @@ class RetryHandler {
 }
 
 module.exports = RetryHandler
-
-
-/***/ }),
-
-/***/ 91767:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-const { parseHeaders } = __nccwpck_require__(23270)
-const { InvalidArgumentError } = __nccwpck_require__(45253)
-
-const kResume = Symbol('resume')
-
-class UnwrapController {
-  #paused = false
-  #reason = null
-  #aborted = false
-  #abort
-
-  [kResume] = null
-
-  constructor (abort) {
-    this.#abort = abort
-  }
-
-  pause () {
-    this.#paused = true
-  }
-
-  resume () {
-    if (this.#paused) {
-      this.#paused = false
-      this[kResume]?.()
-    }
-  }
-
-  abort (reason) {
-    if (!this.#aborted) {
-      this.#aborted = true
-      this.#reason = reason
-      this.#abort(reason)
-    }
-  }
-
-  get aborted () {
-    return this.#aborted
-  }
-
-  get reason () {
-    return this.#reason
-  }
-
-  get paused () {
-    return this.#paused
-  }
-}
-
-module.exports = class UnwrapHandler {
-  #handler
-  #controller
-
-  constructor (handler) {
-    this.#handler = handler
-  }
-
-  static unwrap (handler) {
-    // TODO (fix): More checks...
-    return !handler.onRequestStart ? handler : new UnwrapHandler(handler)
-  }
-
-  onConnect (abort, context) {
-    this.#controller = new UnwrapController(abort)
-    this.#handler.onRequestStart?.(this.#controller, context)
-  }
-
-  onUpgrade (statusCode, rawHeaders, socket) {
-    this.#handler.onRequestUpgrade?.(this.#controller, statusCode, parseHeaders(rawHeaders), socket)
-  }
-
-  onHeaders (statusCode, rawHeaders, resume, statusMessage) {
-    this.#controller[kResume] = resume
-    this.#handler.onResponseStart?.(this.#controller, statusCode, parseHeaders(rawHeaders), statusMessage)
-    return !this.#controller.paused
-  }
-
-  onData (data) {
-    this.#handler.onResponseData?.(this.#controller, data)
-    return !this.#controller.paused
-  }
-
-  onComplete (rawTrailers) {
-    this.#handler.onResponseEnd?.(this.#controller, parseHeaders(rawTrailers))
-  }
-
-  onError (err) {
-    if (!this.#handler.onResponseError) {
-      throw new InvalidArgumentError('invalid onError method')
-    }
-
-    this.#handler.onResponseError?.(this.#controller, err)
-  }
-}
-
-
-/***/ }),
-
-/***/ 14588:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-const { InvalidArgumentError } = __nccwpck_require__(45253)
-
-module.exports = class WrapHandler {
-  #handler
-
-  constructor (handler) {
-    this.#handler = handler
-  }
-
-  static wrap (handler) {
-    // TODO (fix): More checks...
-    return handler.onRequestStart ? handler : new WrapHandler(handler)
-  }
-
-  // Unwrap Interface
-
-  onConnect (abort, context) {
-    return this.#handler.onConnect?.(abort, context)
-  }
-
-  onHeaders (statusCode, rawHeaders, resume, statusMessage) {
-    return this.#handler.onHeaders?.(statusCode, rawHeaders, resume, statusMessage)
-  }
-
-  onUpgrade (statusCode, rawHeaders, socket) {
-    return this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
-  }
-
-  onData (data) {
-    return this.#handler.onData?.(data)
-  }
-
-  onComplete (trailers) {
-    return this.#handler.onComplete?.(trailers)
-  }
-
-  onError (err) {
-    if (!this.#handler.onError) {
-      throw err
-    }
-
-    return this.#handler.onError?.(err)
-  }
-
-  // Wrap Interface
-
-  onRequestStart (controller, context) {
-    this.#handler.onConnect?.((reason) => controller.abort(reason), context)
-  }
-
-  onRequestUpgrade (controller, statusCode, headers, socket) {
-    const rawHeaders = []
-    for (const [key, val] of Object.entries(headers)) {
-      rawHeaders.push(Buffer.from(key), Array.isArray(val) ? val.map(v => Buffer.from(v)) : Buffer.from(val))
-    }
-
-    this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
-  }
-
-  onResponseStart (controller, statusCode, headers, statusMessage) {
-    const rawHeaders = []
-    for (const [key, val] of Object.entries(headers)) {
-      rawHeaders.push(Buffer.from(key), Array.isArray(val) ? val.map(v => Buffer.from(v)) : Buffer.from(val))
-    }
-
-    if (this.#handler.onHeaders?.(statusCode, rawHeaders, () => controller.resume(), statusMessage) === false) {
-      controller.pause()
-    }
-  }
-
-  onResponseData (controller, data) {
-    if (this.#handler.onData?.(data) === false) {
-      controller.pause()
-    }
-  }
-
-  onResponseEnd (controller, trailers) {
-    const rawTrailers = []
-    for (const [key, val] of Object.entries(trailers)) {
-      rawTrailers.push(Buffer.from(key), Array.isArray(val) ? val.map(v => Buffer.from(v)) : Buffer.from(val))
-    }
-
-    this.#handler.onComplete?.(rawTrailers)
-  }
-
-  onResponseError (controller, err) {
-    if (!this.#handler.onError) {
-      throw new InvalidArgumentError('invalid onError method')
-    }
-
-    this.#handler.onError?.(err)
-  }
-}
 
 
 /***/ }),
@@ -25479,30 +27679,39 @@ function handleUncachedResponse (
 ) {
   if (reqCacheControl?.['only-if-cached']) {
     let aborted = false
+
+    const controller = {
+      paused: false,
+      rawHeaders: [],
+      rawTrailers: [],
+      pause () {
+        this.paused = true
+      },
+      resume () {
+        this.paused = false
+      },
+      abort: (reason) => {
+        aborted = true
+        handler.onResponseError?.(controller, reason ?? new AbortError())
+      }
+    }
+
     try {
-      if (typeof handler.onConnect === 'function') {
-        handler.onConnect(() => {
-          aborted = true
-        })
+      handler.onRequestStart?.(controller, null)
 
-        if (aborted) {
-          return
-        }
+      if (aborted) {
+        return
       }
 
-      if (typeof handler.onHeaders === 'function') {
-        handler.onHeaders(504, [], nop, 'Gateway Timeout')
-        if (aborted) {
-          return
-        }
+      handler.onResponseStart?.(controller, 504, {}, 'Gateway Timeout')
+      if (aborted) {
+        return
       }
 
-      if (typeof handler.onComplete === 'function') {
-        handler.onComplete([])
-      }
+      handler.onResponseEnd?.(controller, {})
     } catch (err) {
-      if (typeof handler.onError === 'function') {
-        handler.onError(err)
+      if (typeof handler.onResponseError === 'function') {
+        handler.onResponseError(controller, err)
       }
     }
 
@@ -25530,6 +27739,8 @@ function sendCachedValue (handler, opts, result, age, context, isStale) {
   assert(!stream.readableDidRead, 'stream should not be readableDidRead')
 
   const controller = {
+    rawHeaders: [],
+    rawTrailers: [],
     resume () {
       stream.resume()
     },
@@ -25581,6 +27792,8 @@ function sendCachedValue (handler, opts, result, age, context, isStale) {
     //  https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Warning
     headers.warning = '110 - "response is stale"'
   }
+
+  controller.rawHeaders = util.toRawHeaders(headers)
 
   handler.onResponseStart?.(controller, result.statusCode, headers, result.statusMessage)
 
@@ -25861,7 +28074,6 @@ module.exports = (opts = {}) => {
 const { createInflate, createGunzip, createBrotliDecompress, createZstdDecompress } = __nccwpck_require__(38522)
 const { pipeline } = __nccwpck_require__(57075)
 const DecoratorHandler = __nccwpck_require__(83337)
-const { runtimeFeatures } = __nccwpck_require__(52231)
 
 /** @typedef {import('node:stream').Transform} Transform */
 /** @typedef {import('node:stream').Transform} Controller */
@@ -25875,7 +28087,7 @@ const supportedEncodings = {
   deflate: createInflate,
   compress: createInflate,
   'x-compress': createInflate,
-  ...(runtimeFeatures.has('zstd') ? { zstd: createZstdDecompress } : {})
+  zstd: createZstdDecompress
 }
 
 const defaultSkipStatusCodes = /** @type {const} */ ([204, 304])
@@ -26039,6 +28251,33 @@ class DecompressHandler extends DecoratorHandler {
     // Remove compression headers since we're decompressing
     const { 'content-encoding': _, 'content-length': __, ...newHeaders } = headers
 
+    if (controller?.rawHeaders) {
+      const rawHeaders = controller.rawHeaders
+
+      if (Array.isArray(rawHeaders)) {
+        const filteredHeaders = []
+        for (let i = 0; i < rawHeaders.length; i += 2) {
+          const headerName = rawHeaders[i]
+          const name = Buffer.isBuffer(headerName) ? headerName.toString('latin1') : `${headerName}`
+          const lowerName = name.toLowerCase()
+
+          if (lowerName === 'content-encoding' || lowerName === 'content-length') {
+            continue
+          }
+
+          filteredHeaders.push(rawHeaders[i], rawHeaders[i + 1])
+        }
+        controller.rawHeaders = filteredHeaders
+      } else if (typeof rawHeaders === 'object') {
+        for (const name of Object.keys(rawHeaders)) {
+          const lowerName = name.toLowerCase()
+          if (lowerName === 'content-encoding' || lowerName === 'content-length') {
+            delete rawHeaders[name]
+          }
+        }
+      }
+    }
+
     if (this.#decompressors.length === 1) {
       this.#setupSingleDecompressor(controller)
     } else {
@@ -26140,7 +28379,8 @@ module.exports = (opts = {}) => {
   const {
     methods = ['GET'],
     skipHeaderNames = [],
-    excludeHeaderNames = []
+    excludeHeaderNames = [],
+    maxBufferSize = 5 * 1024 * 1024
   } = opts
 
   if (typeof opts !== 'object' || opts === null) {
@@ -26163,6 +28403,10 @@ module.exports = (opts = {}) => {
 
   if (!Array.isArray(excludeHeaderNames)) {
     throw new TypeError(`expected opts.excludeHeaderNames to be an array, got ${typeof excludeHeaderNames}`)
+  }
+
+  if (!Number.isFinite(maxBufferSize) || maxBufferSize <= 0) {
+    throw new TypeError(`expected opts.maxBufferSize to be a positive finite number, got ${maxBufferSize}`)
   }
 
   // Convert to lowercase Set for case-insensitive header matching
@@ -26203,9 +28447,13 @@ module.exports = (opts = {}) => {
       // Check if there's already a pending request for this key
       const pendingHandler = pendingRequests.get(dedupeKey)
       if (pendingHandler) {
-        // Add this handler to the waiting list
-        pendingHandler.addWaitingHandler(handler)
-        return true
+        // Add this handler to the waiting list when safe.
+        // If body streaming has already started, this request must be sent independently.
+        if (pendingHandler.addWaitingHandler(handler)) {
+          return true
+        }
+
+        return dispatch(opts, handler)
       }
 
       // Create a new deduplication handler
@@ -26217,7 +28465,8 @@ module.exports = (opts = {}) => {
           if (pendingRequestsChannel.hasSubscribers) {
             pendingRequestsChannel.publish({ size: pendingRequests.size, key: dedupeKey, type: 'removed' })
           }
-        }
+        },
+        maxBufferSize
       )
 
       // Register the pending request
@@ -26244,6 +28493,105 @@ const { lookup } = __nccwpck_require__(40610)
 const DecoratorHandler = __nccwpck_require__(83337)
 const { InvalidArgumentError, InformationalError } = __nccwpck_require__(45253)
 const maxInt = Math.pow(2, 31) - 1
+
+function hasSafeIterator (headers) {
+  const prototype = Object.getPrototypeOf(headers)
+  const ownIterator = Object.hasOwn(headers, Symbol.iterator)
+  return ownIterator || (prototype != null && prototype !== Object.prototype && typeof headers[Symbol.iterator] === 'function')
+}
+
+function isHostHeader (key) {
+  return typeof key === 'string' && key.toLowerCase() === 'host'
+}
+
+function normalizeHeaders (headers) {
+  if (headers == null) {
+    return null
+  }
+
+  if (Array.isArray(headers)) {
+    if (headers.length === 0 || !Array.isArray(headers[0])) {
+      return headers
+    }
+
+    const normalized = []
+    for (const header of headers) {
+      if (Array.isArray(header) && header.length === 2) {
+        normalized.push(header[0], header[1])
+      } else {
+        normalized.push(header)
+      }
+    }
+
+    return normalized
+  }
+
+  if (typeof headers === 'object' && hasSafeIterator(headers)) {
+    const normalized = []
+    for (const header of headers) {
+      if (Array.isArray(header) && header.length === 2) {
+        normalized.push(header[0], header[1])
+      } else {
+        normalized.push(header)
+      }
+    }
+
+    return normalized
+  }
+
+  return headers
+}
+
+function hasHostHeader (headers) {
+  if (headers == null) {
+    return false
+  }
+
+  if (Array.isArray(headers)) {
+    if (headers.length === 0) {
+      return false
+    }
+
+    for (let i = 0; i < headers.length; i += 2) {
+      if (isHostHeader(headers[i])) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  if (typeof headers === 'object') {
+    for (const key in headers) {
+      if (isHostHeader(key)) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+function withHostHeader (host, headers) {
+  const normalizedHeaders = normalizeHeaders(headers)
+
+  if (hasHostHeader(normalizedHeaders)) {
+    return normalizedHeaders
+  }
+
+  if (Array.isArray(normalizedHeaders)) {
+    return ['host', host, ...normalizedHeaders]
+  }
+
+  if (normalizedHeaders && typeof normalizedHeaders === 'object') {
+    return {
+      host,
+      ...normalizedHeaders
+    }
+  }
+
+  return { host }
+}
 
 class DNSStorage {
   #maxItems = 0
@@ -26573,8 +28921,9 @@ class DNSDispatchHandler extends DecoratorHandler {
           const dispatchOpts = {
             ...this.#opts,
             origin: `${this.#origin.protocol}//${
-                ip.family === 6 ? `[${ip.address}]` : ip.address
-              }${port}`
+              ip.family === 6 ? `[${ip.address}]` : ip.address
+            }${port}`,
+            headers: withHostHeader(this.#origin.host, this.#opts.headers)
           }
           this.#dispatch(dispatchOpts, this)
           return
@@ -26693,10 +29042,7 @@ module.exports = interceptorOpts => {
           ...origDispatchOpts,
           servername: origin.hostname, // For SNI on TLS
           origin: newOrigin.origin,
-          headers: {
-            host: origin.host,
-            ...origDispatchOpts.headers
-          }
+          headers: withHostHeader(origin.host, origDispatchOpts.headers)
         }
 
         dispatch(
@@ -26844,16 +29190,16 @@ module.exports = createDumpInterceptor
 
 const RedirectHandler = __nccwpck_require__(32820)
 
-function createRedirectInterceptor ({ maxRedirections: defaultMaxRedirections } = {}) {
+function createRedirectInterceptor ({ maxRedirections: defaultMaxRedirections, throwOnMaxRedirect: defaultThrowOnMaxRedirect } = {}) {
   return (dispatch) => {
     return function Intercept (opts, handler) {
-      const { maxRedirections = defaultMaxRedirections, ...rest } = opts
+      const { maxRedirections = defaultMaxRedirections, throwOnMaxRedirect = defaultThrowOnMaxRedirect, ...rest } = opts
 
       if (maxRedirections == null || maxRedirections === 0) {
         return dispatch(opts, handler)
       }
 
-      const dispatchOpts = { ...rest } // Stop sub dispatcher from also redirecting.
+      const dispatchOpts = { ...rest, throwOnMaxRedirect } // Stop sub dispatcher from also redirecting.
       const redirectHandler = new RedirectHandler(dispatch, maxRedirections, dispatchOpts, handler)
       return dispatch(dispatchOpts, redirectHandler)
     }
@@ -27543,7 +29889,7 @@ exports["default"] = {
 
 const { Buffer } = __nccwpck_require__(4573)
 
-const wasmBase64 = 'AGFzbQEAAAABJwdgAX8Bf2ADf39/AX9gAn9/AGABfwBgBH9/f38Bf2AAAGADf39/AALLAQgDZW52GHdhc21fb25faGVhZGVyc19jb21wbGV0ZQAEA2VudhV3YXNtX29uX21lc3NhZ2VfYmVnaW4AAANlbnYLd2FzbV9vbl91cmwAAQNlbnYOd2FzbV9vbl9zdGF0dXMAAQNlbnYUd2FzbV9vbl9oZWFkZXJfZmllbGQAAQNlbnYUd2FzbV9vbl9oZWFkZXJfdmFsdWUAAQNlbnYMd2FzbV9vbl9ib2R5AAEDZW52GHdhc21fb25fbWVzc2FnZV9jb21wbGV0ZQAAAzU0BQYAAAMAAAAAAAADAQMAAwMDAAACAAAAAAICAgICAgICAgIBAQEBAQEBAQEBAwAAAwAAAAQFAXABExMFAwEAAgYIAX8BQcDZBAsHxQcoBm1lbW9yeQIAC19pbml0aWFsaXplAAgZX19pbmRpcmVjdF9mdW5jdGlvbl90YWJsZQEAC2xsaHR0cF9pbml0AAkYbGxodHRwX3Nob3VsZF9rZWVwX2FsaXZlADcMbGxodHRwX2FsbG9jAAsGbWFsbG9jADkLbGxodHRwX2ZyZWUADARmcmVlAAwPbGxodHRwX2dldF90eXBlAA0VbGxodHRwX2dldF9odHRwX21ham9yAA4VbGxodHRwX2dldF9odHRwX21pbm9yAA8RbGxodHRwX2dldF9tZXRob2QAEBZsbGh0dHBfZ2V0X3N0YXR1c19jb2RlABESbGxodHRwX2dldF91cGdyYWRlABIMbGxodHRwX3Jlc2V0ABMObGxodHRwX2V4ZWN1dGUAFBRsbGh0dHBfc2V0dGluZ3NfaW5pdAAVDWxsaHR0cF9maW5pc2gAFgxsbGh0dHBfcGF1c2UAFw1sbGh0dHBfcmVzdW1lABgbbGxodHRwX3Jlc3VtZV9hZnRlcl91cGdyYWRlABkQbGxodHRwX2dldF9lcnJubwAaF2xsaHR0cF9nZXRfZXJyb3JfcmVhc29uABsXbGxodHRwX3NldF9lcnJvcl9yZWFzb24AHBRsbGh0dHBfZ2V0X2Vycm9yX3BvcwAdEWxsaHR0cF9lcnJub19uYW1lAB4SbGxodHRwX21ldGhvZF9uYW1lAB8SbGxodHRwX3N0YXR1c19uYW1lACAabGxodHRw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AXRrQT5qIQILIAEgAjYCHCABQgA3AhAgAkECdEH01wBqIQACQEHI1QAoAgAiA0EBIAJ0IgdxRQRAIAAgATYCAEHI1QAgAyAHcjYCACABIAA2AhggASABNgIIIAEgATYCDAwBCyAEQRkgAkEBdmtBACACQR9HG3QhAiAAKAIAIQACQANAIAAiAygCBEF4cSAERg0BIAJBHXYhACACQQF0IQIgAyAAQQRxakEQaiIHKAIAIgANAAsgByABNgIAIAEgAzYCGCABIAE2AgwgASABNgIIDAELIAMoAggiACABNgIMIAMgATYCCCABQQA2AhggASADNgIMIAEgADYCCAtB5NUAQeTVACgCAEEBayIAQX8gABs2AgALCwcAIAAtACgLBwAgAC0AKgsHACAALQArCwcAIAAtACkLBwAgAC8BNAsHACAALQAwC0ABBH8gACgCGCEBIAAvAS4hAiAALQAoIQMgACgCOCEEIAAQOCAAIAQ2AjggACADOgAoIAAgAjsBLiAAIAE2AhgL5YUCAgd/A34gASACaiEEAkAgACIDKAIMIgANACADKAIEBEAgAyABNgIECyMAQRBrIgkkAAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAC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C0HjAQwHC0HXAQwGC0HYAQwFC0HZAQwEC0HaAQwDC0HbAQwCC0HdAQwBC0HcAQshAgNAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQCADAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJ/AkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAIAMCfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAg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ogKiAqICogKiAqICogKiAqICogKiAqICogIAogILIAQgAUEBaiIBRw0AC0HJACECDOwCCyABQQFqIQEgA0Evai0AAEEBcQ2lAiADQQA2AhwgAyABNgIUIANBlxA2AhAgA0EKNgIMQQAhAgzrAgsgASAERwRAA0AgAS0AAEEgRw0VIAQgAUEBaiIBRw0AC0H4ACECDOsCC0H4ACECDOoCCyADQQI6ACgMOAtBACECIANBADYCHCADQb8LNgIQIANBAjYCDCADIAFBAWo2AhQM6AILQQAhAgzOAgtBDSECDM0CC0ETIQIMzAILQRUhAgzLAgtBFiECDMoCC0EYIQIMyQILQRkhAgzIAgtBGiECDMcCC0EbIQIMxgILQRwhAgzFAgtBHSECDMQCC0EeIQIMwwILQR8hAgzCAgtBICECDMECC0EiIQIMwAILQSMhAgy/AgtBJSECDL4CC0HlACECDL0CCyADQT02AhwgAyABNgIUIAMgADYCDEEAIQIM1QILIANBGzYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDNQCCyADQSA2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzTAgsgA0ETNgIcIAMgATYCFCADQZgaNgIQIANBFTYCDEEAIQIM0gILIANBCzYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNECCyADQRA2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzQAgsgA0EgNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIMzwILIANBCzYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDM4CCyADQQw2AhwgAyABNgIUIANBpBw2AhAgA0EVNgIMQQAhAgzNAgtBACECIANBADYCHCADIAE2AhQgA0HdDjYCECADQRI2AgwMzAILAkADQAJAIAEtAABBCmsOBAACAgACCyAEIAFBAWoiAUcNAAtB/QEhAgzMAgsCQAJAIAMtADZBAUcNAEEAIQACQCADKAI4IgJFDQAgAigCYCICRQ0AIAMgAhEAACEACyAARQ0AIABBFUcNASADQfwBNgIcIAMgATYCFCADQdwZNgIQIANBFTYCDEEAIQIMzQILQdwBIQIMswILIANBADYCHCADIAE2AhQgA0H5CzYCECADQR82AgxBACECDMsCCwJAAkAgAy0AKEEBaw4CBAEAC0HbASECDLICC0HUASECDLECCyADQQI6ADFBACEAAkAgAygCOCICRQ0AIAIoAgAiAkUNACADIAIRAAAhAAsgAEUEQEHdASECDLECCyAAQRVHBEAgA0EANgIcIAMgATYCFCADQbQMNgIQIANBEDYCDEEAIQIMygILIANB+wE2AhwgAyABNgIUIANBgRo2AhAgA0EVNgIMQQAhAgzJAgsgASAERgRAQfoBIQIMyQILIAEtAABByABGDQEgA0EBOgAoC0HAASECDK4CC0HaASECDK0CCyABIARHBEAgA0EMNgIIIAMgATYCBEHZASECDK0CC0H5ASECDMUCCyABIARGBEBB+AEhAgzFAgsgAS0AAEHIAEcNBCABQQFqIQFB2AEhAgyrAgsgASAERgRAQfcBIQIMxAILAkACQCABLQAAQcUAaw4QAAUFBQUFBQUFBQUFBQUFAQULIAFBAWohAUHWASECDKsCCyABQQFqIQFB1wEhAgyqAgtB9gEhAiABIARGDcICIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbrVAGotAABHDQMgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADMMCCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQLiIARQRAQeMBIQIMqgILIANB9QE2AhwgAyABNgIUIAMgADYCDEEAIQIMwgILQfQBIQIgASAERg3BAiADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEG41QBqLQAARw0CIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzCAgsgA0GBBDsBKCADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQLiIADQMMAgsgA0EANgIAC0EAIQIgA0EANgIcIAMgATYCFCADQeUfNgIQIANBCDYCDAy/AgtB1QEhAgylAgsgA0HzATYCHCADIAE2AhQgAyAANgIMQQAhAgy9AgtBACEAAkAgAygCOCICRQ0AIAIoAkAiAkUNACADIAIRAAAhAAsgAEUNbiAAQRVHBEAgA0EANgIcIAMgATYCFCADQYIPNgIQIANBIDYCDEEAIQIMvQILIANBjwE2AhwgAyABNgIUIANB7Bs2AhAgA0EVNgIMQQAhAgy8AgsgASAERwRAIANBDTYCCCADIAE2AgRB0wEhAgyjAgtB8gEhAgy7AgsgASAERgRAQfEBIQIMuwILAkACQAJAIAEtAABByABrDgsAAQgICAgICAgIAggLIAFBAWohAUHQASECDKMCCyABQQFqIQFB0QEhAgyiAgsgAUEBaiEBQdIBIQIMoQILQfABIQIgASAERg25AiADKAIAIgAgBCABa2ohBiABIABrQQJqIQUDQCABLQAAIABBtdUAai0AAEcNBCAAQQJGDQMgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMuQILQe8BIQIgASAERg24AiADKAIAIgAgBCABa2ohBiABIABrQQFqIQUDQCABLQAAIABBs9UAai0AAEcNAyAAQQFGDQIgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMuAILQe4BIQIgASAERg23AiADKAIAIgAgBCABa2ohBiABIABrQQJqIQUDQCABLQAAIABBsNUAai0AAEcNAiAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMtwILIAMoAgQhACADQgA3AwAgAyAAIAVBAWoiARArIgBFDQIgA0HsATYCHCADIAE2AhQgAyAANgIMQQAhAgy2AgsgA0EANgIACyADKAIEIQAgA0EANgIEIAMgACABECsiAEUNnAIgA0HtATYCHCADIAE2AhQgAyAANgIMQQAhAgy0AgtBzwEhAgyaAgtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDLQCC0HOASECDJoCCyADQesBNgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMsgILIAEgBEYEQEHrASECDLICCyABLQAAQS9GBEAgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GyODYCECADQQg2AgxBACECDLECC0HNASECDJcCCyABIARHBEAgA0EONgIIIAMgATYCBEHMASECDJcCC0HqASECDK8CCyABIARGBEBB6QEhAgyvAgsgAS0AAEEwayIAQf8BcUEKSQRAIAMgADoAKiABQQFqIQFBywEhAgyWAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZcCIANB6AE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILIAEgBEYEQEHnASECDK4CCwJAIAEtAABBLkYEQCABQQFqIQEMAQsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZgCIANB5gE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILQcoBIQIMlAILIAEgBEYEQEHlASECDK0CC0EAIQBBASEFQQEhB0EAIQICQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQCABLQAAQTBrDgoKCQABAgMEBQYICwtBAgwGC0EDDAULQQQMBAtBBQwDC0EGDAILQQcMAQtBCAshAkEAIQVBACEHDAILQQkhAkEBIQBBACEFQQAhBwwBC0EAIQVBASECCyADIAI6ACsgAUEBaiEBAkACQCADLQAuQRBxDQACQAJAAkAgAy0AKg4DAQACBAsgB0UNAwwCCyAADQEMAgsgBUUNAQsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDQIgA0HiATYCHCADIAE2AhQgAyAANgIMQQAhAgyvAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZoCIANB4wE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILIAMoAgQhACADQQA2AgQgAyAAIAEQLyIARQ2YAiADQeQBNgIcIAMgATYCFCADIAA2AgwMrQILQckBIQIMkwILQQAhAAJAIAMoAjgiAkUNACACKAJEIgJFDQAgAyACEQAAIQALAkAgAARAIABBFUYNASADQQA2AhwgAyABNgIUIANBpA02AhAgA0EhNgIMQQAhAgytAgtByAEhAgyTAgsgA0HhATYCHCADIAE2AhQgA0HQGjYCECADQRU2AgxBACECDKsCCyABIARGBEBB4QEhAgyrAgsCQCABLQAAQSBGBEAgA0EAOwE0IAFBAWohAQwBCyADQQA2AhwgAyABNgIUIANBmRE2AhAgA0EJNgIMQQAhAgyrAgtBxwEhAgyRAgsgASAERgRAQeABIQIMqgILAkAgAS0AAEEwa0H/AXEiAkEKSQRAIAFBAWohAQJAIAMvATQiAEGZM0sNACADIABBCmwiADsBNCAAQf7/A3EgAkH//wNzSw0AIAMgACACajsBNAwCC0EAIQIgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDAyrAgsgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDEEAIQIMqgILQcYBIQIMkAILIAEgBEYEQEHfASECDKkCCwJAIAEtAABBMGtB/wFxIgJBCkkEQCABQQFqIQECQCADLwE0IgBBmTNLDQAgAyAAQQpsIgA7ATQgAEH+/wNxIAJB//8Dc0sNACADIAAgAmo7ATQMAgtBACECIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgwMqgILIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgxBACECDKkCC0HFASECDI8CCyABIARGBEBB3gEhAgyoAgsCQCABLQAAQTBrQf8BcSICQQpJBEAgAUEBaiEBAkAgAy8BNCIAQZkzSw0AIAMgAEEKbCIAOwE0IABB/v8DcSACQf//A3NLDQAgAyAAIAJqOwE0DAILQQAhAiADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMDKkCCyADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMQQAhAgyoAgtBxAEhAgyOAgsgASAERgRAQd0BIQIMpwILAkACQAJAAkAgAS0AAEEKaw4XAgMDAAMDAwMDAwMDAwMDAwMDAwMDAwEDCyABQQFqDAULIAFBAWohAUHDASECDI8CCyABQQFqIQEgA0Evai0AAEEBcQ0IIANBADYCHCADIAE2AhQgA0GNCzYCECADQQ02AgxBACECDKcCCyADQQA2AhwgAyABNgIUIANBjQs2AhAgA0ENNgIMQQAhAgymAgsgASAERwRAIANBDzYCCCADIAE2AgRBASECDI0CC0HcASECDKUCCwJAAkADQAJAIAEtAABBCmsOBAIAAAMACyAEIAFBAWoiAUcNAAtB2wEhAgymAgsgAygCBCEAIANBADYCBCADIAAgARAtIgBFBEAgAUEBaiEBDAQLIANB2gE2AhwgAyAANgIMIAMgAUEBajYCFEEAIQIMpQILIAMoAgQhACADQQA2AgQgAyAAIAEQLSIADQEgAUEBagshAUHBASECDIoCCyADQdkBNgIcIAMgADYCDCADIAFBAWo2AhRBACECDKICC0HCASECDIgCCyADQS9qLQAAQQFxDQEgA0EANgIcIAMgATYCFCADQeQcNgIQIANBGTYCDEEAIQIMoAILIAEgBEYEQEHZASEC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IAFBAWohAUGeASECDOQBCyABQQFqIQFBnwEhAgzjAQtBtwEhAiABIARGDfsBIAMoAgAiACAEIAFraiEFIAEgAGtBA2ohBgJAA0AgAS0AACAAQezUAGotAABHDSggAEEDRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPwBCyADQQA2AgAgBkEBaiEBQQ0MKAtBtgEhAiABIARGDfoBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQaHVAGotAABHDScgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPsBCyADQQA2AgAgBkEBaiEBQQwMJwtBtQEhAiABIARGDfkBIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQerUAGotAABHDSYgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPoBCyADQQA2AgAgBkEBaiEBQQMMJgtBtAEhAiABIARGDfgBIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQejUAGotAABHDSUgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPkBCyADQQA2AgAgBkEBaiEBQSYMJQsgASAERgRAQbMBIQIM+AELAkACQCABLQAAQdQAaw4CAAEnCyABQQFqIQFBmQEhAgzfAQsgAUEBaiEBQZoBIQIM3gELQbIBIQIgASAERg32ASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHm1ABqLQAARw0jIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz3AQsgA0EANgIAIAZBAWohAUEnDCMLQbEBIQIgASAERg31ASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHk1ABqLQAARw0iIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz2AQsgA0EANgIAIAZBAWohAUEcDCILQbABIQIgASAERg30ASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEHe1ABqLQAARw0hIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz1AQsgA0EANgIAIAZBAWohAUEGDCELQa8BIQIgASAERg3zASADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANAIAEtAAAgAEHZ1ABqLQAARw0gIABBBEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz0AQsgA0EANgIAIAZBAWohAUEZDCALIAEgBEYEQEGuASECDPMBCwJAAkACQAJAIAEtAABBLWsOIwAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAEkJCQkJAIkJCQDJAsgAUEBaiEBQY4BIQIM3AELIAFBAWohAUGPASECDNsBCyABQQFqIQFBlAEhAgzaAQsgAUEBaiEBQZUBIQIM2QELQa0BIQIgASAERg3xASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHX1ABqLQAARw0eIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzyAQsgA0EANgIAIAZBAWohAUELDB4LIAEgBEYEQEGsASECDPEBCwJAAkAgAS0AAEHBAGsOAwAgASALIAFBAWohAUGQASECDNgBCyABQQFqIQFBkwEhAgzXAQsgASAERgRAQasBIQIM8AELAkACQCABLQAAQcEAaw4PAB8fHx8fHx8fHx8fHx8BHwsgAUEBaiEBQZEBIQIM1wELIAFBAWohAUGSASECDNYBCyABIARGBEBBqgEhAgzvAQsgAS0AAEHMAEcNHCABQQFqIQFBCgwbC0GpASECIAEgBEYN7QEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABB0dQAai0AAEcNGiAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7gELIANBADYCACAGQQFqIQFBHgwaC0GoASECIAEgBEYN7AEgAygCACIAIAQgAWtqIQUgASAAa0EGaiEGAkADQCABLQAAIABBytQAai0AAEcNGSAAQQZGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7QELIANBADYCACAGQQFqIQFBFQwZC0GnASECIAEgBEYN6wEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBx9QAai0AAEcNGCAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7AELIANBADYCACAGQQFqIQFBFwwYC0GmASECIAEgBEYN6gEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABBwdQAai0AAEcNFyAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6wELIANBADYCACAGQQFqIQFBGAwXCyABIARGBEBBpQEhAgzqAQsCQAJAIAEtAABByQBrDgcAGRkZGRkBGQsgAUEBaiEBQYsBIQIM0QELIAFBAWohAUGMASECDNABC0GkASECIAEgBEYN6AEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBptUAai0AAEcNFSAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6QELIANBADYCACAGQQFqIQFBCQwVC0GjASECIAEgBEYN5wEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBpNUAai0AAEcNFCAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6AELIANBADYCACAGQQFqIQFBHwwUC0GiASECIAEgBEYN5gEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBvtQAai0AAEcNEyAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM5wELIANBADYCACAGQQFqIQFBAgwTC0GhASECIAEgBEYN5QEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGA0AgAS0AACAAQbzUAGotAABHDREgAEEBRg0CIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADOUBCyABIARGBEBBoAEhAgzlAQtBASABLQAAQd8ARw0RGiABQQFqIQFBhwEhAgzLAQsgA0EANgIAIAZBAWohAUGIASECDMoBC0GfASECIAEgBEYN4gEgAygCACIAIAQgAWtqIQUgASAAa0EIaiEGAkADQCABLQAAIABBhNUAai0AAEcNDyAAQQhGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM4wELIANBADYCACAGQQFqIQFBKQwPC0GeASECIAEgBEYN4QEgAygCACIAIAQgAWtqIQUgASAAa0EDaiEGAkADQCABLQAAIABBuNQAai0AAEcNDiAAQQNGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM4gELIANBADYCACAGQQFqIQFBLQwOCyABIARGBEBBnQEhAgzhAQsgAS0AAEHFAEcNDiABQQFqIQFBhAEhAgzHAQsgASAERgRAQZwBIQIM4AELAkACQCABLQAAQcwAaw4IAA8PDw8PDwEPCyABQQFqIQFBggEhAgzHAQsgAUEBaiEBQYMBIQIMxgELQZsBIQIgASAERg3eASADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANAIAEtAAAgAEGz1ABqLQAARw0LIABBBEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzfAQsgA0EANgIAIAZBAWohAUEjDAsLQZoBIQIgASAERg3dASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGw1ABqLQAARw0KIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzeAQsgA0EANgIAIAZBAWohAUEADAoLIAEgBEYEQEGZASECDN0BCwJAAkAgAS0AAEHIAGsOCAAMDAwMDAwBDAsgAUEBaiEBQf0AIQIMxAELIAFBAWohAUGAASECDMMBCyABIARGBEBBmAEhAgzcAQsCQAJAIAEtAABBzgBrDgMACwELCyABQQFqIQFB/gAhAgzDAQsgAUEBaiEBQf8AIQIMwgELIAEgBEYEQEGXASECDNsBCyABLQAAQdkARw0IIAFBAWohAUEIDAcLQZYBIQIgASAERg3ZASADKAIAIgAgBCABa2ohBSABIABrQQNqIQYCQANAIAEtAAAgAEGs1ABqLQAARw0GIABBA0YNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzaAQsgA0EANgIAIAZBAWohAUEFDAYLQZUBIQIgASAERg3YASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEGm1ABqLQAARw0FIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzZAQsgA0EANgIAIAZBAWohAUEWDAULQZQBIQIgASAERg3XASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGh1QBqLQAARw0EIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzYAQsgA0EANgIAIAZBAWohAUEQDAQLIAEgBEYEQEGTASECDNcBCwJAAkAgAS0AAEHDAGsODAAGBgYGBgYGBgYGAQYLIAFBAWohAUH5ACECDL4BCyABQQFqIQFB+gAhAgy9AQtBkgEhAiABIARGDdUBIAMoAgAiACAEIAFraiEFIAEgAGtBBWohBgJAA0AgAS0AACAAQaDUAGotAABHDQIgAEEFRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNYBCyADQQA2AgAgBkEBaiEBQSQMAgsgA0EANgIADAILIAEgBEYEQEGRASECDNQBCyABLQAAQcwARw0BIAFBAWohAUETCzoAKSADKAIEIQAgA0EANgIEIAMgACABEC4iAA0CDAELQQAhAiADQQA2AhwgAyABNgIUIANB/h82AhAgA0EGNgIMDNEBC0H4ACECDLcBCyADQZABNgIcIAMgATYCFCADIAA2AgxBACECDM8BC0EAIQACQCADKAI4IgJFDQAgAigCQCICRQ0AIAMgAhEAACEACyAARQ0AIABBFUYNASADQQA2AhwgAyABNgIUIANBgg82AhAgA0EgNgIMQQAhAgzOAQtB9wAhAgy0AQsgA0GPATYCHCADIAE2AhQgA0HsGzYCECADQRU2AgxBACECDMwBCyABIARGBEBBjwEhAgzMAQsCQCABLQAAQSBGBEAgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GbHzYCECADQQY2AgxBACECDMwBC0ECIQIMsgELA0AgAS0AAEEgRw0CIAQgAUEBaiIBRw0AC0GOASECDMoBCyABIARGBEBBjQEhAgzKAQsCQCABLQAAQQlrDgRKAABKAAtB9QAhAgywAQsgAy0AKUEFRgRAQfYAIQIMsAELQfQAIQIMrwELIAEgBEYEQEGMASECDMgBCyADQRA2AgggAyABNgIEDAoLIAEgBEYEQEGLASECDMcBCwJAIAEtAABBCWsOBEcAAEcAC0HzACECDK0BCyABIARHBEAgA0EQNgIIIAMgATYCBEHxACECDK0BC0GKASECDMUBCwJAIAEgBEcEQANAIAEtAABBoNAAai0AACIAQQNHBEACQCAAQQFrDgJJAAQLQfAAIQIMrwELIAQgAUEBaiIBRw0AC0GIASEC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BCABQQFqIgFHDQALQfsAIQIMpwELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB2wA2AhwgAyABNgIUIAMgADYCDEEAIQIMpgELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB3QA2AhwgAyABNgIUIAMgADYCDEEAIQIMpQELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB+gA2AhwgAyABNgIUIAMgADYCDEEAIQIMpAELIANBADYCHCADIAE2AhQgA0G8CjYCECADQQc2AgxBACECDKMBC0HPACECDIkBC0HRACECDIgBC0HnACECDIcBCyABIARGBEBB+gAhAgygAQsCQCABLQAAQQlrDgQgAAAgAAsgAUEBaiEBQeYAIQIMhgELIAEgBEYEQEH5ACECDJ8BCwJAIAEtAABBCWsOBB8AAB8AC0EAIQACQCADKAI4IgJFDQAgAigCOCICRQ0AIAMgAhEAACEACyAARQRAQeIBIQIMhgELIABBFUcEQCADQQA2AhwgAyABNgIUIANByQ02AhAgA0EaNgIMQQAhAgyfAQsgA0H4ADYCHCADIAE2AhQgA0HqGjYCECADQRU2AgxBACECDJ4BCyABIARHBEAgA0ENNgIIIAMgATYCBEHkACECDIUBC0H3ACECDJ0BCyABIARGBEBB9gAhAgydAQsCQAJAAkAgAS0AAEHIAGsOCwABCwsLCwsLCwsCCwsgAUEBaiEBQd0AIQIMhQELIAFBAWohAUHgACECDIQBCyABQQFqIQFB4wAhAgyDAQtB9QAhAiABIARGDZsBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbXVAGotAABHDQggAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADJwBCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQKyIABEAgA0H0ADYCHCADIAE2AhQgAyAANgIMQQAhAgycAQtB4gAhAgyCAQtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJwBC0HhACECDIIBCyADQfMANgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMmgELIAMtACkiAEEja0ELSQ0JAkAgAEEGSw0AQQEgAHRBygBxRQ0ADAoLQQAhAiADQQA2AhwgAyABNgIUIANB7Qk2AhAgA0EINgIMDJkBC0HyACECIAEgBEYNmAEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBs9UAai0AAEcNBSAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMmQELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgAEQCADQfEANgIcIAMgATYCFCADIAA2AgxBACECDJkBC0HfACECDH8LQQAhAAJAIAMoAjgiAkUNACACKAI0IgJFDQAgAyACEQAAIQALAkAgAARAIABBFUYNASADQQA2AhwgAyABNgIUIANB6g02AhAgA0EmNgIMQQAhAgyZAQtB3gAhAgx/CyADQfAANgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMlwELIAMtAClBIUYNBiADQQA2AhwgAyABNgIUIANBkQo2AhAgA0EINgIMQQAhAgyWAQtB7wAhAiABIARGDZUBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbDVAGotAABHDQIgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADJYBCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQKyIARQ0CIANB7QA2AhwgAyABNgIUIAMgADYCDEEAIQIMlQELIANBADYCAAsgAygCBCEAIANBADYCBCADIAAgARArIgBFDYABIANB7gA2AhwgAyABNgIUIAMgADYCDEEAIQIMkwELQdwAIQIMeQtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJMBC0HbACECDHkLIANB7AA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyRAQsgAy0AKSIAQSNJDQAgAEEuRg0AIANBADYCHCADIAE2AhQgA0HJCTYCECADQQg2AgxBACECDJABC0HaACECDHYLIAEgBEYEQEHrACECDI8BCwJAIAEtAABBL0YEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQbI4NgIQIANBCDYCDEEAIQIMjwELQdkAIQIMdQsgASAERwRAIANBDjYCCCADIAE2AgRB2AAhAgx1C0HqACECDI0BCyABIARGBEBB6QAhAgyNAQsgAS0AAEEwayIAQf8BcUEKSQRAIAMgADoAKiABQQFqIQFB1wAhAgx0CyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNeiADQegANgIcIAMgATYCFCADIAA2AgxBACECDIwBCyABIARGBEBB5wAhAgyMAQsCQCABLQAAQS5GBEAgAUEBaiEBDAELIAMoAgQhACADQQA2AgQgAyAAIAEQLyIARQ17IANB5gA2AhwgAyABNgIUIAMgADYCDEEAIQIMjAELQdYAIQIMcgsgASAERgRAQeUAIQIMiwELQQAhAEEBIQVBASEHQQAhAgJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAIAEtAABBMGsOCgoJAAECAwQFBggLC0ECDAYLQQMMBQtBBAwEC0EFDAMLQQYMAgtBBwwBC0EICyECQQAhBUEAIQcMAgtBCSECQQEhAEEAIQVBACEHDAELQQAhBUEBIQILIAMgAjoAKyABQQFqIQECQAJAIAMtAC5BEHENAAJAAkACQCADLQAqDgMBAAIECyAHRQ0DDAILIAANAQwCCyAFRQ0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNAiADQeIANgIcIAMgATYCFCADIAA2AgxBACECDI0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNfSADQeMANgIcIAMgATYCFCADIAA2AgxBACECDIwBCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNeyADQeQANgIcIAMgATYCFCADIAA2AgwMiwELQdQAIQIMcQsgAy0AKUEiRg2GAUHTACECDHALQQAhAAJAIAMoAjgiAkUNACACKAJEIgJFDQAgAyACEQAAIQALIABFBEBB1QAhAgxwCyAAQRVHBEAgA0EANgIcIAMgATYCFCADQaQNNgIQIANBITYCDEEAIQIMiQELIANB4QA2AhwgAyABNgIUIANB0Bo2AhAgA0EVNgIMQQAhAgyIAQsgASAERgRAQeAAIQIMiAELAkACQAJAAkACQCABLQAAQQprDgQBBAQABAsgAUEBaiEBDAELIAFBAWohASADQS9qLQAAQQFxRQ0BC0HSACECDHALIANBADYCHCADIAE2AhQgA0G2ETYCECADQQk2AgxBACECDIgBCyADQQA2AhwgAyABNgIUIANBthE2AhAgA0EJNgIMQQAhAgyHAQsgASAERgRAQd8AIQIMhwELIAEtAABBCkYEQCABQQFqIQEMCQsgAy0ALkHAAHENCCADQQA2AhwgAyABNgIUIANBthE2AhAgA0ECNgIMQQAhAgyGAQsgASAERgRAQd0AIQIMhgELIAEtAAAiAkENRgRAIAFBAWohAUHQACECDG0LIAEhACACQQlrDgQFAQEFAQsgBCABIgBGBEBB3AAhAgyFAQsgAC0AAEEKRw0AIABBAWoMAgtBACECIANBADYCHCADIAA2AhQgA0HKLTYCECADQQc2AgwMgwELIAEgBEYEQEHbACECDIMBCwJAIAEtAABBCWsOBAMAAAMACyABQQFqCyEBQc4AIQIMaAsgASAERgRAQdoAIQIMgQELIAEtAABBCWsOBAABAQABC0EAIQIgA0EANgIcIANBmhI2AhAgA0EHNgIMIAMgAUEBajYCFAx/CyADQYASOwEqQQAhAAJAIAMoAjgiAkUNACACKAI4IgJFDQAgAyACEQAAIQALIABFDQAgAEEVRw0BIANB2QA2AhwgAyABNgIUIANB6ho2AhAgA0EVNgIMQQAhAgx+C0HNACECDGQLIANBADYCHCADIAE2AhQgA0HJDTYCECADQRo2AgxBACECDHwLIAEgBEYEQEHZACECDHwLIAEtAABBIEcNPSABQQFqIQEgAy0ALkEBcQ09IANBADYCHCADIAE2AhQgA0HCHDYCECADQR42AgxBACECDHsLIAEgBEYEQEHYACECDHsLAkACQAJAAkACQCABLQAAIgBBCmsOBAIDAwABCyABQQFqIQFBLCECDGULIABBOkcNASADQQA2AhwgAyABNgIUIANB5xE2AhAgA0EKNgIMQQAhAgx9CyABQQFqIQEgA0Evai0AAEEBcUUNcyADLQAyQYABcUUEQCADQTJqIQIgAxA1QQAhAAJAIAMoAjgiBkUNACAGKAIoIgZFDQAgAyAGEQAAIQALAkACQCAADhZNTEsBAQEBAQEBAQEBAQEBAQEBAQEAAQsgA0EpNgIcIAMgATYCFCADQawZNgIQIANBFTYCDEEAIQIMfgsg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c3BvbnNlIHN0YXR1cwBFeHBlY3RlZCBMRiBhZnRlciBoZWFkZXJzAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMAVXNlciBjYWxsYmFjayBlcnJvcgBgb25fcmVzZXRgIGNhbGxiYWNrIGVycm9yAGBvbl9jaHVua19oZWFkZXJgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2JlZ2luYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX3ZhbHVlYCBjYWxsYmFjayBlcnJvcgBgb25fc3RhdHVzX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fdmVyc2lvbl9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3VybF9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3Byb3RvY29sX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9oZWFkZXJfdmFsdWVfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fbWV0aG9kX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25faGVhZGVyX2ZpZWxkX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX25hbWVgIGNhbGxiYWNrIGVycm9yAFVuZXhwZWN0ZWQgY2hhciBpbiB1cmwgc2VydmVyAEludmFsaWQgaGVhZGVyIHZhbHVlIGNoYXIASW52YWxpZCBoZWFkZXIgZmllbGQgY2hhcgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3ZlcnNpb24ASW52YWxpZCBtaW5vciB2ZXJzaW9uAEludmFsaWQgbWFqb3IgdmVyc2lvbgBFeHBlY3RlZCBzcGFjZSBhZnRlciB2ZXJzaW9uAEV4cGVjdGVkIENSTEYgYWZ0ZXIgdmVyc2lvbgBJbnZhbGlkIEhUVFAgdmVyc2lvbgBJbnZhbGlkIGhlYWRlciB0b2tlbgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3VybABJbnZhbGlkIGNoYXJhY3RlcnMgaW4gdXJsAFVuZXhwZWN0ZWQgc3RhcnQgY2hhciBpbiB1cmwARG91YmxlIEAgaW4gdXJsAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fcHJvdG9jb2wARW1wdHkgQ29udGVudC1MZW5ndGgASW52YWxpZCBjaGFyYWN0ZXIgaW4gQ29udGVudC1MZW5ndGgAVHJhbnNmZXItRW5jb2RpbmcgY2FuJ3QgYmUgcHJlc2VudCB3aXRoIENvbnRlbnQtTGVuZ3RoAER1cGxpY2F0ZSBDb250ZW50LUxlbmd0aABJbnZhbGlkIGNoYXIgaW4gdXJsIHBhdGgAQ29udGVudC1MZW5ndGggY2FuJ3QgYmUgcHJlc2VudCB3aXRoIFRyYW5zZmVyLUVuY29kaW5nAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgc2l6ZQBFeHBlY3RlZCBMRiBhZnRlciBjaHVuayBzaXplAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIHNpemUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfdmFsdWUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9jaHVua19leHRlbnNpb25fdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyB2YWx1ZQBVbmV4cGVjdGVkIHdoaXRlc3BhY2UgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgTEYgYWZ0ZXIgaGVhZGVyIHZhbHVlAEludmFsaWQgYFRyYW5zZmVyLUVuY29kaW5nYCBoZWFkZXIgdmFsdWUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciBjaHVuayBleHRlbnNpb24gdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBxdW90ZSB2YWx1ZQBJbnZhbGlkIHF1b3RlZC1wYWlyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAFBhdXNlZCBieSBvbl9oZWFkZXJzX2NvbXBsZXRlAEludmFsaWQgRU9GIHN0YXRlAG9uX3Jlc2V0IHBhdXNlAG9uX2NodW5rX2hlYWRlciBwYXVzZQBvbl9tZXNzYWdlX2JlZ2luIHBhdXNlAG9uX2NodW5rX2V4dGVuc2lvbl92YWx1ZSBwYXVzZQBvbl9zdGF0dXNfY29tcGxldGUgcGF1c2UAb25fdmVyc2lvbl9jb21wbGV0ZSBwYXVzZQBvbl91cmxfY29tcGxldGUgcGF1c2UAb25fcHJvdG9jb2xfY29tcGxldGUgcGF1c2UAb25fY2h1bmtfY29tcGxldGUgcGF1c2UAb25faGVhZGVyX3ZhbHVlX2NvbXBsZXRlIHBhdXNlAG9uX21lc3NhZ2VfY29tcGxldGUgcGF1c2UAb25fbWV0aG9kX2NvbXBsZXRlIHBhdXNlAG9uX2hlYWRlcl9maWVsZF9jb21wbGV0ZSBwYXVzZQBvbl9jaHVua19leHRlbnNpb25fbmFtZSBwYXVzZQBVbmV4cGVjdGVkIHNwYWNlIGFmdGVyIHN0YXJ0IGxpbmUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciByZXNwb25zZSBsaW5lAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fY2h1bmtfZXh0ZW5zaW9uX25hbWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBuYW1lAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgZXh0ZW5zaW9uIG5hbWUASW52YWxpZCBzdGF0dXMgY29kZQBQYXVzZSBvbiBDT05ORUNUL1VwZ3JhZGUAUGF1c2Ugb24gUFJJL1VwZ3JhZGUARXhwZWN0ZWQgSFRUUC8yIENvbm5lY3Rpb24gUHJlZmFjZQBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX21ldGhvZABFeHBlY3RlZCBzcGFjZSBhZnRlciBtZXRob2QAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfZmllbGQAUGF1c2VkAEludmFsaWQgd29yZCBlbmNvdW50ZXJlZABJbnZhbGlkIG1ldGhvZCBlbmNvdW50ZXJlZABNaXNzaW5nIGV4cGVjdGVkIENSIGFmdGVyIGNodW5rIGRhdGEARXhwZWN0ZWQgTEYgYWZ0ZXIgY2h1bmsgZGF0YQBVbmV4cGVjdGVkIGNoYXIgaW4gdXJsIHNjaGVtYQBSZXF1ZXN0IGhhcyBpbnZhbGlkIGBUcmFuc2Zlci1FbmNvZGluZ2AARGF0YSBhZnRlciBgQ29ubmVjdGlvbjogY2xvc2VgAFNXSVRDSF9QUk9YWQBVU0VfUFJPWFkATUtBQ1RJVklUWQBVTlBST0NFU1NBQkxFX0VOVElUWQBRVUVSWQBDT1BZAE1PVkVEX1BFUk1BTkVOVExZAFRPT19FQVJMWQBOT1RJRlkARkFJTEVEX0RFUEVOREVOQ1kAQkFEX0dBVEVXQVkAUExBWQBQVVQAQ0hFQ0tPVVQAR0FURVdBWV9USU1FT1VUAFJFUVVFU1RfVElNRU9VVABORVRXT1JLX0NPTk5FQ1RfVElNRU9VVABDT05ORUNUSU9OX1RJTUVPVVQATE9HSU5fVElNRU9VVABORVRXT1JLX1JFQURfVElNRU9VVABQT1NUAE1JU0RJUkVDVEVEX1JFUVVFU1QAQ0xJRU5UX0NMT1NFRF9SRVFVRVNUAENMSUVOVF9DTE9TRURfTE9BRF9CQUxBTkNFRF9SRVFVRVNUAEJBRF9SRVFVRVNUAEhUVFBfUkVRVUVTVF9TRU5UX1RPX0hUVFBTX1BPUlQAUkVQT1JUAElNX0FfVEVBUE9UAFJFU0VUX0NPTlRFTlQATk9fQ09OVEVOVABQQVJUSUFMX0NPTlRFTlQASFBFX0lOVkFMSURfQ09OU1RBTlQASFBFX0NCX1JFU0VUAEdFVABIUEVfU1RSSUNUAENPTkZMSUNUAFRFTVBPUkFSWV9SRURJUkVDVABQRVJNQU5FTlRfUkVESVJFQ1QAQ09OTkVDVABNVUxUSV9TVEFUVVMASFBFX0lOVkFMSURfU1RBVFVTAFRPT19NQU5ZX1JFUVVFU1RTAEVBUkxZX0hJTlRTAFVOQVZBSUxBQkxFX0ZPUl9MRUdBTF9SRUFTT05TAE9QVElPTlMAU1dJVENISU5HX1BST1RPQ09MUwBWQVJJQU5UX0FMU09fTkVHT1RJQVRFUwBNVUxUSVBMRV9DSE9JQ0VTAElOVEVSTkFMX1NFUlZFUl9FUlJPUgBXRUJfU0VSVkVSX1VOS05PV05fRVJST1IAUkFJTEdVTl9FUlJPUgBJREVOVElUWV9QUk9WSURFUl9BVVRIRU5USUNBVElPTl9FUlJPUgBTU0xfQ0VSVElGSUNBVEVfRVJST1IASU5WQUxJRF9YX0ZPUldBUkRFRF9GT1IAU0VUX1BBUkFNRVRFUgBHRVRfUEFSQU1FVEVSAEhQRV9VU0VSAFNFRV9PVEhFUgBIUEVfQ0JfQ0hVTktfSEVBREVSAEV4cGVjdGVkIExGIGFmdGVyIENSAE1LQ0FMRU5EQVIAU0VUVVAAV0VCX1NFUlZFUl9JU19ET1dOAFRFQVJET1dOAEhQRV9DTE9TRURfQ09OTkVDVElPTgBIRVVSSVNUSUNfRVhQSVJBVElPTgBESVNDT05ORUNURURfT1BFUkFUSU9OAE5PTl9BVVRIT1JJVEFUSVZFX0lORk9STUFUSU9OAEhQRV9JTlZBTElEX1ZFUlNJT04ASFBFX0NCX01FU1NBR0VfQkVHSU4AU0lURV9JU19GUk9aRU4ASFBFX0lOVkFMSURfSEVBREVSX1RPS0VOAElOVkFMSURfVE9LRU4ARk9SQklEREVOAEVOSEFOQ0VfWU9VUl9DQUxNAEhQRV9JTlZBTElEX1VSTABCTE9DS0VEX0JZX1BBUkVOVEFMX0NPTlRST0wATUtDT0wAQUNMAEhQRV9JTlRFUk5BTABSRVFVRVNUX0hFQURFUl9GSUVMRFNfVE9PX0xBUkdFX1VOT0ZGSUNJQUwASFBFX09LAFVOTElOSwBVTkxPQ0sAUFJJAFJFVFJZX1dJVEgASFBFX0lOVkFMSURfQ09OVEVOVF9MRU5HVEgASFBFX1VORVhQRUNURURfQ09OVEVOVF9MRU5HVEgARkxVU0gAUFJPUFBBVENIAE0tU0VBUkNIAFVSSV9UT09fTE9ORwBQUk9DRVNTSU5HAE1JU0NFTExBTkVPVVNfUEVSU0lTVEVOVF9XQVJOSU5HAE1JU0NFTExBTkVPVVNfV0FSTklORwBIUEVfSU5WQUxJRF9UUkFOU0ZFUl9FTkNPRElORwBFeHBlY3RlZCBDUkxGAEhQRV9JTlZBTElEX0NIVU5LX1NJWkUATU9WRQBDT05USU5VRQBIUEVfQ0JfU1RBVFVTX0NPTVBMRVRFAEhQRV9DQl9IRUFERVJTX0NPTVBMRVRFAEhQRV9DQl9WRVJTSU9OX0NPTVBMRVRFAEhQRV9DQl9VUkxfQ09NUExFVEUASFBFX0NCX1BST1RPQ09MX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19DT01QTEVURQBIUEVfQ0JfSEVBREVSX1ZBTFVFX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19FWFRFTlNJT05fVkFMVUVfQ09NUExFVEUASFBFX0NCX0NIVU5LX0VYVEVOU0lPTl9OQU1FX0NPTVBMRVRFAEhQRV9DQl9NRVNTQUdFX0NPTVBMRVRFAEhQRV9DQl9NRVRIT0RfQ09NUExFVEUASFBFX0NCX0hFQURFUl9GSUVMRF9DT01QTEVURQBERUxFVEUASFBFX0lOVkFMSURfRU9GX1NUQVRFAElOVkFMSURfU1NMX0NFUlRJRklDQVRFAFBBVVNFAE5PX1JFU1BPTlNFAFVOU1VQUE9SVEVEX01FRElBX1RZUEUAR09ORQBOT1RfQUNDRVBUQUJMRQBTRVJWSUNFX1VOQVZBSUxBQkxFAFJBTkdFX05PVF9TQVRJU0ZJQUJMRQBPUklHSU5fSVNfVU5SRUFDSEFCTEUAUkVTUE9OU0VfSVNfU1RBTEUAUFVSR0UATUVSR0UAUkVRVUVTVF9IRUFERVJfRklFTERTX1RPT19MQVJHRQBSRVFVRVNUX0hFQURFUl9UT09fTEFSR0UAUEFZTE9BRF9UT09fTEFSR0UASU5TVUZGSUNJRU5UX1NUT1JBR0UASFBFX1BBVVNFRF9VUEdSQURFAEhQRV9QQVVTRURfSDJfVVBHUkFERQBTT1VSQ0UAQU5OT1VOQ0UAVFJBQ0UASFBFX1VORVhQRUNURURfU1BBQ0UAREVTQ1JJQkUAVU5TVUJTQ1JJQkUAUkVDT1JEAEhQRV9JTlZBTElEX01FVEhPRABOT1RfRk9VTkQAUFJPUEZJTkQAVU5CSU5EAFJFQklORABVTkFVVEhPUklaRUQATUVUSE9EX05PVF9BTExPV0VEAEhUVFBfVkVSU0lPTl9OT1RfU1VQUE9SVEVEAEFMUkVBRFlfUkVQT1JURUQAQUNDRVBURUQATk9UX0lNUExFTUVOVEVEAExPT1BfREVURUNURUQASFBFX0NSX0VYUEVDVEVEAEhQRV9MRl9FWFBFQ1RFRABDUkVBVEVEAElNX1VTRUQASFBFX1BBVVNFRABUSU1FT1VUX09DQ1VSRUQAUEFZTUVOVF9SRVFVSVJFRABQUkVDT05ESVRJT05fUkVRVUlSRUQAUFJPWFlfQVVUSEVOVElDQVRJT05fUkVRVUlSRUQATkVUV09SS19BVVRIRU5USUNBVElPTl9SRVFVSVJFRABMRU5HVEhfUkVRVUlSRUQAU1NMX0NFUlRJRklDQVRFX1JFUVVJUkVEAFVQR1JBREVfUkVRVUlSRUQAUEFHRV9FWFBJUkVEAFBSRUNPTkRJVElPTl9GQUlMRUQARVhQRUNUQVRJT05fRkFJTEVEAFJFVkFMSURBVElPTl9GQUlMRUQAU1NMX0hBTkRTSEFLRV9GQUlMRUQATE9DS0VEAFRSQU5TRk9STUFUSU9OX0FQUExJRUQATk9UX01PRElGSUVEAE5PVF9FWFRFTkRFRABCQU5EV0lEVEhfTElNSVRfRVhDRUVERUQAU0lURV9JU19PVkVSTE9BREVEAEhFQUQARXhwZWN0ZWQgSFRUUC8sIFJUU1AvIG9yIElDRS8A5xUAAK8VAACkEgAAkhoAACYWAACeFAAA2xkAAHkVAAB+EgAA/hQAADYVAAALFgAA2BYAAPMSAABCGAAArBYAABIVAAAUFwAA7xcAAEgUAABxFwAAshoAAGsZAAB+GQAANRQAAIIaAABEFwAA/RYAAB4YAACHFwAAqhkAAJMSAAAHGAAALBcAAMoXAACkFwAA5xUAAOcVAABYFwAAOxgAAKASAAAtHAAAwxEAAEgRAADeEgAAQhMAAKQZAAD9EAAA9xUAAKUVAADvFgAA+BkAAEoWAABWFgAA9RUAAAoaAAAIGgAAARoAAKsVAABCEgAA1xAAAEwRAAAFGQAAVBYAAB4RAADKGQAAyBkAAE4WAAD/GAAAcRQAAPAVAADuFQAAlBkAAPwVAAC/GQAAmxkAAHwUAABDEQAAcBgAAJUUAAAnFAAAGRQAANUSAADUGQAARBYAAPcQAEG5OwsBAQBB0DsL4AEBAQIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBuj0LBAEAAAIAQdE9C14DBAMDAwMDAAADAwADAwADAwMDAwMDAwMDAAUAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAwADAEG6PwsEAQAAAgBB0T8LXgMAAwMDAwMAAAMDAAMDAAMDAwMDAwMDAwMABAAFAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwADAAMAQbDBAAsNbG9zZWVlcC1hbGl2ZQBBycEACwEBAEHgwQAL4AEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBycMACwEBAEHgwwAL5wEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAWNodW5rZWQAQfHFAAteAQABAQEBAQAAAQEAAQEAAQEBAQEBAQEBAQAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAAEAAQBB0McACyFlY3Rpb25lbnQtbGVuZ3Rob25yb3h5LWNvbm5lY3Rpb24AQYDIAAsgcmFuc2Zlci1lbmNvZGluZ3BncmFkZQ0KDQpTTQ0KDQoAQanIAAsFAQIAAQMAQcDIAAtfBAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanKAAsFAQIAAQMAQcDKAAtfBAUFBgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanMAAsEAQAAAQBBwcwAC14CAgACAgICAgICAgICAgICAgICAgICAgICAgICAgIAAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAEGpzgALBQECAAEDAEHAzgALXwQFAAAFBQUFBQUFBQUFBQYFBQUFBQUFBQUFBQUABQAHCAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQAFAAUABQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAAAFAEGp0AALBQEBAAEBAEHA0AALAQEAQdrQAAtBAgAAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAQanSAAsFAQEAAQEAQcDSAAsBAQBBytIACwYCAAAAAAIAQeHSAAs6AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwBBoNQAC50BTk9VTkNFRUNLT1VUTkVDVEVURUNSSUJFTFVTSEVURUFEU0VBUkNIUkdFQ1RJVklUWUxFTkRBUlZFT1RJRllQVElPTlNDSFNFQVlTVEFUQ0hHRVVFUllPUkRJUkVDVE9SVFJDSFBBUkFNRVRFUlVSQ0VCU0NSSUJFQVJET1dOQUNFSU5ETktDS1VCU0NSSUJFVFRQQ0VUU1BBRFRQLw=='
+const wasmBase64 = 'AGFzbQEAAAABJwdgAX8Bf2ADf39/AX9gAn9/AGABfwBgBH9/f38Bf2AAAGADf39/AALLAQgDZW52GHdhc21fb25faGVhZGVyc19jb21wbGV0ZQAEA2VudhV3YXNtX29uX21lc3NhZ2VfYmVnaW4AAANlbnYLd2FzbV9vbl91cmwAAQNlbnYOd2FzbV9vbl9zdGF0dXMAAQNlbnYUd2FzbV9vbl9oZWFkZXJfZmllbGQAAQNlbnYUd2FzbV9vbl9oZWFkZXJfdmFsdWUAAQNlbnYMd2FzbV9vbl9ib2R5AAEDZW52GHdhc21fb25fbWVzc2FnZV9jb21wbGV0ZQAAAzU0BQYAAAMAAAAAAAADAQMAAwMDAAACAAAAAAICAgICAgICAgIBAQEBAQEBAQEBAwAAAwAAAAQFAXABExMFAwEAAgYIAX8BQcDZBAsHxQcoBm1lbW9yeQIAC19pbml0aWFsaXplAAgZX19pbmRpcmVjdF9mdW5jdGlvbl90YWJsZQEAC2xsaHR0cF9pbml0AAkYbGxodHRwX3Nob3VsZF9rZWVwX2FsaXZlADcMbGxodHRwX2FsbG9jAAsGbWFsbG9jADkLbGxodHRwX2ZyZWUADARmcmVlAAwPbGxodHRwX2dldF90eXBlAA0VbGxodHRwX2dldF9odHRwX21ham9yAA4VbGxodHRwX2dldF9odHRwX21pbm9yAA8RbGxodHRwX2dldF9tZXRob2QAEBZsbGh0dHBfZ2V0X3N0YXR1c19jb2RlABESbGxodHRwX2dldF91cGdyYWRlABIMbGxodHRwX3Jlc2V0ABMObGxodHRwX2V4ZWN1dGUAFBRsbGh0dHBfc2V0dGluZ3NfaW5pdAAVDWxsaHR0cF9maW5pc2gAFgxsbGh0dHBfcGF1c2UAFw1sbGh0dHBfcmVzdW1lABgbbGxodHRwX3Jlc3VtZV9hZnRlcl91cGdyYWRlABkQbGxodHRwX2dldF9lcnJubwAaF2xsaHR0cF9nZXRfZXJyb3JfcmVhc29uABsXbGxodHRwX3NldF9lcnJvcl9yZWFzb24AHBRsbGh0dHBfZ2V0X2Vycm9yX3BvcwAdEWxsaHR0cF9lcnJub19uYW1lAB4SbGxodHRwX21ldGhvZF9uYW1lAB8SbGxodHRwX3N0YXR1c19uYW1lACAabGxodHRw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AXRrQT5qIQILIAEgAjYCHCABQgA3AhAgAkECdEH01wBqIQACQEHI1QAoAgAiA0EBIAJ0IgdxRQRAIAAgATYCAEHI1QAgAyAHcjYCACABIAA2AhggASABNgIIIAEgATYCDAwBCyAEQRkgAkEBdmtBACACQR9HG3QhAiAAKAIAIQACQANAIAAiAygCBEF4cSAERg0BIAJBHXYhACACQQF0IQIgAyAAQQRxakEQaiIHKAIAIgANAAsgByABNgIAIAEgAzYCGCABIAE2AgwgASABNgIIDAELIAMoAggiACABNgIMIAMgATYCCCABQQA2AhggASADNgIMIAEgADYCCAtB5NUAQeTVACgCAEEBayIAQX8gABs2AgALCwcAIAAtACgLBwAgAC0AKgsHACAALQArCwcAIAAtACkLBwAgAC8BNAsHACAALQAwC0ABBH8gACgCGCEBIAAvAS4hAiAALQAoIQMgACgCOCEEIAAQOCAAIAQ2AjggACADOgAoIAAgAjsBLiAAIAE2AhgL5YUCAgd/A34gASACaiEEAkAgACIDKAIMIgANACADKAIEBEAgAyABNgIECyMAQRBrIgkkAAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAC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C0HjAQwHC0HXAQwGC0HYAQwFC0HZAQwEC0HaAQwDC0HbAQwCC0HdAQwBC0HcAQshAgNAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQCADAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQAJ/AkACQAJAAn8CQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAIAMCfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAg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ogKiAqICogKiAqICogKiAqICogKiAqICogIAogILIAQgAUEBaiIBRw0AC0HJACECDOwCCyABQQFqIQEgA0Evai0AAEEBcQ2lAiADQQA2AhwgAyABNgIUIANBlxA2AhAgA0EKNgIMQQAhAgzrAgsgASAERwRAA0AgAS0AAEEgRw0VIAQgAUEBaiIBRw0AC0H4ACECDOsCC0H4ACECDOoCCyADQQI6ACgMOAtBACECIANBADYCHCADQb8LNgIQIANBAjYCDCADIAFBAWo2AhQM6AILQQAhAgzOAgtBDSECDM0CC0ETIQIMzAILQRUhAgzLAgtBFiECDMoCC0EYIQIMyQILQRkhAgzIAgtBGiECDMcCC0EbIQIMxgILQRwhAgzFAgtBHSECDMQCC0EeIQIMwwILQR8hAgzCAgtBICECDMECC0EiIQIMwAILQSMhAgy/AgtBJSECDL4CC0HlACECDL0CCyADQT02AhwgAyABNgIUIAMgADYCDEEAIQIM1QILIANBGzYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDNQCCyADQSA2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzTAgsgA0ETNgIcIAMgATYCFCADQZgaNgIQIANBFTYCDEEAIQIM0gILIANBCzYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNECCyADQRA2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzQAgsgA0EgNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIMzwILIANBCzYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDM4CCyADQQw2AhwgAyABNgIUIANBpBw2AhAgA0EVNgIMQQAhAgzNAgtBACECIANBADYCHCADIAE2AhQgA0HdDjYCECADQRI2AgwMzAILAkADQAJAIAEtAABBCmsOBAACAgACCyAEIAFBAWoiAUcNAAtB/QEhAgzMAgsCQAJAIAMtADZBAUcNAEEAIQACQCADKAI4IgJFDQAgAigCYCICRQ0AIAMgAhEAACEACyAARQ0AIABBFUcNASADQfwBNgIcIAMgATYCFCADQdwZNgIQIANBFTYCDEEAIQIMzQILQdwBIQIMswILIANBADYCHCADIAE2AhQgA0H5CzYCECADQR82AgxBACECDMsCCwJAAkAgAy0AKEEBaw4CBAEAC0HbASECDLICC0HUASECDLECCyADQQI6ADFBACEAAkAgAygCOCICRQ0AIAIoAgAiAkUNACADIAIRAAAhAAsgAEUEQEHdASECDLECCyAAQRVHBEAgA0EANgIcIAMgATYCFCADQbQMNgIQIANBEDYCDEEAIQIMygILIANB+wE2AhwgAyABNgIUIANBgRo2AhAgA0EVNgIMQQAhAgzJAgsgASAERgRAQfoBIQIMyQILIAEtAABByABGDQEgA0EBOgAoC0HAASECDK4CC0HaASECDK0CCyABIARHBEAgA0EMNgIIIAMgATYCBEHZASECDK0CC0H5ASECDMUCCyABIARGBEBB+AEhAgzFAgsgAS0AAEHIAEcNBCABQQFqIQFB2AEhAgyrAgsgASAERgRAQfcBIQIMxAILAkACQCABLQAAQcUAaw4QAAUFBQUFBQUFBQUFBQUFAQULIAFBAWohAUHWASECDKsCCyABQQFqIQFB1wEhAgyqAgtB9gEhAiABIARGDcICIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbrVAGotAABHDQMgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADMMCCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQLiIARQRAQeMBIQIMqgILIANB9QE2AhwgAyABNgIUIAMgADYCDEEAIQIMwgILQfQBIQIgASAERg3BAiADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEG41QBqLQAARw0CIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzCAgsgA0GBBDsBKCADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQLiIADQMMAgsgA0EANgIAC0EAIQIgA0EANgIcIAMgATYCFCADQeUfNgIQIANBCDYCDAy/AgtB1QEhAgylAgsgA0HzATYCHCADIAE2AhQgAyAANgIMQQAhAgy9AgtBACEAAkAgAygCOCICRQ0AIAIoAkAiAkUNACADIAIRAAAhAAsgAEUNbiAAQRVHBEAgA0EANgIcIAMgATYCFCADQYIPNgIQIANBIDYCDEEAIQIMvQILIANBjwE2AhwgAyABNgIUIANB7Bs2AhAgA0EVNgIMQQAhAgy8AgsgASAERwRAIANBDTYCCCADIAE2AgRB0wEhAgyjAgtB8gEhAgy7AgsgASAERgRAQfEBIQIMuwILAkACQAJAIAEtAABByABrDgsAAQgICAgICAgIAggLIAFBAWohAUHQASECDKMCCyABQQFqIQFB0QEhAgyiAgsgAUEBaiEBQdIBIQIMoQILQfABIQIgASAERg25AiADKAIAIgAgBCABa2ohBiABIABrQQJqIQUDQCABLQAAIABBtdUAai0AAEcNBCAAQQJGDQMgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMuQILQe8BIQIgASAERg24AiADKAIAIgAgBCABa2ohBiABIABrQQFqIQUDQCABLQAAIABBs9UAai0AAEcNAyAAQQFGDQIgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMuAILQe4BIQIgASAERg23AiADKAIAIgAgBCABa2ohBiABIABrQQJqIQUDQCABLQAAIABBsNUAai0AAEcNAiAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAY2AgAMtwILIAMoAgQhACADQgA3AwAgAyAAIAVBAWoiARArIgBFDQIgA0HsATYCHCADIAE2AhQgAyAANgIMQQAhAgy2AgsgA0EANgIACyADKAIEIQAgA0EANgIEIAMgACABECsiAEUNnAIgA0HtATYCHCADIAE2AhQgAyAANgIMQQAhAgy0AgtBzwEhAgyaAgtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDLQCC0HOASECDJoCCyADQesBNgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMsgILIAEgBEYEQEHrASECDLICCyABLQAAQS9GBEAgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GyODYCECADQQg2AgxBACECDLECC0HNASECDJcCCyABIARHBEAgA0EONgIIIAMgATYCBEHMASECDJcCC0HqASECDK8CCyABIARGBEBB6QEhAgyvAgsgAS0AAEEwayIAQf8BcUEKSQRAIAMgADoAKiABQQFqIQFBywEhAgyWAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZcCIANB6AE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILIAEgBEYEQEHnASECDK4CCwJAIAEtAABBLkYEQCABQQFqIQEMAQsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZgCIANB5gE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILQcoBIQIMlAILIAEgBEYEQEHlASECDK0CC0EAIQBBASEFQQEhB0EAIQICQAJAAkACQAJAAn8CQAJAAkACQAJAAkACQCABLQAAQTBrDgoKCQABAgMEBQYICwtBAgwGC0EDDAULQQQMBAtBBQwDC0EGDAILQQcMAQtBCAshAkEAIQVBACEHDAILQQkhAkEBIQBBACEFQQAhBwwBC0EAIQVBASECCyADIAI6ACsgAUEBaiEBAkACQCADLQAuQRBxDQACQAJAAkAgAy0AKg4DAQACBAsgB0UNAwwCCyAADQEMAgsgBUUNAQsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDQIgA0HiATYCHCADIAE2AhQgAyAANgIMQQAhAgyvAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZoCIANB4wE2AhwgAyABNgIUIAMgADYCDEEAIQIMrgILIAMoAgQhACADQQA2AgQgAyAAIAEQLyIARQ2YAiADQeQBNgIcIAMgATYCFCADIAA2AgwMrQILQckBIQIMkwILQQAhAAJAIAMoAjgiAkUNACACKAJEIgJFDQAgAyACEQAAIQALAkAgAARAIABBFUYNASADQQA2AhwgAyABNgIUIANBpA02AhAgA0EhNgIMQQAhAgytAgtByAEhAgyTAgsgA0HhATYCHCADIAE2AhQgA0HQGjYCECADQRU2AgxBACECDKsCCyABIARGBEBB4QEhAgyrAgsCQCABLQAAQSBGBEAgA0EAOwE0IAFBAWohAQwBCyADQQA2AhwgAyABNgIUIANBmRE2AhAgA0EJNgIMQQAhAgyrAgtBxwEhAgyRAgsgASAERgRAQeABIQIMqgILAkAgAS0AAEEwa0H/AXEiAkEKSQRAIAFBAWohAQJAIAMvATQiAEGZM0sNACADIABBCmwiADsBNCAAQf7/A3EgAkH//wNzSw0AIAMgACACajsBNAwCC0EAIQIgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDAyrAgsgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDEEAIQIMqgILQcYBIQIMkAILIAEgBEYEQEHfASECDKkCCwJAIAEtAABBMGtB/wFxIgJBCkkEQCABQQFqIQECQCADLwE0IgBBmTNLDQAgAyAAQQpsIgA7ATQgAEH+/wNxIAJB//8Dc0sNACADIAAgAmo7ATQMAgtBACECIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgwMqgILIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgxBACECDKkCC0HFASECDI8CCyABIARGBEBB3gEhAgyoAgsCQCABLQAAQTBrQf8BcSICQQpJBEAgAUEBaiEBAkAgAy8BNCIAQZkzSw0AIAMgAEEKbCIAOwE0IABB/v8DcSACQf//A3NLDQAgAyAAIAJqOwE0DAILQQAhAiADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMDKkCCyADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMQQAhAgyoAgtBxAEhAgyOAgsgASAERgRAQd0BIQIMpwILAkACQAJAAkAgAS0AAEEKaw4XAgMDAAMDAwMDAwMDAwMDAwMDAwMDAwEDCyABQQFqDAULIAFBAWohAUHDASECDI8CCyABQQFqIQEgA0Evai0AAEEBcQ0IIANBADYCHCADIAE2AhQgA0GNCzYCECADQQ02AgxBACECDKcCCyADQQA2AhwgAyABNgIUIANBjQs2AhAgA0ENNgIMQQAhAgymAgsgASAERwRAIANBDzYCCCADIAE2AgRBASECDI0CC0HcASECDKUCCwJAAkADQAJAIAEtAABBCmsOBAIAAAMACyAEIAFBAWoiAUcNAAtB2wEhAgymAgsgAygCBCEAIANBADYCBCADIAAgARAtIgBFBEAgAUEBaiEBDAQLIANB2gE2AhwgAyAANgIMIAMgAUEBajYCFEEAIQIMpQILIAMoAgQhACADQQA2AgQgAyAAIAEQLSIADQEgAUEBagshAUHBASECDIoCCyADQdkBNgIcIAMgADYCDCADIAFBAWo2AhRBACECDKICC0HCASECDIgCCyADQS9qLQAAQQFxDQEgA0EANgIcIAMgATYCFCADQeQcNgIQIANBGTYCDEEAIQIMoAILIAEgBEYEQEHZASEC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IAFBAWohAUGeASECDOQBCyABQQFqIQFBnwEhAgzjAQtBtwEhAiABIARGDfsBIAMoAgAiACAEIAFraiEFIAEgAGtBA2ohBgJAA0AgAS0AACAAQezUAGotAABHDSggAEEDRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPwBCyADQQA2AgAgBkEBaiEBQQ0MKAtBtgEhAiABIARGDfoBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQaHVAGotAABHDScgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPsBCyADQQA2AgAgBkEBaiEBQQwMJwtBtQEhAiABIARGDfkBIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQerUAGotAABHDSYgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPoBCyADQQA2AgAgBkEBaiEBQQMMJgtBtAEhAiABIARGDfgBIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQejUAGotAABHDSUgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADPkBCyADQQA2AgAgBkEBaiEBQSYMJQsgASAERgRAQbMBIQIM+AELAkACQCABLQAAQdQAaw4CAAEnCyABQQFqIQFBmQEhAgzfAQsgAUEBaiEBQZoBIQIM3gELQbIBIQIgASAERg32ASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHm1ABqLQAARw0jIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz3AQsgA0EANgIAIAZBAWohAUEnDCMLQbEBIQIgASAERg31ASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHk1ABqLQAARw0iIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz2AQsgA0EANgIAIAZBAWohAUEcDCILQbABIQIgASAERg30ASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEHe1ABqLQAARw0hIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz1AQsgA0EANgIAIAZBAWohAUEGDCELQa8BIQIgASAERg3zASADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANAIAEtAAAgAEHZ1ABqLQAARw0gIABBBEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAz0AQsgA0EANgIAIAZBAWohAUEZDCALIAEgBEYEQEGuASECDPMBCwJAAkACQAJAIAEtAABBLWsOIwAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAEkJCQkJAIkJCQDJAsgAUEBaiEBQY4BIQIM3AELIAFBAWohAUGPASECDNsBCyABQQFqIQFBlAEhAgzaAQsgAUEBaiEBQZUBIQIM2QELQa0BIQIgASAERg3xASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEHX1ABqLQAARw0eIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzyAQsgA0EANgIAIAZBAWohAUELDB4LIAEgBEYEQEGsASECDPEBCwJAAkAgAS0AAEHBAGsOAwAgASALIAFBAWohAUGQASECDNgBCyABQQFqIQFBkwEhAgzXAQsgASAERgRAQasBIQIM8AELAkACQCABLQAAQcEAaw4PAB8fHx8fHx8fHx8fHx8BHwsgAUEBaiEBQZEBIQIM1wELIAFBAWohAUGSASECDNYBCyABIARGBEBBqgEhAgzvAQsgAS0AAEHMAEcNHCABQQFqIQFBCgwbC0GpASECIAEgBEYN7QEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABB0dQAai0AAEcNGiAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7gELIANBADYCACAGQQFqIQFBHgwaC0GoASECIAEgBEYN7AEgAygCACIAIAQgAWtqIQUgASAAa0EGaiEGAkADQCABLQAAIABBytQAai0AAEcNGSAAQQZGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7QELIANBADYCACAGQQFqIQFBFQwZC0GnASECIAEgBEYN6wEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBx9QAai0AAEcNGCAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM7AELIANBADYCACAGQQFqIQFBFwwYC0GmASECIAEgBEYN6gEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABBwdQAai0AAEcNFyAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6wELIANBADYCACAGQQFqIQFBGAwXCyABIARGBEBBpQEhAgzqAQsCQAJAIAEtAABByQBrDgcAGRkZGRkBGQsgAUEBaiEBQYsBIQIM0QELIAFBAWohAUGMASECDNABC0GkASECIAEgBEYN6AEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBptUAai0AAEcNFSAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6QELIANBADYCACAGQQFqIQFBCQwVC0GjASECIAEgBEYN5wEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBpNUAai0AAEcNFCAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM6AELIANBADYCACAGQQFqIQFBHwwUC0GiASECIAEgBEYN5gEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBvtQAai0AAEcNEyAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM5wELIANBADYCACAGQQFqIQFBAgwTC0GhASECIAEgBEYN5QEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGA0AgAS0AACAAQbzUAGotAABHDREgAEEBRg0CIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADOUBCyABIARGBEBBoAEhAgzlAQtBASABLQAAQd8ARw0RGiABQQFqIQFBhwEhAgzLAQsgA0EANgIAIAZBAWohAUGIASECDMoBC0GfASECIAEgBEYN4gEgAygCACIAIAQgAWtqIQUgASAAa0EIaiEGAkADQCABLQAAIABBhNUAai0AAEcNDyAAQQhGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM4wELIANBADYCACAGQQFqIQFBKQwPC0GeASECIAEgBEYN4QEgAygCACIAIAQgAWtqIQUgASAAa0EDaiEGAkADQCABLQAAIABBuNQAai0AAEcNDiAAQQNGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM4gELIANBADYCACAGQQFqIQFBLQwOCyABIARGBEBBnQEhAgzhAQsgAS0AAEHFAEcNDiABQQFqIQFBhAEhAgzHAQsgASAERgRAQZwBIQIM4AELAkACQCABLQAAQcwAaw4IAA8PDw8PDwEPCyABQQFqIQFBggEhAgzHAQsgAUEBaiEBQYMBIQIMxgELQZsBIQIgASAERg3eASADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANAIAEtAAAgAEGz1ABqLQAARw0LIABBBEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzfAQsgA0EANgIAIAZBAWohAUEjDAsLQZoBIQIgASAERg3dASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGw1ABqLQAARw0KIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzeAQsgA0EANgIAIAZBAWohAUEADAoLIAEgBEYEQEGZASECDN0BCwJAAkAgAS0AAEHIAGsOCAAMDAwMDAwBDAsgAUEBaiEBQf0AIQIMxAELIAFBAWohAUGAASECDMMBCyABIARGBEBBmAEhAgzcAQsCQAJAIAEtAABBzgBrDgMACwELCyABQQFqIQFB/gAhAgzDAQsgAUEBaiEBQf8AIQIMwgELIAEgBEYEQEGXASECDNsBCyABLQAAQdkARw0IIAFBAWohAUEIDAcLQZYBIQIgASAERg3ZASADKAIAIgAgBCABa2ohBSABIABrQQNqIQYCQANAIAEtAAAgAEGs1ABqLQAARw0GIABBA0YNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzaAQsgA0EANgIAIAZBAWohAUEFDAYLQZUBIQIgASAERg3YASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEGm1ABqLQAARw0FIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzZAQsgA0EANgIAIAZBAWohAUEWDAULQZQBIQIgASAERg3XASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGh1QBqLQAARw0EIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzYAQsgA0EANgIAIAZBAWohAUEQDAQLIAEgBEYEQEGTASECDNcBCwJAAkAgAS0AAEHDAGsODAAGBgYGBgYGBgYGAQYLIAFBAWohAUH5ACECDL4BCyABQQFqIQFB+gAhAgy9AQtBkgEhAiABIARGDdUBIAMoAgAiACAEIAFraiEFIAEgAGtBBWohBgJAA0AgAS0AACAAQaDUAGotAABHDQIgAEEFRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNYBCyADQQA2AgAgBkEBaiEBQSQMAgsgA0EANgIADAILIAEgBEYEQEGRASECDNQBCyABLQAAQcwARw0BIAFBAWohAUETCzoAKSADKAIEIQAgA0EANgIEIAMgACABEC4iAA0CDAELQQAhAiADQQA2AhwgAyABNgIUIANB/h82AhAgA0EGNgIMDNEBC0H4ACECDLcBCyADQZABNgIcIAMgATYCFCADIAA2AgxBACECDM8BC0EAIQACQCADKAI4IgJFDQAgAigCQCICRQ0AIAMgAhEAACEACyAARQ0AIABBFUYNASADQQA2AhwgAyABNgIUIANBgg82AhAgA0EgNgIMQQAhAgzOAQtB9wAhAgy0AQsgA0GPATYCHCADIAE2AhQgA0HsGzYCECADQRU2AgxBACECDMwBCyABIARGBEBBjwEhAgzMAQsCQCABLQAAQSBGBEAgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GbHzYCECADQQY2AgxBACECDMwBC0ECIQIMsgELA0AgAS0AAEEgRw0CIAQgAUEBaiIBRw0AC0GOASECDMoBCyABIARGBEBBjQEhAgzKAQsCQCABLQAAQQlrDgRKAABKAAtB9QAhAgywAQsgAy0AKUEFRgRAQfYAIQIMsAELQfQAIQIMrwELIAEgBEYEQEGMASECDMgBCyADQRA2AgggAyABNgIEDAoLIAEgBEYEQEGLASECDMcBCwJAIAEtAABBCWsOBEcAAEcAC0HzACECDK0BCyABIARHBEAgA0EQNgIIIAMgATYCBEHxACECDK0BC0GKASECDMUBCwJAIAEgBEcEQANAIAEtAABBoNAAai0AACIAQQNHBEACQCAAQQFrDgJJAAQLQfAAIQIMrwELIAQgAUEBaiIBRw0AC0GIASEC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BCABQQFqIgFHDQALQfsAIQIMpwELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB2wA2AhwgAyABNgIUIAMgADYCDEEAIQIMpgELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB3QA2AhwgAyABNgIUIAMgADYCDEEAIQIMpQELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0DIANB+gA2AhwgAyABNgIUIAMgADYCDEEAIQIMpAELIANBADYCHCADIAE2AhQgA0G8CjYCECADQQc2AgxBACECDKMBC0HPACECDIkBC0HRACECDIgBC0HnACECDIcBCyABIARGBEBB+gAhAgygAQsCQCABLQAAQQlrDgQgAAAgAAsgAUEBaiEBQeYAIQIMhgELIAEgBEYEQEH5ACECDJ8BCwJAIAEtAABBCWsOBB8AAB8AC0EAIQACQCADKAI4IgJFDQAgAigCOCICRQ0AIAMgAhEAACEACyAARQRAQeIBIQIMhgELIABBFUcEQCADQQA2AhwgAyABNgIUIANByQ02AhAgA0EaNgIMQQAhAgyfAQsgA0H4ADYCHCADIAE2AhQgA0HqGjYCECADQRU2AgxBACECDJ4BCyABIARHBEAgA0ENNgIIIAMgATYCBEHkACECDIUBC0H3ACECDJ0BCyABIARGBEBB9gAhAgydAQsCQAJAAkAgAS0AAEHIAGsOCwABCwsLCwsLCwsCCwsgAUEBaiEBQd0AIQIMhQELIAFBAWohAUHgACECDIQBCyABQQFqIQFB4wAhAgyDAQtB9QAhAiABIARGDZsBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbXVAGotAABHDQggAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADJwBCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQKyIABEAgA0H0ADYCHCADIAE2AhQgAyAANgIMQQAhAgycAQtB4gAhAgyCAQtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJwBC0HhACECDIIBCyADQfMANgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMmgELIAMtACkiAEEja0ELSQ0JAkAgAEEGSw0AQQEgAHRBygBxRQ0ADAoLQQAhAiADQQA2AhwgAyABNgIUIANB7Qk2AhAgA0EINgIMDJkBC0HyACECIAEgBEYNmAEgAygCACIAIAQgAWtqIQUgASAAa0EBaiEGAkADQCABLQAAIABBs9UAai0AAEcNBSAAQQFGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMmQELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgAEQCADQfEANgIcIAMgATYCFCADIAA2AgxBACECDJkBC0HfACECDH8LQQAhAAJAIAMoAjgiAkUNACACKAI0IgJFDQAgAyACEQAAIQALAkAgAARAIABBFUYNASADQQA2AhwgAyABNgIUIANB6g02AhAgA0EmNgIMQQAhAgyZAQtB3gAhAgx/CyADQfAANgIcIAMgATYCFCADQYAbNgIQIANBFTYCDEEAIQIMlwELIAMtAClBIUYNBiADQQA2AhwgAyABNgIUIANBkQo2AhAgA0EINgIMQQAhAgyWAQtB7wAhAiABIARGDZUBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbDVAGotAABHDQIgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADJYBCyADKAIEIQAgA0IANwMAIAMgACAGQQFqIgEQKyIARQ0CIANB7QA2AhwgAyABNgIUIAMgADYCDEEAIQIMlQELIANBADYCAAsgAygCBCEAIANBADYCBCADIAAgARArIgBFDYABIANB7gA2AhwgAyABNgIUIAMgADYCDEEAIQIMkwELQdwAIQIMeQtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJMBC0HbACECDHkLIANB7AA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyRAQsgAy0AKSIAQSNJDQAgAEEuRg0AIANBADYCHCADIAE2AhQgA0HJCTYCECADQQg2AgxBACECDJABC0HaACECDHYLIAEgBEYEQEHrACECDI8BCwJAIAEtAABBL0YEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQbI4NgIQIANBCDYCDEEAIQIMjwELQdkAIQIMdQsgASAERwRAIANBDjYCCCADIAE2AgRB2AAhAgx1C0HqACECDI0BCyABIARGBEBB6QAhAgyNAQsgAS0AAEEwayIAQf8BcUEKSQRAIAMgADoAKiABQQFqIQFB1wAhAgx0CyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNeiADQegANgIcIAMgATYCFCADIAA2AgxBACECDIwBCyABIARGBEBB5wAhAgyMAQsCQCABLQAAQS5GBEAgAUEBaiEBDAELIAMoAgQhACADQQA2AgQgAyAAIAEQLyIARQ17IANB5gA2AhwgAyABNgIUIAMgADYCDEEAIQIMjAELQdYAIQIMcgsgASAERgRAQeUAIQIMiwELQQAhAEEBIQVBASEHQQAhAgJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAIAEtAABBMGsOCgoJAAECAwQFBggLC0ECDAYLQQMMBQtBBAwEC0EFDAMLQQYMAgtBBwwBC0EICyECQQAhBUEAIQcMAgtBCSECQQEhAEEAIQVBACEHDAELQQAhBUEBIQILIAMgAjoAKyABQQFqIQECQAJAIAMtAC5BEHENAAJAAkACQCADLQAqDgMBAAIECyAHRQ0DDAILIAANAQwCCyAFRQ0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNAiADQeIANgIcIAMgATYCFCADIAA2AgxBACECDI0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNfSADQeMANgIcIAMgATYCFCADIAA2AgxBACECDIwBCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNeyADQeQANgIcIAMgATYCFCADIAA2AgwMiwELQdQAIQIMcQsgAy0AKUEiRg2GAUHTACECDHALQQAhAAJAIAMoAjgiAkUNACACKAJEIgJFDQAgAyACEQAAIQALIABFBEBB1QAhAgxwCyAAQRVHBEAgA0EANgIcIAMgATYCFCADQaQNNgIQIANBITYCDEEAIQIMiQELIANB4QA2AhwgAyABNgIUIANB0Bo2AhAgA0EVNgIMQQAhAgyIAQsgASAERgRAQeAAIQIMiAELAkACQAJAAkACQCABLQAAQQprDgQBBAQABAsgAUEBaiEBDAELIAFBAWohASADQS9qLQAAQQFxRQ0BC0HSACECDHALIANBADYCHCADIAE2AhQgA0G2ETYCECADQQk2AgxBACECDIgBCyADQQA2AhwgAyABNgIUIANBthE2AhAgA0EJNgIMQQAhAgyHAQsgASAERgRAQd8AIQIMhwELIAEtAABBCkYEQCABQQFqIQEMCQsgAy0ALkHAAHENCCADQQA2AhwgAyABNgIUIANBthE2AhAgA0ECNgIMQQAhAgyGAQsgASAERgRAQd0AIQIMhgELIAEtAAAiAkENRgRAIAFBAWohAUHQACECDG0LIAEhACACQQlrDgQFAQEFAQsgBCABIgBGBEBB3AAhAgyFAQsgAC0AAEEKRw0AIABBAWoMAgtBACECIANBADYCHCADIAA2AhQgA0HKLTYCECADQQc2AgwMgwELIAEgBEYEQEHbACECDIMBCwJAIAEtAABBCWsOBAMAAAMACyABQQFqCyEBQc4AIQIMaAsgASAERgRAQdoAIQIMgQELIAEtAABBCWsOBAABAQABC0EAIQIgA0EANgIcIANBmhI2AhAgA0EHNgIMIAMgAUEBajYCFAx/CyADQYASOwEqQQAhAAJAIAMoAjgiAkUNACACKAI4IgJFDQAgAyACEQAAIQALIABFDQAgAEEVRw0BIANB2QA2AhwgAyABNgIUIANB6ho2AhAgA0EVNgIMQQAhAgx+C0HNACECDGQLIANBADYCHCADIAE2AhQgA0HJDTYCECADQRo2AgxBACECDHwLIAEgBEYEQEHZACECDHwLIAEtAABBIEcNPSABQQFqIQEgAy0ALkEBcQ09IANBADYCHCADIAE2AhQgA0HCHDYCECADQR42AgxBACECDHsLIAEgBEYEQEHYACECDHsLAkACQAJAAkACQCABLQAAIgBBCmsOBAIDAwABCyABQQFqIQFBLCECDGULIABBOkcNASADQQA2AhwgAyABNgIUIANB5xE2AhAgA0EKNgIMQQAhAgx9CyABQQFqIQEgA0Evai0AAEEBcUUNcyADLQAyQYABcUUEQCADQTJqIQIgAxA1QQAhAAJAIAMoAjgiBkUNACAGKAIoIgZFDQAgAyAGEQAAIQALAkACQCAADhZNTEsBAQEBAQEBAQEBAQEBAQEBAQEAAQsgA0EpNgIcIAMgATYCFCADQawZNgIQIANBFTYCDEEAIQIMfgsg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c3BvbnNlIHN0YXR1cwBFeHBlY3RlZCBMRiBhZnRlciBoZWFkZXJzAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMAVXNlciBjYWxsYmFjayBlcnJvcgBgb25fcmVzZXRgIGNhbGxiYWNrIGVycm9yAGBvbl9jaHVua19oZWFkZXJgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2JlZ2luYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX3ZhbHVlYCBjYWxsYmFjayBlcnJvcgBgb25fc3RhdHVzX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fdmVyc2lvbl9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3VybF9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3Byb3RvY29sX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9oZWFkZXJfdmFsdWVfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fbWV0aG9kX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25faGVhZGVyX2ZpZWxkX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX25hbWVgIGNhbGxiYWNrIGVycm9yAFVuZXhwZWN0ZWQgY2hhciBpbiB1cmwgc2VydmVyAEludmFsaWQgaGVhZGVyIHZhbHVlIGNoYXIASW52YWxpZCBoZWFkZXIgZmllbGQgY2hhcgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3ZlcnNpb24ASW52YWxpZCBtaW5vciB2ZXJzaW9uAEludmFsaWQgbWFqb3IgdmVyc2lvbgBFeHBlY3RlZCBzcGFjZSBhZnRlciB2ZXJzaW9uAEV4cGVjdGVkIENSTEYgYWZ0ZXIgdmVyc2lvbgBJbnZhbGlkIEhUVFAgdmVyc2lvbgBJbnZhbGlkIGhlYWRlciB0b2tlbgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3VybABJbnZhbGlkIGNoYXJhY3RlcnMgaW4gdXJsAFVuZXhwZWN0ZWQgc3RhcnQgY2hhciBpbiB1cmwARG91YmxlIEAgaW4gdXJsAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fcHJvdG9jb2wARW1wdHkgQ29udGVudC1MZW5ndGgASW52YWxpZCBjaGFyYWN0ZXIgaW4gQ29udGVudC1MZW5ndGgAVHJhbnNmZXItRW5jb2RpbmcgY2FuJ3QgYmUgcHJlc2VudCB3aXRoIENvbnRlbnQtTGVuZ3RoAER1cGxpY2F0ZSBDb250ZW50LUxlbmd0aABJbnZhbGlkIGNoYXIgaW4gdXJsIHBhdGgAQ29udGVudC1MZW5ndGggY2FuJ3QgYmUgcHJlc2VudCB3aXRoIFRyYW5zZmVyLUVuY29kaW5nAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgc2l6ZQBFeHBlY3RlZCBMRiBhZnRlciBjaHVuayBzaXplAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIHNpemUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfdmFsdWUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9jaHVua19leHRlbnNpb25fdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyB2YWx1ZQBVbmV4cGVjdGVkIHdoaXRlc3BhY2UgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgTEYgYWZ0ZXIgaGVhZGVyIHZhbHVlAEludmFsaWQgYFRyYW5zZmVyLUVuY29kaW5nYCBoZWFkZXIgdmFsdWUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciBjaHVuayBleHRlbnNpb24gdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBxdW90ZSB2YWx1ZQBJbnZhbGlkIHF1b3RlZC1wYWlyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAFBhdXNlZCBieSBvbl9oZWFkZXJzX2NvbXBsZXRlAEludmFsaWQgRU9GIHN0YXRlAG9uX3Jlc2V0IHBhdXNlAG9uX2NodW5rX2hlYWRlciBwYXVzZQBvbl9tZXNzYWdlX2JlZ2luIHBhdXNlAG9uX2NodW5rX2V4dGVuc2lvbl92YWx1ZSBwYXVzZQBvbl9zdGF0dXNfY29tcGxldGUgcGF1c2UAb25fdmVyc2lvbl9jb21wbGV0ZSBwYXVzZQBvbl91cmxfY29tcGxldGUgcGF1c2UAb25fcHJvdG9jb2xfY29tcGxldGUgcGF1c2UAb25fY2h1bmtfY29tcGxldGUgcGF1c2UAb25faGVhZGVyX3ZhbHVlX2NvbXBsZXRlIHBhdXNlAG9uX21lc3NhZ2VfY29tcGxldGUgcGF1c2UAb25fbWV0aG9kX2NvbXBsZXRlIHBhdXNlAG9uX2hlYWRlcl9maWVsZF9jb21wbGV0ZSBwYXVzZQBvbl9jaHVua19leHRlbnNpb25fbmFtZSBwYXVzZQBVbmV4cGVjdGVkIHNwYWNlIGFmdGVyIHN0YXJ0IGxpbmUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciByZXNwb25zZSBsaW5lAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fY2h1bmtfZXh0ZW5zaW9uX25hbWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBuYW1lAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgZXh0ZW5zaW9uIG5hbWUASW52YWxpZCBzdGF0dXMgY29kZQBQYXVzZSBvbiBDT05ORUNUL1VwZ3JhZGUAUGF1c2Ugb24gUFJJL1VwZ3JhZGUARXhwZWN0ZWQgSFRUUC8yIENvbm5lY3Rpb24gUHJlZmFjZQBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX21ldGhvZABFeHBlY3RlZCBzcGFjZSBhZnRlciBtZXRob2QAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfZmllbGQAUGF1c2VkAEludmFsaWQgd29yZCBlbmNvdW50ZXJlZABJbnZhbGlkIG1ldGhvZCBlbmNvdW50ZXJlZABNaXNzaW5nIGV4cGVjdGVkIENSIGFmdGVyIGNodW5rIGRhdGEARXhwZWN0ZWQgTEYgYWZ0ZXIgY2h1bmsgZGF0YQBVbmV4cGVjdGVkIGNoYXIgaW4gdXJsIHNjaGVtYQBSZXF1ZXN0IGhhcyBpbnZhbGlkIGBUcmFuc2Zlci1FbmNvZGluZ2AARGF0YSBhZnRlciBgQ29ubmVjdGlvbjogY2xvc2VgAFNXSVRDSF9QUk9YWQBVU0VfUFJPWFkATUtBQ1RJVklUWQBVTlBST0NFU1NBQkxFX0VOVElUWQBRVUVSWQBDT1BZAE1PVkVEX1BFUk1BTkVOVExZAFRPT19FQVJMWQBOT1RJRlkARkFJTEVEX0RFUEVOREVOQ1kAQkFEX0dBVEVXQVkAUExBWQBQVVQAQ0hFQ0tPVVQAR0FURVdBWV9USU1FT1VUAFJFUVVFU1RfVElNRU9VVABORVRXT1JLX0NPTk5FQ1RfVElNRU9VVABDT05ORUNUSU9OX1RJTUVPVVQATE9HSU5fVElNRU9VVABORVRXT1JLX1JFQURfVElNRU9VVABQT1NUAE1JU0RJUkVDVEVEX1JFUVVFU1QAQ0xJRU5UX0NMT1NFRF9SRVFVRVNUAENMSUVOVF9DTE9TRURfTE9BRF9CQUxBTkNFRF9SRVFVRVNUAEJBRF9SRVFVRVNUAEhUVFBfUkVRVUVTVF9TRU5UX1RPX0hUVFBTX1BPUlQAUkVQT1JUAElNX0FfVEVBUE9UAFJFU0VUX0NPTlRFTlQATk9fQ09OVEVOVABQQVJUSUFMX0NPTlRFTlQASFBFX0lOVkFMSURfQ09OU1RBTlQASFBFX0NCX1JFU0VUAEdFVABIUEVfU1RSSUNUAENPTkZMSUNUAFRFTVBPUkFSWV9SRURJUkVDVABQRVJNQU5FTlRfUkVESVJFQ1QAQ09OTkVDVABNVUxUSV9TVEFUVVMASFBFX0lOVkFMSURfU1RBVFVTAFRPT19NQU5ZX1JFUVVFU1RTAEVBUkxZX0hJTlRTAFVOQVZBSUxBQkxFX0ZPUl9MRUdBTF9SRUFTT05TAE9QVElPTlMAU1dJVENISU5HX1BST1RPQ09MUwBWQVJJQU5UX0FMU09fTkVHT1RJQVRFUwBNVUxUSVBMRV9DSE9JQ0VTAElOVEVSTkFMX1NFUlZFUl9FUlJPUgBXRUJfU0VSVkVSX1VOS05PV05fRVJST1IAUkFJTEdVTl9FUlJPUgBJREVOVElUWV9QUk9WSURFUl9BVVRIRU5USUNBVElPTl9FUlJPUgBTU0xfQ0VSVElGSUNBVEVfRVJST1IASU5WQUxJRF9YX0ZPUldBUkRFRF9GT1IAU0VUX1BBUkFNRVRFUgBHRVRfUEFSQU1FVEVSAEhQRV9VU0VSAFNFRV9PVEhFUgBIUEVfQ0JfQ0hVTktfSEVBREVSAEV4cGVjdGVkIExGIGFmdGVyIENSAE1LQ0FMRU5EQVIAU0VUVVAAV0VCX1NFUlZFUl9JU19ET1dOAFRFQVJET1dOAEhQRV9DTE9TRURfQ09OTkVDVElPTgBIRVVSSVNUSUNfRVhQSVJBVElPTgBESVNDT05ORUNURURfT1BFUkFUSU9OAE5PTl9BVVRIT1JJVEFUSVZFX0lORk9STUFUSU9OAEhQRV9JTlZBTElEX1ZFUlNJT04ASFBFX0NCX01FU1NBR0VfQkVHSU4AU0lURV9JU19GUk9aRU4ASFBFX0lOVkFMSURfSEVBREVSX1RPS0VOAElOVkFMSURfVE9LRU4ARk9SQklEREVOAEVOSEFOQ0VfWU9VUl9DQUxNAEhQRV9JTlZBTElEX1VSTABCTE9DS0VEX0JZX1BBUkVOVEFMX0NPTlRST0wATUtDT0wAQUNMAEhQRV9JTlRFUk5BTABSRVFVRVNUX0hFQURFUl9GSUVMRFNfVE9PX0xBUkdFX1VOT0ZGSUNJQUwASFBFX09LAFVOTElOSwBVTkxPQ0sAUFJJAFJFVFJZX1dJVEgASFBFX0lOVkFMSURfQ09OVEVOVF9MRU5HVEgASFBFX1VORVhQRUNURURfQ09OVEVOVF9MRU5HVEgARkxVU0gAUFJPUFBBVENIAE0tU0VBUkNIAFVSSV9UT09fTE9ORwBQUk9DRVNTSU5HAE1JU0NFTExBTkVPVVNfUEVSU0lTVEVOVF9XQVJOSU5HAE1JU0NFTExBTkVPVVNfV0FSTklORwBIUEVfSU5WQUxJRF9UUkFOU0ZFUl9FTkNPRElORwBFeHBlY3RlZCBDUkxGAEhQRV9JTlZBTElEX0NIVU5LX1NJWkUATU9WRQBDT05USU5VRQBIUEVfQ0JfU1RBVFVTX0NPTVBMRVRFAEhQRV9DQl9IRUFERVJTX0NPTVBMRVRFAEhQRV9DQl9WRVJTSU9OX0NPTVBMRVRFAEhQRV9DQl9VUkxfQ09NUExFVEUASFBFX0NCX1BST1RPQ09MX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19DT01QTEVURQBIUEVfQ0JfSEVBREVSX1ZBTFVFX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19FWFRFTlNJT05fVkFMVUVfQ09NUExFVEUASFBFX0NCX0NIVU5LX0VYVEVOU0lPTl9OQU1FX0NPTVBMRVRFAEhQRV9DQl9NRVNTQUdFX0NPTVBMRVRFAEhQRV9DQl9NRVRIT0RfQ09NUExFVEUASFBFX0NCX0hFQURFUl9GSUVMRF9DT01QTEVURQBERUxFVEUASFBFX0lOVkFMSURfRU9GX1NUQVRFAElOVkFMSURfU1NMX0NFUlRJRklDQVRFAFBBVVNFAE5PX1JFU1BPTlNFAFVOU1VQUE9SVEVEX01FRElBX1RZUEUAR09ORQBOT1RfQUNDRVBUQUJMRQBTRVJWSUNFX1VOQVZBSUxBQkxFAFJBTkdFX05PVF9TQVRJU0ZJQUJMRQBPUklHSU5fSVNfVU5SRUFDSEFCTEUAUkVTUE9OU0VfSVNfU1RBTEUAUFVSR0UATUVSR0UAUkVRVUVTVF9IRUFERVJfRklFTERTX1RPT19MQVJHRQBSRVFVRVNUX0hFQURFUl9UT09fTEFSR0UAUEFZTE9BRF9UT09fTEFSR0UASU5TVUZGSUNJRU5UX1NUT1JBR0UASFBFX1BBVVNFRF9VUEdSQURFAEhQRV9QQVVTRURfSDJfVVBHUkFERQBTT1VSQ0UAQU5OT1VOQ0UAVFJBQ0UASFBFX1VORVhQRUNURURfU1BBQ0UAREVTQ1JJQkUAVU5TVUJTQ1JJQkUAUkVDT1JEAEhQRV9JTlZBTElEX01FVEhPRABOT1RfRk9VTkQAUFJPUEZJTkQAVU5CSU5EAFJFQklORABVTkFVVEhPUklaRUQATUVUSE9EX05PVF9BTExPV0VEAEhUVFBfVkVSU0lPTl9OT1RfU1VQUE9SVEVEAEFMUkVBRFlfUkVQT1JURUQAQUNDRVBURUQATk9UX0lNUExFTUVOVEVEAExPT1BfREVURUNURUQASFBFX0NSX0VYUEVDVEVEAEhQRV9MRl9FWFBFQ1RFRABDUkVBVEVEAElNX1VTRUQASFBFX1BBVVNFRABUSU1FT1VUX09DQ1VSRUQAUEFZTUVOVF9SRVFVSVJFRABQUkVDT05ESVRJT05fUkVRVUlSRUQAUFJPWFlfQVVUSEVOVElDQVRJT05fUkVRVUlSRUQATkVUV09SS19BVVRIRU5USUNBVElPTl9SRVFVSVJFRABMRU5HVEhfUkVRVUlSRUQAU1NMX0NFUlRJRklDQVRFX1JFUVVJUkVEAFVQR1JBREVfUkVRVUlSRUQAUEFHRV9FWFBJUkVEAFBSRUNPTkRJVElPTl9GQUlMRUQARVhQRUNUQVRJT05fRkFJTEVEAFJFVkFMSURBVElPTl9GQUlMRUQAU1NMX0hBTkRTSEFLRV9GQUlMRUQATE9DS0VEAFRSQU5TRk9STUFUSU9OX0FQUExJRUQATk9UX01PRElGSUVEAE5PVF9FWFRFTkRFRABCQU5EV0lEVEhfTElNSVRfRVhDRUVERUQAU0lURV9JU19PVkVSTE9BREVEAEhFQUQARXhwZWN0ZWQgSFRUUC8sIFJUU1AvIG9yIElDRS8A5xUAAK8VAACkEgAAkhoAACYWAACeFAAA2xkAAHkVAAB+EgAA/hQAADYVAAALFgAA2BYAAPMSAABCGAAArBYAABIVAAAUFwAA7xcAAEgUAABxFwAAshoAAGsZAAB+GQAANRQAAIIaAABEFwAA/RYAAB4YAACHFwAAqhkAAJMSAAAHGAAALBcAAMoXAACkFwAA5xUAAOcVAABYFwAAOxgAAKASAAAtHAAAwxEAAEgRAADeEgAAQhMAAKQZAAD9EAAA9xUAAKUVAADvFgAA+BkAAEoWAABWFgAA9RUAAAoaAAAIGgAAARoAAKsVAABCEgAA1xAAAEwRAAAFGQAAVBYAAB4RAADKGQAAyBkAAE4WAAD/GAAAcRQAAPAVAADuFQAAlBkAAPwVAAC/GQAAmxkAAHwUAABDEQAAcBgAAJUUAAAnFAAAGRQAANUSAADUGQAARBYAAPcQAEG5OwsBAQBB0DsL4AEBAQIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBuj0LBAEAAAIAQdE9C14DBAMDAwMDAAADAwADAwADAwMDAwMDAwMDAAUAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAwADAEG6PwsEAQAAAgBB0T8LXgMAAwMDAwMAAAMDAAMDAAMDAwMDAwMDAwMABAAFAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwADAAMAQbDBAAsNbG9zZWVlcC1hbGl2ZQBBycEACwEBAEHgwQAL4AEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBycMACwEBAEHgwwAL5wEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAWNodW5rZWQAQfHFAAteAQABAQEBAQAAAQEAAQEAAQEBAQEBAQEBAQAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAAEAAQBB0McACyFlY3Rpb25lbnQtbGVuZ3Rob25yb3h5LWNvbm5lY3Rpb24AQYDIAAsgcmFuc2Zlci1lbmNvZGluZ3BncmFkZQ0KDQpTTQ0KDQoAQanIAAsFAQIAAQMAQcDIAAtfBAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanKAAsFAQIAAQMAQcDKAAtfBAUFBgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanMAAsEAQAAAQBBwcwAC14CAgACAgICAgICAgICAgICAgICAgICAgICAgICAgIAAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAEGpzgALBQECAAEDAEHAzgALXwQFAAAFBQUFBQUFBQUFBQYFBQUFBQUFBQUFBQUABQAHCAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQAFAAUABQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAAAFAEGp0AALBQEBAAEBAEHA0AALAQEAQdrQAAtBAgAAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAQanSAAsFAQEAAQEAQcDSAAsBAQBBytIACwYCAAAAAAIAQeHSAAs6AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwBBoNQAC50BTk9VTkNFRUNLT1VUTkVDVEVURUNSSUJFTFVTSEVURUFEU0VBUkNIUkdFQ1RJVklUWUxFTkRBUlZFT1RJRllQVElPTlNDSFNFQVlTVEFUQ0hHRVVFUllPUkRJUkVDVE9SVFJDSFBBUkFNRVRFUlVSQ0VCU0NSSUJFQVJET1dOQUNFSU5ETktDS1VCU0NSSUJFVFRQQ0VUU1BBRFRQLw=='
 
 let wasmBuffer
 
@@ -27567,7 +29913,7 @@ Object.defineProperty(module, 'exports', {
 
 const { Buffer } = __nccwpck_require__(4573)
 
-const wasmBase64 = 'AGFzbQEAAAABJwdgAX8Bf2ADf39/AX9gAn9/AGABfwBgBH9/f38Bf2AAAGADf39/AALLAQgDZW52GHdhc21fb25faGVhZGVyc19jb21wbGV0ZQAEA2VudhV3YXNtX29uX21lc3NhZ2VfYmVnaW4AAANlbnYLd2FzbV9vbl91cmwAAQNlbnYOd2FzbV9vbl9zdGF0dXMAAQNlbnYUd2FzbV9vbl9oZWFkZXJfZmllbGQAAQNlbnYUd2FzbV9vbl9oZWFkZXJfdmFsdWUAAQNlbnYMd2FzbV9vbl9ib2R5AAEDZW52GHdhc21fb25fbWVzc2FnZV9jb21wbGV0ZQAAAzU0BQYAAAMAAAAAAAADAQMAAwMDAAACAAAAAAICAgICAgICAgIBAQEBAQEBAQEBAwAAAwAAAAQFAXABExMFAwEAAgYIAX8BQcDZBAsHxQcoBm1lbW9yeQIAC19pbml0aWFsaXplAAgZX19pbmRpcmVjdF9mdW5jdGlvbl90YWJsZQEAC2xsaHR0cF9pbml0AAkYbGxodHRwX3Nob3VsZF9rZWVwX2FsaXZlADcMbGxodHRwX2FsbG9jAAsGbWFsbG9jADkLbGxodHRwX2ZyZWUADARmcmVlAAwPbGxodHRwX2dldF90eXBlAA0VbGxodHRwX2dldF9odHRwX21ham9yAA4VbGxodHRwX2dldF9odHRwX21pbm9yAA8RbGxodHRwX2dldF9tZXRob2QAEBZsbGh0dHBfZ2V0X3N0YXR1c19jb2RlABESbGxodHRwX2dldF91cGdyYWRlABIMbGxodHRwX3Jlc2V0ABMObGxodHRwX2V4ZWN1dGUAFBRsbGh0dHBfc2V0dGluZ3NfaW5pdAAVDWxsaHR0cF9maW5pc2gAFgxsbGh0dHBfcGF1c2UAFw1sbGh0dHBfcmVzdW1lABgbbGxodHRwX3Jlc3VtZV9hZnRlcl91cGdyYWRlABkQbGxodHRwX2dldF9lcnJubwAaF2xsaHR0cF9nZXRfZXJyb3JfcmVhc29uABsXbGxodHRwX3NldF9lcnJvcl9yZWFzb24AHBRsbGh0dHBfZ2V0X2Vycm9yX3BvcwAdEWxsaHR0cF9lcnJub19uYW1lAB4SbGxodHRwX21ldGhvZF9uYW1lAB8SbGxodHRwX3N0YXR1c19uYW1lACAabGxodHRw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AXRrQT5qIQILIAEgAjYCHCABQgA3AhAgAkECdEH01wBqIQACQEHI1QAoAgAiA0EBIAJ0IgdxRQRAIAAgATYCAEHI1QAgAyAHcjYCACABIAA2AhggASABNgIIIAEgATYCDAwBCyAEQRkgAkEBdmtBACACQR9HG3QhAiAAKAIAIQACQANAIAAiAygCBEF4cSAERg0BIAJBHXYhACACQQF0IQIgAyAAQQRxakEQaiIHKAIAIgANAAsgByABNgIAIAEgAzYCGCABIAE2AgwgASABNgIIDAELIAMoAggiACABNgIMIAMgATYCCCABQQA2AhggASADNgIMIAEgADYCCAtB5NUAQeTVACgCAEEBayIAQX8gABs2AgALCwcAIAAtACgLBwAgAC0AKgsHACAALQArCwcAIAAtACkLBwAgAC8BNAsHACAALQAwC0ABBH8gACgCGCEBIAAvAS4hAiAALQAoIQMgACgCOCEEIAAQOCAAIAQ2AjggACADOgAoIAAgAjsBLiAAIAE2AhgLhocCAwd/A34BeyABIAJqIQQCQCAAIgMoAgwiAA0AIAMoAgQEQCADIAE2AgQLIwBBEGsiCSQAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAC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DAgLQeMBDAcLQdcBDAYLQdgBDAULQdkBDAQLQdoBDAMLQdsBDAILQd0BDAELQdwBCyECA0ACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAIAMCfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAn8CQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAgAwJ/AkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJ/AkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQCACDuMBAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISMkJScoKZ4DmwOaA5EDigODA4AD/QL7AvgC8gLxAu8C7QLoAucC5gLlAuQC3ALbAtoC2QLYAtcC1gLVAs8CzgLMAssCygLJAsgCxwLGAsQCwwK+ArwCugK5ArgCtwK2ArUCtAKzArICsQKwAq4CrQKpAqgCpwKmAqUCpAKjAqICoQKgAp8CmAKQAowCiwKKAoEC/gH9AfwB+wH6AfkB+AH3AfUB8wHwAesB6QHoAecB5gHlAeQB4wHiAeEB4AHfAd4B3QHcAdoB2QHYAdcB1gHVAdQB0wHSAdEB0AHPAc4BzQHMAcsBygHJAcgBxwHGAcUBxAHDAcIBwQHAAb8BvgG9AbwBuwG6AbkBuAG3AbYBtQG0AbMBsgGxAbABrwGuAa0BrAGrAaoBqQGoAacBpgGlAaQBowGiAZ8BngGZAZgBlwGWAZUBlAGTAZIBkQGQAY8BjQGMAYcBhgGFAYQBgwGCAX18e3p5dnV0UFFSU1RVCyABIARHDXJB/QEhAgy+AwsgASAERw2YAUHbASECDL0DCyABIARHDfEBQY4BIQIMvAMLIAEgBEcN/AFBhAEhAgy7AwsgASAERw2KAkH/ACECDLoDCyABIARHDZECQf0AIQIMuQMLIAEgBEcNlAJB+wAhAgy4AwsgASAERw0eQR4hAgy3AwsgASAERw0ZQRghAgy2AwsgASAERw3KAkHNACECDLUDCyABIARHDdUCQcYAIQIMtAMLIAEgBEcN1gJBwwAhAgyzAwsgASAERw3cAkE4IQIMsgMLIAMtADBBAUYNrQMMiQMLQQAhAAJAAkACQCADLQAqRQ0AIAMtACtFDQAgAy8BMiICQQJxRQ0BDAILIAMvATIiAkEBcUUNAQtBASEAIAMtAChBAUYNACADLwE0IgZB5ABrQeQASQ0AIAZBzAFGDQAgBkGwAkYNACACQcAAcQ0AQQAhACACQYgEcUGABEYNACACQShxQQBHIQALIANBADsBMiADQQA6ADECQCAARQRAIANBADoAMSADLQAuQQRxDQEMsQMLIANCADcDIAsgA0EAOgAxIANBAToANgxIC0EAIQACQCADKAI4IgJFDQAgAigCMCICRQ0AIAMgAhEAACEACyAARQ1IIABBFUcNYiADQQQ2AhwgAyABNgIUIANB0hs2AhAgA0EVNgIMQQAhAgyvAwsgASAERgRAQQYhAgyvAwsgAS0AAEEKRw0ZIAFBAWohAQwaCyADQgA3AyBBEiECDJQDCyABIARHDYoDQSMhAgysAwsgASAERgRAQQchAgysAwsCQAJAIAEtAABBCmsOBAEYGAAYCyABQQFqIQFBECECDJMDCyABQQFqIQEgA0Evai0AAEEBcQ0XQQAhAiADQQA2AhwgAyABNgIUIANBmSA2AhAgA0EZNgIMDKsDCyADIAMpAyAiDCAEIAFrrSIKfSILQgAgCyAMWBs3AyAgCiAMWg0YQQghAgyqAwsgASAERwRAIANBCTYCCCADIAE2AgRBFCECDJEDC0EJIQIMqQMLIAMpAyBQDa4CDEMLIAEgBEYEQEELIQIMqAMLIAEtAABBCkcNFiABQQFqIQEMFwsgA0Evai0AAEEBcUUNGQwmC0EAIQACQCADKAI4IgJFDQAgAigCUCICRQ0AIAMgAhEAACEACyAADRkMQgtBACEAAkAgAygCOCICRQ0AIAIoAlAiAkUNACADIAIRAAAhAAsgAA0aDCQLQQAhAAJAIAMoAjgiAkUNACACKAJQIgJFDQAgAyACEQAAIQALIAANGwwyCyADQS9qLQAAQQFxRQ0cDCILQQAhAAJAIAMoAjgiAkUNACACKAJUIgJFDQAgAyACEQAAIQALIAANHAxCC0EAIQACQCADKAI4IgJFDQAgAigCVCICRQ0AIAMgAhEAACEACyAADR0MIAsgASAERgRAQRMhAgygAwsCQCABLQAAIgBBCmsOBB8jIwAiCyABQQFqIQEMHwtBACEAAkAgAygCOCICRQ0AIAIoAlQiAkUNACADIAIRAAAhAAsgAA0iDEILIAEgBEYEQEEWIQIMngMLIAEtAABBwMEAai0AAEEBRw0jDIMDCwJAA0AgAS0AAEGwO2otAAAiAEEBRwRAAkAgAEECaw4CAwAnCyABQQFqIQFBISECDIYDCyAEIAFBAWoiAUcNAAtBGCECDJ0DCyADKAIEIQBBACECIANBADYCBCADIAAgAUEBaiIBEDQiAA0hDEELQQAhAAJAIAMoAjgiAkUNACACKAJUIgJFDQAgAyACEQAAIQALIAANIwwqCyABIARGBEBBHCECDJsDCyADQQo2AgggAyABNgIEQQAhAAJAIAMoAjgiAkUNACACKAJQIgJFDQAgAyACEQAAIQALIAANJUEkIQIMgQMLIAEgBEcEQANAIAEtAABBsD1qLQAAIgBBA0cEQCAAQQFrDgUYGiaCAyUmCyAEIAFBAWoiAUcNAAtBGyECDJoDC0EbIQIMmQMLA0AgAS0AAEGwP2otAAAiAEEDRwRAIABBAWsOBQ8RJxMmJwsgBCABQQFqIgFHDQALQR4hAgyYAwsgASAERwRAIANBCzYCCCADIAE2AgRBByECDP8CC0EfIQIMlwMLIAEgBEYEQEEgIQIMlwMLAkAgAS0AAEENaw4ULj8/Pz8/Pz8/Pz8/Pz8/Pz8/PwA/C0EAIQIgA0EANgIcIANBvws2AhAgA0ECNgIMIAMgAUEBajYCFAyWAwsgA0EvaiECA0AgASAERgRAQSEhAgyXAwsCQAJAAkAgAS0AACIAQQlrDhgCACkpASkpKSkpKSkpKSkpKSkpKSkpKQInCyABQQFqIQEgA0Evai0AAEEBcUUNCgwYCyABQQFqIQEMFwsgAUEBaiEBIAItAABBAnENAAtBACECIANBADYCHCADIAE2AhQgA0GfFTYCECADQQw2AgwMlQMLIAMtAC5BgAFxRQ0BC0EAIQACQCADKAI4IgJFDQAgAigCXCICRQ0AIAMgAhEAACEACyAARQ3mAiAAQRVGBEAgA0EkNgIcIAMgATYCFCADQZsbNgIQIANBFTYCDEEAIQIMlAMLQQAhAiADQQA2AhwgAyABNgIUIANBkA42AhAgA0EUNgIMDJMDC0EAIQIgA0EANgIcIAMgATYCFCADQb4gNgIQIANBAjYCDAySAwsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEgDKdqIgEQMiIARQ0rIANBBzYCHCADIAE2AhQgAyAANgIMDJEDCyADLQAuQcAAcUUNAQtBACEAAkAgAygCOCICRQ0AIAIoAlgiAkUNACADIAIRAAAhAAsgAEUNKyAAQRVGBEAgA0EKNgIcIAMgATYCFCADQesZNgIQIANBFTYCDEEAIQIMkAMLQQAhAiADQQA2AhwgAyABNgIUIANBkww2AhAgA0ETNgIMDI8DC0EAIQIgA0EANgIcIAMgATYCFCADQYIVNgIQIANBAjYCDAyOAwtBACECIANBADYCHCADIAE2AhQgA0HdFDYCECADQRk2AgwMjQMLQQAhAiADQQA2AhwgAyABNgIUIANB5h02AhAgA0EZNgIMDIwDCyAAQRVGDT1BACECIANBADYCHCADIAE2AhQgA0HQDzYCECADQSI2AgwMiwMLIAMoAgQhAEEAIQIgA0EANgIEIAMgACABEDMiAEUNKCADQQ02AhwgAyABNgIUIAMgADYCDAyKAwsgAEEVRg06QQAhAiADQQA2AhwgAyABNgIUIANB0A82AhAgA0EiNgIMDIkDCyADKAIEIQBBACECIANBADYCBCADIAAgARAzIgBFBEAgAUEBaiEBDCgLIANBDjYCHCADIAA2AgwgAyABQQFqNgIUDIgDCyAAQRVGDTdBACECIANBADYCHCADIAE2AhQgA0HQDzYCECADQSI2AgwMhwMLIAMoAgQhAEEAIQIgA0EANgIEIAMgACABEDMiAEUEQCABQQFqIQEMJwsgA0EPNgIcIAMgADYCDCADIAFBAWo2AhQMhgMLQQAhAiADQQA2AhwgAyABNgIUIANB4hc2AhAgA0EZNgIMDIUDCyAAQRVGDTNBACECIANBADYCHCADIAE2AhQgA0HWDDYCECADQSM2AgwMhAMLIAMoAgQhAEEAIQIgA0EANgIEIAMgACABEDQiAEUNJSADQRE2AhwgAyABNgIUIAMgADYCDAyDAwsgAEEVRg0wQQAhAiADQQA2AhwgAyABNgIUIANB1gw2AhAgA0EjNgIMDIIDCyADKAIEIQBBACECIANBADYCBCADIAAgARA0IgBFBEAgAUEBaiEBDCULIANBEjYCHCADIAA2AgwgAyABQQFqNgIUDIEDCyADQS9qLQAAQQFxRQ0BC0EXIQIM5gILQQAhAiADQQA2AhwgAyABNgIUIANB4hc2AhAgA0EZNgIMDP4CCyAAQTtHDQAgAUEBaiEBDAwLQQAhAiADQQA2AhwgAyABNgIUIANBkhg2AhAgA0ECNgIMDPwCCyAAQRVGDShBACECIANBADYCHCADIAE2AhQgA0HWDDYCECADQSM2AgwM+wILIANBFDYCHCADIAE2AhQgAyAANgIMDPoCCyADKAIEIQBBACECIANBADYCBCADIAAgARA0IgBFBEAgAUEBaiEBDPUCCyADQRU2AhwgAyAANgIMIAMgAUEBajYCFAz5AgsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEQNCIARQRAIAFBAWohAQzzAgsgA0EXNgIcIAMgADYCDCADIAFBAWo2AhQM+AILIABBFUYNI0EAIQIgA0EANgIcIAMgATYCFCADQdYMNgIQIANBIzYCDAz3AgsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEQNCIARQRAIAFBAWohAQwdCyADQRk2AhwgAyAANgIMIAMgAUEBajYCFAz2AgsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEQNCIARQRAIAFBAWohAQzvAgsgA0EaNgIcIAMgADYCDCADIAFBAWo2AhQM9QILIABBFUYNH0EAIQIgA0EANgIcIAMgATYCFCADQdAPNgIQIANBIjYCDAz0AgsgAygCBCEAIANBADYCBCADIAAgARAzIgBFBEAgAUEBaiEBDBsLIANBHDYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgzzAgsgAygCBCEAIANBADYCBCADIAAgARAzIgBFBEAgAUEBaiEBDOsCCyADQR02AhwgAyAANgIMIAMgAUEBajYCFEEAIQIM8gILIABBO0cNASABQQFqIQELQSYhAgzXAgtBACECIANBADYCHCADIAE2AhQgA0GfFTYCECADQQw2AgwM7wILIAEgBEcEQANAIAEtAABBIEcNhAIgBCABQQFqIgFHDQALQSwhAgzvAgtBLCECDO4CCyABIARGBEBBNCECDO4CCwJAAkADQAJAIAEtAABBCmsOBAIAAAMACyAEIAFBAWoiAUcNAAtBNCECDO8CCyADKAIEIQAgA0EANgIEIAMgACABEDEiAEUNnwIgA0EyNgIcIAMgATYCFCADIAA2AgxBACECDO4CCyADKAIEIQAgA0EANgIEIAMgACABEDEiAEUEQCABQQFqIQEMnwILIANBMjYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgztAgsgASAERwRAAkADQCABLQAAQTBrIgBB/wFxQQpPBEBBOiECDNcCCyADKQMgIgtCmbPmzJmz5swZVg0BIAMgC0IKfiIKNwMgIAogAK1C/wGDIgtCf4VWDQEgAyAKIAt8NwMgIAQgAUEBaiIBRw0AC0HAACECDO4CCyADKAIEIQAgA0EANgIEIAMgACABQQFqIgEQMSIADRcM4gILQcAAIQIM7AILIAEgBEYEQEHJACECDOwCCwJAA0ACQCABLQAAQQlrDhgAAqICogKpAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAgCiAgsgBCABQQFqIgFHDQALQckAIQIM7AILIAFBAWohASADQS9qLQAAQQFxDaUCIANBADYCHCADIAE2AhQgA0GXEDYCECADQQo2AgxBACECDOsCCyABIARHBEADQCABLQAAQSBHDRUgBCABQQFqIgFHDQALQfgAIQIM6wILQfgAIQIM6gILIANBAjoAKAw4C0EAIQIgA0EANgIcIANBvws2AhAgA0ECNgIMIAMgAUEBajYCFAzoAgtBACECDM4CC0ENIQIMzQILQRMhAgzMAgtBFSECDMsCC0EWIQIMygILQRghAgzJAgtBGSECDMgCC0EaIQIMxwILQRshAgzGAgtBHCECDMUCC0EdIQIMxAILQR4hAgzDAgtBHyECDMICC0EgIQIMwQILQSIhAgzAAgtBIyECDL8CC0ElIQIMvgILQeUAIQIMvQILIANBPTYCHCADIAE2AhQgAyAANgIMQQAhAgzVAgsgA0EbNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIM1AILIANBIDYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNMCCyADQRM2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzSAgsgA0ELNgIcIAMgATYCFCADQZgaNgIQIANBFTYCDEEAIQIM0QILIANBEDYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNACCyADQSA2AhwgAyABNgIUIANBpBw2AhAgA0EVNgIMQQAhAgzPAgsgA0ELNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIMzgILIANBDDYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDM0CC0EAIQIgA0EANgIcIAMgATYCFCADQd0ONgIQIANBEjYCDAzMAgsCQANAAkAgAS0AAEEKaw4EAAICAAILIAQgAUEBaiIBRw0AC0H9ASECDMwCCwJAAkAgAy0ANkEBRw0AQQAhAAJAIAMoAjgiAkUNACACKAJgIgJFDQAgAyACEQAAIQALIABFDQAgAEEVRw0BIANB/AE2AhwgAyABNgIUIANB3Bk2AhAgA0EVNgIMQQAhAgzNAgtB3AEhAgyzAgsgA0EANgIcIAMgATYCFCADQfkLNgIQIANBHzYCDEEAIQIMywILAkACQCADLQAoQQFrDgIEAQALQdsBIQIMsgILQdQBIQIMsQILIANBAjoAMUEAIQACQCADKAI4IgJFDQAgAigCACICRQ0AIAMgAhEAACEACyAARQRAQd0BIQIMsQILIABBFUcEQCADQQA2AhwgAyABNgIUIANBtAw2AhAgA0EQNgIMQQAhAgzKAgsgA0H7ATYCHCADIAE2AhQgA0GBGjYCECADQRU2AgxBACECDMkCCyABIARGBEBB+gEhAgzJAgsgAS0AAEHIAEYNASADQQE6ACgLQcABIQIMrgILQdoBIQIMrQILIAEgBEcEQCADQQw2AgggAyABNgIEQdkBIQIMrQILQfkBIQIMxQILIAEgBEYEQEH4ASECDMUCCyABLQAAQcgARw0EIAFBAWohAUHYASECDKsCCyABIARGBEBB9wEhAgzEAgsCQAJAIAEtAABBxQBrDhAABQUFBQUFBQUFBQUFBQUBBQsgAUEBaiEBQdYBIQIMqwILIAFBAWohAUHXASECDKoCC0H2ASECIAEgBEYNwgIgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABButUAai0AAEcNAyAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMwwILIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARAuIgBFBEBB4wEhAgyqAgsgA0H1ATYCHCADIAE2AhQgAyAANgIMQQAhAgzCAgtB9AEhAiABIARGDcECIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQbjVAGotAABHDQIgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADMICCyADQYEEOwEoIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARAuIgANAwwCCyADQQA2AgALQQAhAiADQQA2AhwgAyABNgIUIANB5R82AhAgA0EINgIMDL8CC0HVASECDKUCCyADQfMBNgIcIAMgATYCFCADIAA2AgxBACECDL0CC0EAIQACQCADKAI4IgJFDQAgAigCQCICRQ0AIAMgAhEAACEACyAARQ1uIABBFUcEQCADQQA2AhwgAyABNgIUIANBgg82AhAgA0EgNgIMQQAhAgy9AgsgA0GPATYCHCADIAE2AhQgA0HsGzYCECADQRU2AgxBACECDLwCCyABIARHBEAgA0ENNgIIIAMgATYCBEHTASECDKMCC0HyASECDLsCCyABIARGBEBB8QEhAgy7AgsCQAJAAkAgAS0AAEHIAGsOCwABCAgICAgICAgCCAsgAUEBaiEBQdABIQIMowILIAFBAWohAUHRASECDKICCyABQQFqIQFB0gEhAgyhAgtB8AEhAiABIARGDbkCIAMoAgAiACAEIAFraiEGIAEgAGtBAmohBQNAIAEtAAAgAEG11QBqLQAARw0EIABBAkYNAyAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy5AgtB7wEhAiABIARGDbgCIAMoAgAiACAEIAFraiEGIAEgAGtBAWohBQNAIAEtAAAgAEGz1QBqLQAARw0DIABBAUYNAiAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy4AgtB7gEhAiABIARGDbcCIAMoAgAiACAEIAFraiEGIAEgAGtBAmohBQNAIAEtAAAgAEGw1QBqLQAARw0CIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy3AgsgAygCBCEAIANCADcDACADIAAgBUEBaiIBECsiAEUNAiADQewBNgIcIAMgATYCFCADIAA2AgxBACECDLYCCyADQQA2AgALIAMoAgQhACADQQA2AgQgAyAAIAEQKyIARQ2cAiADQe0BNgIcIAMgATYCFCADIAA2AgxBACECDLQCC0HPASECDJoCC0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMtAILQc4BIQIMmgILIANB6wE2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyyAgsgASAERgRAQesBIQIMsgILIAEtAABBL0YEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQbI4NgIQIANBCDYCDEEAIQIMsQILQc0BIQIMlwILIAEgBEcEQCADQQ42AgggAyABNgIEQcwBIQIMlwILQeoBIQIMrwILIAEgBEYEQEHpASECDK8CCyABLQAAQTBrIgBB/wFxQQpJBEAgAyAAOgAqIAFBAWohAUHLASECDJYCCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNlwIgA0HoATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgsgASAERgRAQecBIQIMrgILAkAgAS0AAEEuRgRAIAFBAWohAQwBCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNmAIgA0HmATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgtBygEhAgyUAgsgASAERgRAQeUBIQIMrQILQQAhAEEBIQVBASEHQQAhAgJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAIAEtAABBMGsOCgoJAAECAwQFBggLC0ECDAYLQQMMBQtBBAwEC0EFDAMLQQYMAgtBBwwBC0EICyECQQAhBUEAIQcMAgtBCSECQQEhAEEAIQVBACEHDAELQQAhBUEBIQILIAMgAjoAKyABQQFqIQECQAJAIAMtAC5BEHENAAJAAkACQCADLQAqDgMBAAIECyAHRQ0DDAILIAANAQwCCyAFRQ0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNAiADQeIBNgIcIAMgATYCFCADIAA2AgxBACECDK8CCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNmgIgA0HjATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZgCIANB5AE2AhwgAyABNgIUIAMgADYCDAytAgtByQEhAgyTAgtBACEAAkAgAygCOCICRQ0AIAIoAkQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0GkDTYCECADQSE2AgxBACECDK0CC0HIASECDJMCCyADQeEBNgIcIAMgATYCFCADQdAaNgIQIANBFTYCDEEAIQIMqwILIAEgBEYEQEHhASECDKsCCwJAIAEtAABBIEYEQCADQQA7ATQgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GZETYCECADQQk2AgxBACECDKsCC0HHASECDJECCyABIARGBEBB4AEhAgyqAgsCQCABLQAAQTBrQf8BcSICQQpJBEAgAUEBaiEBAkAgAy8BNCIAQZkzSw0AIAMgAEEKbCIAOwE0IABB/v8DcSACQf//A3NLDQAgAyAAIAJqOwE0DAILQQAhAiADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMDKsCCyADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMQQAhAgyqAgtBxgEhAgyQAgsgASAERgRAQd8BIQIMqQILAkAgAS0AAEEwa0H/AXEiAkEKSQRAIAFBAWohAQJAIAMvATQiAEGZM0sNACADIABBCmwiADsBNCAAQf7/A3EgAkH//wNzSw0AIAMgACACajsBNAwCC0EAIQIgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDAyqAgsgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDEEAIQIMqQILQcUBIQIMjwILIAEgBEYEQEHeASECDKgCCwJAIAEtAABBMGtB/wFxIgJBCkkEQCABQQFqIQECQCADLwE0IgBBmTNLDQAgAyAAQQpsIgA7ATQgAEH+/wNxIAJB//8Dc0sNACADIAAgAmo7ATQMAgtBACECIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgwMqQILIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgxBACECDKgCC0HEASECDI4CCyABIARGBEBB3QEhAgynAgsCQAJAAkACQCABLQAAQQprDhcCAwMAAwMDAwMDAwMDAwMDAwMDAwMDAQMLIAFBAWoMBQsgAUEBaiEBQcMBIQIMjwILIAFBAWohASADQS9qLQAAQQFxDQggA0EANgIcIAMgATYCFCADQY0LNgIQIANBDTYCDEEAIQIMpwILIANBADYCHCADIAE2AhQgA0GNCzYCECADQQ02AgxBACECDKYCCyABIARHBEAgA0EPNgIIIAMgATYCBEEBIQIMjQILQdwBIQIMpQILAkACQANAAkAgAS0AAEEKaw4EAgAAAwALIAQgAUEBaiIBRw0AC0HbASECDKYCCyADKAIEIQAgA0EANgIEIAMgACABEC0iAEUEQCABQQFqIQEMBAsgA0HaATYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgylAgsgAygCBCEAIANBADYCBCADIAAgARAtIgANASABQQFqCyEBQcEBIQIMigILIANB2QE2AhwgAyAANgIMIAMgAUEBajYCFEEAIQIMogILQcIBIQIMiAILIANBL2otAABBAXENASADQQA2AhwgAyABNgIUIANB5Bw2AhAgA0EZNgIMQQAhAgygAgsgASAERgRAQdkB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CyADIAU2AgAMkAILIANBADYCACAGQQFqIQFBGgw8C0HKASECIAEgBEYNjgIgAygCACIAIAQgAWtqIQUgASAAa0EDaiEGAkADQCABLQAAIABBjdUAai0AAEcNOyAAQQNGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMjwILIANBADYCACAGQQFqIQFBIQw7CyABIARGBEBByQEhAgyOAgsCQAJAIAEtAABBwQBrDhQAPT09PT09PT09PT09PT09PT09AT0LIAFBAWohAUGtASECDPUBCyABQQFqIQFBsAEhAgz0AQsgASAERgRAQcgBIQIMjQILAkACQCABLQAAQdUAaw4LADw8PDw8PDw8PAE8CyABQQFqIQFBrgEhAgz0AQsgAUEBaiEBQa8BIQIM8wELQccBIQIgASAERg2LAiADKAIAIgAgBCABa2ohBSABIABrQQhqIQYCQANAIAEtAAAgAEGE1QBqLQAARw04IABBCEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyMAgsgA0EANgIAIAZBAWohAUEqDDgLIAEgBEYEQEHGASECDIsCCyABLQAAQdAARw04IAFBAWohAUElDDcLQcUBIQIgASAERg2JAiADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGB1QBqLQAARw02IABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyKAgsgA0EANgIAIAZBAWohAUEODDYLIAEgBEYEQEHEASECDIkCCyABLQAAQcUARw02IAFBAWohAUGrASECDO8BCyABIARGBEBBwwEhAgyIAgsCQAJAAkACQCABLQAAQcIAaw4PAAECOTk5OTk5OTk5OTkDOQsgAUEBaiEBQacBIQIM8QELIAFBAWohAUGoASECDPABCyABQQFqIQFBqQEhAgzvAQsgAUEBaiEBQaoBIQIM7gELQcIBIQIgASAERg2GAiADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEH+1ABqLQAARw0zIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyHAgsgA0EANgIAIAZBAWohAUEUDDMLQcEBIQIgASAERg2FAiADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANA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BTYCAAzsAQsgA0EANgIAIAZBAWohAUEXDBgLQaYBIQIgASAERg3qASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEHB1ABqLQAARw0XIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzrAQsgA0EANgIAIAZBAWohAUEYDBcLIAEgBEYEQEGlASECDOoBCwJAAkAgAS0AAEHJAGsOBwAZGRkZGQEZCyABQQFqIQFBiwEhAgzRAQsgAUEBaiEBQYwBIQIM0AELQaQBIQIgASAERg3oASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGm1QBqLQAARw0VIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzpAQsgA0EANgIAIAZBAWohAUEJDBULQaMBIQIgASAERg3nASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGk1QBqLQAARw0UIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzoAQsgA0EANgIAIAZBAWohAUEfDBQLQaIBIQIgASAERg3mASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEG+1ABqLQAARw0TIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAznAQsgA0EANgIAIAZBAWohAUECDBMLQaEBIQIgASAERg3lASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYDQCABLQAAIABBvNQAai0AAEcNESAAQQFGDQIgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM5QELIAEgBEYEQEGgASECDOUBC0EBIAEtAABB3wBHDREaIAFBAWohAUGHASECDMsBCyADQQA2AgAgBkEBaiEBQYgBIQIMygELQZ8BIQIgASAERg3iASADKAIAIgAgBCABa2ohBSABIABrQQhqIQYCQANAIAEtAAAgAEGE1QBqLQAARw0PIABBCEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzjAQsgA0EANgIAIAZBAWohAUEpDA8LQZ4BIQIgASAERg3hASADKAIAIgAgBCABa2ohBSABIABrQQNqIQYCQANAIAEtAAAgAEG41ABqLQAARw0OIABBA0YNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAziAQsgA0EANgIAIAZBAWohAUEtDA4LIAEgBEYEQEGdASECDOEBCyABLQAAQcUARw0OIAFBAWohAUGEASECDMcBCyABIARGBEBBnAEhAgzgAQsCQAJAIAEtAABBzABrDggADw8PDw8PAQ8LIAFBAWohAUGCASECDMcBCyABQQFqIQFBgwEhAgzGAQtBmwEhAiABIARGDd4BIAMoAgAiACAEIAFraiEFIAEgAGtBBGohBgJAA0AgAS0AACAAQbPUAGotAABHDQsgAEEERg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADN8BCyADQQA2AgAgBkEBaiEBQSMMCwtBmgEhAiABIARGDd0BIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbDUAGotAABHDQogAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADN4BCyADQQA2AgAgBkEBaiEBQQAMCgsgASAERgRAQZkBIQIM3QELAkACQCABLQAAQcgAaw4IAAwMDAwMDAEMCyABQQFqIQFB/QAhAgzEAQsgAUEBaiEBQYABIQIMwwELIAEgBEYEQEGYASECDNwBCwJAAkAgAS0AAEHOAGsOAwALAQsLIAFBAWohAUH+ACECDMMBCyABQQFqIQFB/wAhAgzCAQsgASAERgRAQZcBIQIM2wELIAEtAABB2QBHDQggAUEBaiEBQQgMBwtBlgEhAiABIARGDdkBIAMoAgAiACAEIAFraiEFIAEgAGtBA2ohBgJAA0AgAS0AACAAQazUAGotAABHDQYgAEEDRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNoBCyADQQA2AgAgBkEBaiEBQQUMBgtBlQEhAiABIARGDdgBIAMoAgAiACAEIAFraiEFIAEgAGtBBWohBgJAA0AgAS0AACAAQabUAGotAABHDQUgAEEFRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNkBCyADQQA2AgAgBkEBaiEBQRYMBQtBlAEhAiABIARGDdcBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQaHVAGotAABHDQQgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNgBCyADQQA2AgAgBkEBaiEBQRAMBAsgASAERgRAQZMBIQIM1wELAkACQCABLQAAQcMAaw4MAAYGBgYGBgYGBgYBBgsgAUEBaiEBQfkAIQIMvgELIAFBAWohAUH6ACECDL0BC0GSASECIAEgBEYN1QEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABBoNQAai0AAEcNAiAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM1gELIANBADYCACAGQQFqIQFBJAwCCyADQQA2AgAMAgsgASAERgRAQZEBIQIM1AELIAEtAABBzABHDQEgAUEBaiEBQRMLOgApIAMoAgQhACADQQA2AgQgAyAAIAEQLiIADQIMAQtBACECIANBADYCHCADIAE2AhQgA0H+HzYCECADQQY2AgwM0QELQfgAIQIMtwELIANBkAE2AhwgAyABNgIUIAMgADYCDEEAIQIMzwELQQAhAAJAIAMoAjgiAkUNACACKAJAIgJFDQAgAyACEQAAIQALIABFDQAgAEEVRg0BIANBADYCHCADIAE2AhQgA0GCDzYCECADQSA2AgxBACECDM4BC0H3ACECDLQBCyADQY8BNgIcIAMgATYCFCADQewbNgIQIANBFTYCDEEAIQIMzAELIAEgBEYEQEGPASECDMwBCwJAIAEtAABBIEYEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQZsfNgIQIANBBjYCDEEAIQIMzAELQQIhAgyyAQsDQCABLQAAQSBHDQIgBCABQQFqIgFHDQALQY4BIQIMygELIAEgBEYEQEGNASECDMoBCwJAIAEtAABBCWsOBEoAAEoAC0H1ACECDLABCyADLQApQQVGBEBB9gAhAgywAQtB9AAhAgyvAQsgASAERgRAQYwBIQIMyAELIANBEDYCCCADIAE2AgQMCgsgASAERgRAQYsBIQIMxwELAkAgAS0AAEEJaw4ERwAARwALQfMAIQIMrQELIAEgBEcEQCADQRA2AgggAyABNgIEQfEAIQIMrQELQYoBIQIMxQELAkAgASAERwRAA0AgAS0AAEGg0ABqLQAAIgBBA0cEQAJAIABBAWsOAkkABAtB8AAhAgyvAQsgBCABQQFqIgFHDQALQYgBIQIMxgELQYgBIQIMxQELIANBADYCHCADIAE2AhQgA0HbIDYCECADQQc2AgxBACECDMQBCyABIARGBEBBiQEhAgzEAQsCQAJAAkAgAS0AAEGg0gBqLQAAQQFrDgNGAgABC0HyACECDKwBCyADQQA2AhwgAyABNgIUIANBtBI2AhAgA0EHNgIMQQAhAgzEAQtB6gAhAgyqAQsgASAERwRAIAFBAWohAUHvACECDKoBC0GHASECDMIBCyAEIAEiAEYEQEGGASECDMIBCyAALQAAIgFBL0YEQCAAQQFqIQFB7gAhAgypAQsgAUEJayICQRdLDQEgACEBQQEgAnRBm4CABHENQQwBCyAEIAEiAEYEQEGFASECDMEBCyAALQAAQS9HDQAgAEEBaiEBDAMLQQAhAiADQQA2AhwgAyAANgIUIANB2yA2AhAgA0EHNgIMDL8BCwJAAkACQAJAAkADQCABLQAAQaDOAGotAAAiAEEFRwRAAkACQCAAQQFrDghHBQYHCAAEAQgLQesAIQIMrQELIAFBAWohAUHtACECDKwBCyAEIAFBAWoiAUcNAAtBhAEhAgzDAQsgAUEBagwUCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQdsANgIcIAMgATYCFCADIAA2AgxBACECDMEBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQd0ANgIcIAMgATYCFCADIAA2AgxBACECDMABCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQfoANgIcIAMgATYCFCADIAA2AgxBACECDL8BCyADQQA2AhwgAyABNgIUIANB+Q82AhAgA0EHNgIMQQAhAgy+AQsgASAERgRAQYMBIQIMvgELAkAgAS0AAEGgzgBqLQAAQQFrDgg+BAUGAAgCAwcLIAFBAWohAQtBAyECDKMBCyABQQFqDA0LQQAhAiADQQA2AhwgA0HREjYCECADQQc2AgwgAyABQQFqNgIUDLoBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQdsANgIcIAMgATYCFCADIAA2AgxBACECDLkBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQd0ANgIcIAMgATYCFCADIAA2AgxBACECDLgBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQfoANgIcIAMgATYCFCADIAA2AgxBACECDLcBCyADQQA2AhwgAyABNgIUIANB+Q82AhAgA0EHNgIMQQAhAgy2AQtB7AAhAgycAQsgASAERgRAQYIBIQIMtQELIAFBAWoMAgsgASAERgRAQYEBIQIMtAELIAFBAWoMAQsgASAERg0BIAFBAWoLIQFBBCECDJgBC0GAASECDLABCwNAIAEtAABBoMwAai0AACIAQQJHBEAgAEEBRwRAQekAIQIMmQELDDELIAQgAUEBaiIBRw0AC0H/ACECDK8BCyABIARGBEBB/gAhAgyvAQsCQCABLQAAQQlrDjcvAwYvBAYGBgYGBgYGBgYGBgYGBgYGBgUGBgIGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYABgsgAUEBagshAUEFIQIMlAELIAFBAWoMBgsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0HbADYCHCADIAE2AhQgAyAANgIMQQAhAgyrAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0HdADYCHCADIAE2AhQgAyAANgIMQQAhAgyqAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0H6ADYCHCADIAE2AhQgAyAANgIMQQAhAgypAQsgA0EANgIcIAMgATYCFCADQY0UNgIQIANBBzYCDEEAIQIMqAELAkACQAJAAkADQCABLQAAQaDKAGotAAAiAEEFRwRAAkAgAEEBaw4GLgMEBQYABgtB6AAhAgyUAQsgBCABQQFqIgFHDQALQf0AIQIMqwELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB2wA2AhwgAyABNgIUIAMgADYCDEEAIQIMqgELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB3QA2AhwgAyABNgIUIAMgADYCDEEAIQIMqQELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB+gA2AhwgAyABNgIUIAMgADYCDEEAIQIMqAELIANBADYCHCADIAE2AhQgA0HkCDYCECADQQc2AgxBACECDKcBCyABIARGDQEgAUEBagshAUEGIQIMjAELQfwAIQIMpAELAkACQAJAAkADQCABLQAAQaDIAGotAAAiAEEFRwRAIABBAWsOBCkCAwQFCyAEIAFBAWoiAUcNAAtB+wAhAgynAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0HbADYCHCADIAE2AhQgAyAANgIMQQAhAgymAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0HdADYCHCADIAE2AhQgAyAANgIMQQAhAgylAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0H6ADYCHCADIAE2AhQgAyAANgIMQQAhAgykAQsgA0EANgIcIAMgATYCFCADQbwKNgIQIANBBzYCDEEAIQIMowELQc8AIQIMiQELQdEAIQIMiAELQecAIQIMhwELIAEgBEYEQEH6ACECDKABCwJAIAEtAABBCWsOBCAAACAACyABQQFqIQFB5gAhAgyGAQsgASAERgRAQfkAIQIMnwELAkAgAS0AAEEJaw4EHwAAHwALQQAhAAJAIAMoAjgiAkUNACACKAI4IgJFDQAgAyACEQAAIQALIABFBEBB4gEhAgyGAQsgAEEVRwRAIANBADYCHCADIAE2AhQgA0HJDTYCECADQRo2AgxBACECDJ8BCyADQfgANgIcIAMgATYCFCADQeoaNgIQIANBFTYCDEEAIQIMngELIAEgBEcEQCADQQ02AgggAyABNgIEQeQAIQIMhQELQfcAIQIMnQELIAEgBEYEQEH2ACECDJ0BCwJAAkACQCABLQAAQcgAaw4LAAELCwsLCwsLCwILCyABQQFqIQFB3QAhAgyFAQsgAUEBaiEBQeAAIQIMhAELIAFBAWohAUHjACECDIMBC0H1ACECIAEgBEYNmwEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBtdUAai0AAEcNCCAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMnAELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgAEQCADQfQANgIcIAMgATYCFCADIAA2AgxBACECDJwBC0HiACECDIIBC0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMnAELQeEAIQIMggELIANB8wA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyaAQsgAy0AKSIAQSNrQQtJDQkCQCAAQQZLDQBBASAAdEHKAHFFDQAMCgtBACECIANBADYCHCADIAE2AhQgA0HtCTYCECADQQg2AgwMmQELQfIAIQIgASAERg2YASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGz1QBqLQAARw0FIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyZAQsgAygCBCEAIANCADcDACADIAAgBkEBaiIBECsiAARAIANB8QA2AhwgAyABNgIUIAMgADYCDEEAIQIMmQELQd8AIQIMfwtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJkBC0HeACECDH8LIANB8AA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyXAQsgAy0AKUEhRg0GIANBADYCHCADIAE2AhQgA0GRCjYCECADQQg2AgxBACECDJYBC0HvACECIAEgBEYNlQEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBsNUAai0AAEcNAiAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMlgELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgBFDQIgA0HtADYCHCADIAE2AhQgAyAANgIMQQAhAgyVAQsgA0EANgIACyADKAIEIQAgA0EANgIEIAMgACABECsiAEUNgAEgA0HuADYCHCADIAE2AhQgAyAANgIMQQAhAgyTAQtB3AAhAgx5C0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMkwELQdsAIQIMeQsgA0HsADYCHCADIAE2AhQgA0GAGzYCECADQRU2AgxBACECDJEBCyADLQApIgBBI0kNACAAQS5GDQAgA0EANgIcIAMgATYCFCADQckJNgIQIANBCDYCDEEAIQIMkAELQdoAIQIMdgsgASAERgRAQesAIQIMjwELAkAgAS0AAEEvRgRAIAFBAWohAQwBCyAD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ciBIVFRQL3gueCByZXF1ZXN0AEludmFsaWQgbWV0aG9kIGZvciBSVFNQL3gueCByZXF1ZXN0AEV4cGVjdGVkIFNPVVJDRSBtZXRob2QgZm9yIElDRS94LnggcmVxdWVzdABJbnZhbGlkIGNoYXIgaW4gdXJsIGZyYWdtZW50IHN0YXJ0AEV4cGVjdGVkIGRvdABTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3N0YXR1cwBJbnZhbGlkIHJlc3BvbnNlIHN0YXR1cwBFeHBlY3RlZCBMRiBhZnRlciBoZWFkZXJzAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMAVXNlciBjYWxsYmFjayBlcnJvcgBgb25fcmVzZXRgIGNhbGxiYWNrIGVycm9yAGBvbl9jaHVua19oZWFkZXJgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2JlZ2luYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX3ZhbHVlYCBjYWxsYmFjayBlcnJvcgBgb25fc3RhdHVzX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fdmVyc2lvbl9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3VybF9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3Byb3RvY29sX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9oZWFkZXJfdmFsdWVfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fbWV0aG9kX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25faGVhZGVyX2ZpZWxkX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX25hbWVgIGNhbGxiYWNrIGVycm9yAFVuZXhwZWN0ZWQgY2hhciBpbiB1cmwgc2VydmVyAEludmFsaWQgaGVhZGVyIHZhbHVlIGNoYXIASW52YWxpZCBoZWFkZXIgZmllbGQgY2hhcgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3ZlcnNpb24ASW52YWxpZCBtaW5vciB2ZXJzaW9uAEludmFsaWQgbWFqb3IgdmVyc2lvbgBFeHBlY3RlZCBzcGFjZSBhZnRlciB2ZXJzaW9uAEV4cGVjdGVkIENSTEYgYWZ0ZXIgdmVyc2lvbgBJbnZhbGlkIEhUVFAgdmVyc2lvbgBJbnZhbGlkIGhlYWRlciB0b2tlbgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3VybABJbnZhbGlkIGNoYXJhY3RlcnMgaW4gdXJsAFVuZXhwZWN0ZWQgc3RhcnQgY2hhciBpbiB1cmwARG91YmxlIEAgaW4gdXJsAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fcHJvdG9jb2wARW1wdHkgQ29udGVudC1MZW5ndGgASW52YWxpZCBjaGFyYWN0ZXIgaW4gQ29udGVudC1MZW5ndGgAVHJhbnNmZXItRW5jb2RpbmcgY2FuJ3QgYmUgcHJlc2VudCB3aXRoIENvbnRlbnQtTGVuZ3RoAER1cGxpY2F0ZSBDb250ZW50LUxlbmd0aABJbnZhbGlkIGNoYXIgaW4gdXJsIHBhdGgAQ29udGVudC1MZW5ndGggY2FuJ3QgYmUgcHJlc2VudCB3aXRoIFRyYW5zZmVyLUVuY29kaW5nAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgc2l6ZQBFeHBlY3RlZCBMRiBhZnRlciBjaHVuayBzaXplAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIHNpemUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfdmFsdWUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9jaHVua19leHRlbnNpb25fdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyB2YWx1ZQBVbmV4cGVjdGVkIHdoaXRlc3BhY2UgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgTEYgYWZ0ZXIgaGVhZGVyIHZhbHVlAEludmFsaWQgYFRyYW5zZmVyLUVuY29kaW5nYCBoZWFkZXIgdmFsdWUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciBjaHVuayBleHRlbnNpb24gdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBxdW90ZSB2YWx1ZQBJbnZhbGlkIHF1b3RlZC1wYWlyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAFBhdXNlZCBieSBvbl9oZWFkZXJzX2NvbXBsZXRlAEludmFsaWQgRU9GIHN0YXRlAG9uX3Jlc2V0IHBhdXNlAG9uX2NodW5rX2hlYWRlciBwYXVzZQBvbl9tZXNzYWdlX2JlZ2luIHBhdXNlAG9uX2NodW5rX2V4dGVuc2lvbl92YWx1ZSBwYXVzZQBvbl9zdGF0dXNfY29tcGxldGUgcGF1c2UAb25fdmVyc2lvbl9jb21wbGV0ZSBwYXVzZQBvbl91cmxfY29tcGxldGUgcGF1c2UAb25fcHJvdG9jb2xfY29tcGxldGUgcGF1c2UAb25fY2h1bmtfY29tcGxldGUgcGF1c2UAb25faGVhZGVyX3ZhbHVlX2NvbXBsZXRlIHBhdXNlAG9uX21lc3NhZ2VfY29tcGxldGUgcGF1c2UAb25fbWV0aG9kX2NvbXBsZXRlIHBhdXNlAG9uX2hlYWRlcl9maWVsZF9jb21wbGV0ZSBwYXVzZQBvbl9jaHVua19leHRlbnNpb25fbmFtZSBwYXVzZQBVbmV4cGVjdGVkIHNwYWNlIGFmdGVyIHN0YXJ0IGxpbmUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciByZXNwb25zZSBsaW5lAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fY2h1bmtfZXh0ZW5zaW9uX25hbWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBuYW1lAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgZXh0ZW5zaW9uIG5hbWUASW52YWxpZCBzdGF0dXMgY29kZQBQYXVzZSBvbiBDT05ORUNUL1VwZ3JhZGUAUGF1c2Ugb24gUFJJL1VwZ3JhZGUARXhwZWN0ZWQgSFRUUC8yIENvbm5lY3Rpb24gUHJlZmFjZQBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX21ldGhvZABFeHBlY3RlZCBzcGFjZSBhZnRlciBtZXRob2QAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfZmllbGQAUGF1c2VkAEludmFsaWQgd29yZCBlbmNvdW50ZXJlZABJbnZhbGlkIG1ldGhvZCBlbmNvdW50ZXJlZABNaXNzaW5nIGV4cGVjdGVkIENSIGFmdGVyIGNodW5rIGRhdGEARXhwZWN0ZWQgTEYgYWZ0ZXIgY2h1bmsgZGF0YQBVbmV4cGVjdGVkIGNoYXIgaW4gdXJsIHNjaGVtYQBSZXF1ZXN0IGhhcyBpbnZhbGlkIGBUcmFuc2Zlci1FbmNvZGluZ2AARGF0YSBhZnRlciBgQ29ubmVjdGlvbjogY2xvc2VgAFNXSVRDSF9QUk9YWQBVU0VfUFJPWFkATUtBQ1RJVklUWQBVTlBST0NFU1NBQkxFX0VOVElUWQBRVUVSWQBDT1BZAE1PVkVEX1BFUk1BTkVOVExZAFRPT19FQVJMWQBOT1RJRlkARkFJTEVEX0RFUEVOREVOQ1kAQkFEX0dBVEVXQVkAUExBWQBQVVQAQ0hFQ0tPVVQAR0FURVdBWV9USU1FT1VUAFJFUVVFU1RfVElNRU9VVABORVRXT1JLX0NPTk5FQ1RfVElNRU9VVABDT05ORUNUSU9OX1RJTUVPVVQATE9HSU5fVElNRU9VVABORVRXT1JLX1JFQURfVElNRU9VVABQT1NUAE1JU0RJUkVDVEVEX1JFUVVFU1QAQ0xJRU5UX0NMT1NFRF9SRVFVRVNUAENMSUVOVF9DTE9TRURfTE9BRF9CQUxBTkNFRF9SRVFVRVNUAEJBRF9SRVFVRVNUAEhUVFBfUkVRVUVTVF9TRU5UX1RPX0hUVFBTX1BPUlQAUkVQT1JUAElNX0FfVEVBUE9UAFJFU0VUX0NPTlRFTlQATk9fQ09OVEVOVABQQVJUSUFMX0NPTlRFTlQASFBFX0lOVkFMSURfQ09OU1RBTlQASFBFX0NCX1JFU0VUAEdFVABIUEVfU1RSSUNUAENPTkZMSUNUAFRFTVBPUkFSWV9SRURJUkVDVABQRVJNQU5FTlRfUkVESVJFQ1QAQ09OTkVDVABNVUxUSV9TVEFUVVMASFBFX0lOVkFMSURfU1RBVFVTAFRPT19NQU5ZX1JFUVVFU1RTAEVBUkxZX0hJTlRTAFVOQVZBSUxBQkxFX0ZPUl9MRUdBTF9SRUFTT05TAE9QVElPTlMAU1dJVENISU5HX1BST1RPQ09MUwBWQVJJQU5UX0FMU09fTkVHT1RJQVRFUwBNVUxUSVBMRV9DSE9JQ0VTAElOVEVSTkFMX1NFUlZFUl9FUlJPUgBXRUJfU0VSVkVSX1VOS05PV05fRVJST1IAUkFJTEdVTl9FUlJPUgBJREVOVElUWV9QUk9WSURFUl9BVVRIRU5USUNBVElPTl9FUlJPUgBTU0xfQ0VSVElGSUNBVEVfRVJST1IASU5WQUxJRF9YX0ZPUldBUkRFRF9GT1IAU0VUX1BBUkFNRVRFUgBHRVRfUEFSQU1FVEVSAEhQRV9VU0VSAFNFRV9PVEhFUgBIUEVfQ0JfQ0hVTktfSEVBREVSAEV4cGVjdGVkIExGIGFmdGVyIENSAE1LQ0FMRU5EQVIAU0VUVVAAV0VCX1NFUlZFUl9JU19ET1dOAFRFQVJET1dOAEhQRV9DTE9TRURfQ09OTkVDVElPTgBIRVVSSVNUSUNfRVhQSVJBVElPTgBESVNDT05ORUNURURfT1BFUkFUSU9OAE5PTl9BVVRIT1JJVEFUSVZFX0lORk9STUFUSU9OAEhQRV9JTlZBTElEX1ZFUlNJT04ASFBFX0NCX01FU1NBR0VfQkVHSU4AU0lURV9JU19GUk9aRU4ASFBFX0lOVkFMSURfSEVBREVSX1RPS0VOAElOVkFMSURfVE9LRU4ARk9SQklEREVOAEVOSEFOQ0VfWU9VUl9DQUxNAEhQRV9JTlZBTElEX1VSTABCTE9DS0VEX0JZX1BBUkVOVEFMX0NPTlRST0wATUtDT0wAQUNMAEhQRV9JTlRFUk5BTABSRVFVRVNUX0hFQURFUl9GSUVMRFNfVE9PX0xBUkdFX1VOT0ZGSUNJQUwASFBFX09LAFVOTElOSwBVTkxPQ0sAUFJJAFJFVFJZX1dJVEgASFBFX0lOVkFMSURfQ09OVEVOVF9MRU5HVEgASFBFX1VORVhQRUNURURfQ09OVEVOVF9MRU5HVEgARkxVU0gAUFJPUFBBVENIAE0tU0VBUkNIAFVSSV9UT09fTE9ORwBQUk9DRVNTSU5HAE1JU0NFTExBTkVPVVNfUEVSU0lTVEVOVF9XQVJOSU5HAE1JU0NFTExBTkVPVVNfV0FSTklORwBIUEVfSU5WQUxJRF9UUkFOU0ZFUl9FTkNPRElORwBFeHBlY3RlZCBDUkxGAEhQRV9JTlZBTElEX0NIVU5LX1NJWkUATU9WRQBDT05USU5VRQBIUEVfQ0JfU1RBVFVTX0NPTVBMRVRFAEhQRV9DQl9IRUFERVJTX0NPTVBMRVRFAEhQRV9DQl9WRVJTSU9OX0NPTVBMRVRFAEhQRV9DQl9VUkxfQ09NUExFVEUASFBFX0NCX1BST1RPQ09MX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19DT01QTEVURQBIUEVfQ0JfSEVBREVSX1ZBTFVFX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19FWFRFTlNJT05fVkFMVUVfQ09NUExFVEUASFBFX0NCX0NIVU5LX0VYVEVOU0lPTl9OQU1FX0NPTVBMRVRFAEhQRV9DQl9NRVNTQUdFX0NPTVBMRVRFAEhQRV9DQl9NRVRIT0RfQ09NUExFVEUASFBFX0NCX0hFQURFUl9GSUVMRF9DT01QTEVURQBERUxFVEUASFBFX0lOVkFMSURfRU9GX1NUQVRFAElOVkFMSURfU1NMX0NFUlRJRklDQVRFAFBBVVNFAE5PX1JFU1BPTlNFAFVOU1VQUE9SVEVEX01FRElBX1RZUEUAR09ORQBOT1RfQUNDRVBUQUJMRQBTRVJWSUNFX1VOQVZBSUxBQkxFAFJBTkdFX05PVF9TQVRJU0ZJQUJMRQBPUklHSU5fSVNfVU5SRUFDSEFCTEUAUkVTUE9OU0VfSVNfU1RBTEUAUFVSR0UATUVSR0UAUkVRVUVTVF9IRUFERVJfRklFTERTX1RPT19MQVJHRQBSRVFVRVNUX0hFQURFUl9UT09fTEFSR0UAUEFZTE9BRF9UT09fTEFSR0UASU5TVUZGSUNJRU5UX1NUT1JBR0UASFBFX1BBVVNFRF9VUEdSQURFAEhQRV9QQVVTRURfSDJfVVBHUkFERQBTT1VSQ0UAQU5OT1VOQ0UAVFJBQ0UASFBFX1VORVhQRUNURURfU1BBQ0UAREVTQ1JJQkUAVU5TVUJTQ1JJQkUAUkVDT1JEAEhQRV9JTlZBTElEX01FVEhPRABOT1RfRk9VTkQAUFJPUEZJTkQAVU5CSU5EAFJFQklORABVTkFVVEhPUklaRUQATUVUSE9EX05PVF9BTExPV0VEAEhUVFBfVkVSU0lPTl9OT1RfU1VQUE9SVEVEAEFMUkVBRFlfUkVQT1JURUQAQUNDRVBURUQATk9UX0lNUExFTUVOVEVEAExPT1BfREVURUNURUQASFBFX0NSX0VYUEVDVEVEAEhQRV9MRl9FWFBFQ1RFRABDUkVBVEVEAElNX1VTRUQASFBFX1BBVVNFRABUSU1FT1VUX09DQ1VSRUQAUEFZTUVOVF9SRVFVSVJFRABQUkVDT05ESVRJT05fUkVRVUlSRUQAUFJPWFlfQVVUSEVOVElDQVRJT05fUkVRVUlSRUQATkVUV09SS19BVVRIRU5USUNBVElPTl9SRVFVSVJFRABMRU5HVEhfUkVRVUlSRUQAU1NMX0NFUlRJRklDQVRFX1JFUVVJUkVEAFVQR1JBREVfUkVRVUlSRUQAUEFHRV9FWFBJUkVEAFBSRUNPTkRJVElPTl9GQUlMRUQARVhQRUNUQVRJT05fRkFJTEVEAFJFVkFMSURBVElPTl9GQUlMRUQAU1NMX0hBTkRTSEFLRV9GQUlMRUQATE9DS0VEAFRSQU5TRk9STUFUSU9OX0FQUExJRUQATk9UX01PRElGSUVEAE5PVF9FWFRFTkRFRABCQU5EV0lEVEhfTElNSVRfRVhDRUVERUQAU0lURV9JU19PVkVSTE9BREVEAEhFQUQARXhwZWN0ZWQgSFRUUC8sIFJUU1AvIG9yIElDRS8A5xUAAK8VAACkEgAAkhoAACYWAACeFAAA2xkAAHkVAAB+EgAA/hQAADYVAAALFgAA2BYAAPMSAABCGAAArBYAABIVAAAUFwAA7xcAAEgUAABxFwAAshoAAGsZAAB+GQAANRQAAIIaAABEFwAA/RYAAB4YAACHFwAAqhkAAJMSAAAHGAAALBcAAMoXAACkFwAA5xUAAOcVAABYFwAAOxgAAKASAAAtHAAAwxEAAEgRAADeEgAAQhMAAKQZAAD9EAAA9xUAAKUVAADvFgAA+BkAAEoWAABWFgAA9RUAAAoaAAAIGgAAARoAAKsVAABCEgAA1xAAAEwRAAAFGQAAVBYAAB4RAADKGQAAyBkAAE4WAAD/GAAAcRQAAPAVAADuFQAAlBkAAPwVAAC/GQAAmxkAAHwUAABDEQAAcBgAAJUUAAAnFAAAGRQAANUSAADUGQAARBYAAPcQAEG5OwsBAQBB0DsL4AEBAQIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBuj0LBAEAAAIAQdE9C14DBAMDAwMDAAADAwADAwADAwMDAwMDAwMDAAUAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAwADAEG6PwsEAQAAAgBB0T8LXgMAAwMDAwMAAAMDAAMDAAMDAwMDAwMDAwMABAAFAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwADAAMAQbDBAAsNbG9zZWVlcC1hbGl2ZQBBycEACwEBAEHgwQAL4AEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBycMACwEBAEHgwwAL5wEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAWNodW5rZWQAQfHFAAteAQABAQEBAQAAAQEAAQEAAQEBAQEBAQEBAQAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAAEAAQBB0McACyFlY3Rpb25lbnQtbGVuZ3Rob25yb3h5LWNvbm5lY3Rpb24AQYDIAAsgcmFuc2Zlci1lbmNvZGluZ3BncmFkZQ0KDQpTTQ0KDQoAQanIAAsFAQIAAQMAQcDIAAtfBAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanKAAsFAQIAAQMAQcDKAAtfBAUFBgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanMAAsEAQAAAQBBwcwAC14CAgACAgICAgICAgICAgICAgICAgICAgICAgICAgIAAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAEGpzgALBQECAAEDAEHAzgALXwQFAAAFBQUFBQUFBQUFBQYFBQUFBQUFBQUFBQUABQAHCAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQAFAAUABQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAAAFAEGp0AALBQEBAAEBAEHA0AALAQEAQdrQAAtBAgAAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAQanSAAsFAQEAAQEAQcDSAAsBAQBBytIACwYCAAAAAAIAQeHSAAs6AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwBBoNQAC50BTk9VTkNFRUNLT1VUTkVDVEVURUNSSUJFTFVTSEVURUFEU0VBUkNIUkdFQ1RJVklUWUxFTkRBUlZFT1RJRllQVElPTlNDSFNFQVlTVEFUQ0hHRVVFUllPUkRJUkVDVE9SVFJDSFBBUkFNRVRFUlVSQ0VCU0NSSUJFQVJET1dOQUNFSU5ETktDS1VCU0NSSUJFVFRQQ0VUU1BBRFRQLw=='
+const wasmBase64 = 'AGFzbQEAAAABJwdgAX8Bf2ADf39/AX9gAn9/AGABfwBgBH9/f38Bf2AAAGADf39/AALLAQgDZW52GHdhc21fb25faGVhZGVyc19jb21wbGV0ZQAEA2VudhV3YXNtX29uX21lc3NhZ2VfYmVnaW4AAANlbnYLd2FzbV9vbl91cmwAAQNlbnYOd2FzbV9vbl9zdGF0dXMAAQNlbnYUd2FzbV9vbl9oZWFkZXJfZmllbGQAAQNlbnYUd2FzbV9vbl9oZWFkZXJfdmFsdWUAAQNlbnYMd2FzbV9vbl9ib2R5AAEDZW52GHdhc21fb25fbWVzc2FnZV9jb21wbGV0ZQAAAzU0BQYAAAMAAAAAAAADAQMAAwMDAAACAAAAAAICAgICAgICAgIBAQEBAQEBAQEBAwAAAwAAAAQFAXABExMFAwEAAgYIAX8BQcDZBAsHxQcoBm1lbW9yeQIAC19pbml0aWFsaXplAAgZX19pbmRpcmVjdF9mdW5jdGlvbl90YWJsZQEAC2xsaHR0cF9pbml0AAkYbGxodHRwX3Nob3VsZF9rZWVwX2FsaXZlADcMbGxodHRwX2FsbG9jAAsGbWFsbG9jADkLbGxodHRwX2ZyZWUADARmcmVlAAwPbGxodHRwX2dldF90eXBlAA0VbGxodHRwX2dldF9odHRwX21ham9yAA4VbGxodHRwX2dldF9odHRwX21pbm9yAA8RbGxodHRwX2dldF9tZXRob2QAEBZsbGh0dHBfZ2V0X3N0YXR1c19jb2RlABESbGxodHRwX2dldF91cGdyYWRlABIMbGxodHRwX3Jlc2V0ABMObGxodHRwX2V4ZWN1dGUAFBRsbGh0dHBfc2V0dGluZ3NfaW5pdAAVDWxsaHR0cF9maW5pc2gAFgxsbGh0dHBfcGF1c2UAFw1sbGh0dHBfcmVzdW1lABgbbGxodHRwX3Jlc3VtZV9hZnRlcl91cGdyYWRlABkQbGxodHRwX2dldF9lcnJubwAaF2xsaHR0cF9nZXRfZXJyb3JfcmVhc29uABsXbGxodHRwX3NldF9lcnJvcl9yZWFzb24AHBRsbGh0dHBfZ2V0X2Vycm9yX3BvcwAdEWxsaHR0cF9lcnJub19uYW1lAB4SbGxodHRwX21ldGhvZF9uYW1lAB8SbGxodHRwX3N0YXR1c19uYW1lACAabGxodHRw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AXRrQT5qIQILIAEgAjYCHCABQgA3AhAgAkECdEH01wBqIQACQEHI1QAoAgAiA0EBIAJ0IgdxRQRAIAAgATYCAEHI1QAgAyAHcjYCACABIAA2AhggASABNgIIIAEgATYCDAwBCyAEQRkgAkEBdmtBACACQR9HG3QhAiAAKAIAIQACQANAIAAiAygCBEF4cSAERg0BIAJBHXYhACACQQF0IQIgAyAAQQRxakEQaiIHKAIAIgANAAsgByABNgIAIAEgAzYCGCABIAE2AgwgASABNgIIDAELIAMoAggiACABNgIMIAMgATYCCCABQQA2AhggASADNgIMIAEgADYCCAtB5NUAQeTVACgCAEEBayIAQX8gABs2AgALCwcAIAAtACgLBwAgAC0AKgsHACAALQArCwcAIAAtACkLBwAgAC8BNAsHACAALQAwC0ABBH8gACgCGCEBIAAvAS4hAiAALQAoIQMgACgCOCEEIAAQOCAAIAQ2AjggACADOgAoIAAgAjsBLiAAIAE2AhgLhocCAwd/A34BeyABIAJqIQQCQCAAIgMoAgwiAA0AIAMoAgQEQCADIAE2AgQLIwBBEGsiCSQAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAC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DAgLQeMBDAcLQdcBDAYLQdgBDAULQdkBDAQLQdoBDAMLQdsBDAILQd0BDAELQdwBCyECA0ACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAIAMCfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAAn8CQAJAAkACfwJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAgAwJ/AkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJ/AkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkAC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A0EXNgIcIAMgADYCDCADIAFBAWo2AhQM+AILIABBFUYNI0EAIQIgA0EANgIcIAMgATYCFCADQdYMNgIQIANBIzYCDAz3AgsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEQNCIARQRAIAFBAWohAQwdCyADQRk2AhwgAyAANgIMIAMgAUEBajYCFAz2AgsgAygCBCEAQQAhAiADQQA2AgQgAyAAIAEQNCIARQRAIAFBAWohAQzvAgsgA0EaNgIcIAMgADYCDCADIAFBAWo2AhQM9QILIABBFUYNH0EAIQIgA0EANgIcIAMgATYCFCADQdAPNgIQIANBIjYCDAz0AgsgAygCBCEAIANBADYCBCADIAAgARAzIgBFBEAgAUEBaiEBDBsLIANBHDYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgzzAgsgAygCBCEAIANBADYCBCADIAAgARAzIgBFBEAgAUEBaiEBDOsCCyADQR02AhwgAyAANgIMIAMgAUEBajYCFEEAIQIM8gILIABBO0cNASABQQFqIQELQSYhAgzXAgtBACECIANBADYCHCADIAE2AhQgA0GfFTYCECADQQw2AgwM7wILIAEgBEcEQANAIAEtAABBIEcNhAIgBCABQQFqIgFHDQALQSwhAgzvAgtBLCECDO4CCyABIARGBEBBNCECDO4CCwJAAkADQAJAIAEtAABBCmsOBAIAAAMACyAEIAFBAWoiAUcNAAtBNCECDO8CCyADKAIEIQAgA0EANgIEIAMgACABEDEiAEUNnwIgA0EyNgIcIAMgATYCFCADIAA2AgxBACECDO4CCyADKAIEIQAgA0EANgIEIAMgACABEDEiAEUEQCABQQFqIQEMnwILIANBMjYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgztAgsgASAERwRAAkADQCABLQAAQTBrIgBB/wFxQQpPBEBBOiECDNcCCyADKQMgIgtCmbPmzJmz5swZVg0BIAMgC0IKfiIKNwMgIAogAK1C/wGDIgtCf4VWDQEgAyAKIAt8NwMgIAQgAUEBaiIBRw0AC0HAACECDO4CCyADKAIEIQAgA0EANgIEIAMgACABQQFqIgEQMSIADRcM4gILQcAAIQIM7AILIAEgBEYEQEHJACECDOwCCwJAA0ACQCABLQAAQQlrDhgAAqICogKpAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAgCiAgsgBCABQQFqIgFHDQALQckAIQIM7AILIAFBAWohASADQS9qLQAAQQFxDaUCIANBADYCHCADIAE2AhQgA0GXEDYCECADQQo2AgxBACECDOsCCyABIARHBEADQCABLQAAQSBHDRUgBCABQQFqIgFHDQALQfgAIQIM6wILQfgAIQIM6gILIANBAjoAKAw4C0EAIQIgA0EANgIcIANBvws2AhAgA0ECNgIMIAMgAUEBajYCFAzoAgtBACECDM4CC0ENIQIMzQILQRMhAgzMAgtBFSECDMsCC0EWIQIMygILQRghAgzJAgtBGSECDMgCC0EaIQIMxwILQRshAgzGAgtBHCECDMUCC0EdIQIMxAILQR4hAgzDAgtBHyECDMICC0EgIQIMwQILQSIhAgzAAgtBIyECDL8CC0ElIQIMvgILQeUAIQIMvQILIANBPTYCHCADIAE2AhQgAyAANgIMQQAhAgzVAgsgA0EbNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIM1AILIANBIDYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNMCCyADQRM2AhwgAyABNgIUIANBmBo2AhAgA0EVNgIMQQAhAgzSAgsgA0ELNgIcIAMgATYCFCADQZgaNgIQIANBFTYCDEEAIQIM0QILIANBEDYCHCADIAE2AhQgA0GYGjYCECADQRU2AgxBACECDNACCyADQSA2AhwgAyABNgIUIANBpBw2AhAgA0EVNgIMQQAhAgzPAgsgA0ELNgIcIAMgATYCFCADQaQcNgIQIANBFTYCDEEAIQIMzgILIANBDDYCHCADIAE2AhQgA0GkHDYCECADQRU2AgxBACECDM0CC0EAIQIgA0EANgIcIAMgATYCFCADQd0ONgIQIANBEjYCDAzMAgsCQANAAkAgAS0AAEEKaw4EAAICAAILIAQgAUEBaiIBRw0AC0H9ASECDMwCCwJAAkAgAy0ANkEBRw0AQQAhAAJAIAMoAjgiAkUNACACKAJgIgJFDQAgAyACEQAAIQALIABFDQAgAEEVRw0BIANB/AE2AhwgAyABNgIUIANB3Bk2AhAgA0EVNgIMQQAhAgzNAgtB3AEhAgyzAgsgA0EANgIcIAMgATYCFCADQfkLNgIQIANBHzYCDEEAIQIMywILAkACQCADLQAoQQFrDgIEAQALQdsBIQIMsgILQdQBIQIMsQILIANBAjoAMUEAIQACQCADKAI4IgJFDQAgAigCACICRQ0AIAMgAhEAACEACyAARQRAQd0BIQIMsQILIABBFUcEQCADQQA2AhwgAyABNgIUIANBtAw2AhAgA0EQNgIMQQAhAgzKAgsgA0H7ATYCHCADIAE2AhQgA0GBGjYCECADQRU2AgxBACECDMkCCyABIARGBEBB+gEhAgzJAgsgAS0AAEHIAEYNASADQQE6ACgLQcABIQIMrgILQdoBIQIMrQILIAEgBEcEQCADQQw2AgggAyABNgIEQdkBIQIMrQILQfkBIQIMxQILIAEgBEYEQEH4ASECDMUCCyABLQAAQcgARw0EIAFBAWohAUHYASECDKsCCyABIARGBEBB9wEhAgzEAgsCQAJAIAEtAABBxQBrDhAABQUFBQUFBQUFBQUFBQUBBQsgAUEBaiEBQdYBIQIMqwILIAFBAWohAUHXASECDKoCC0H2ASECIAEgBEYNwgIgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABButUAai0AAEcNAyAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMwwILIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARAuIgBFBEBB4wEhAgyqAgsgA0H1ATYCHCADIAE2AhQgAyAANgIMQQAhAgzCAgtB9AEhAiABIARGDcECIAMoAgAiACAEIAFraiEFIAEgAGtBAWohBgJAA0AgAS0AACAAQbjVAGotAABHDQIgAEEBRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADMICCyADQYEEOwEoIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARAuIgANAwwCCyADQQA2AgALQQAhAiADQQA2AhwgAyABNgIUIANB5R82AhAgA0EINgIMDL8CC0HVASECDKUCCyADQfMBNgIcIAMgATYCFCADIAA2AgxBACECDL0CC0EAIQACQCADKAI4IgJFDQAgAigCQCICRQ0AIAMgAhEAACEACyAARQ1uIABBFUcEQCADQQA2AhwgAyABNgIUIANBgg82AhAgA0EgNgIMQQAhAgy9AgsgA0GPATYCHCADIAE2AhQgA0HsGzYCECADQRU2AgxBACECDLwCCyABIARHBEAgA0ENNgIIIAMgATYCBEHTASECDKMCC0HyASECDLsCCyABIARGBEBB8QEhAgy7AgsCQAJAAkAgAS0AAEHIAGsOCwABCAgICAgICAgCCAsgAUEBaiEBQdABIQIMowILIAFBAWohAUHRASECDKICCyABQQFqIQFB0gEhAgyhAgtB8AEhAiABIARGDbkCIAMoAgAiACAEIAFraiEGIAEgAGtBAmohBQNAIAEtAAAgAEG11QBqLQAARw0EIABBAkYNAyAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy5AgtB7wEhAiABIARGDbgCIAMoAgAiACAEIAFraiEGIAEgAGtBAWohBQNAIAEtAAAgAEGz1QBqLQAARw0DIABBAUYNAiAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy4AgtB7gEhAiABIARGDbcCIAMoAgAiACAEIAFraiEGIAEgAGtBAmohBQNAIAEtAAAgAEGw1QBqLQAARw0CIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBjYCAAy3AgsgAygCBCEAIANCADcDACADIAAgBUEBaiIBECsiAEUNAiADQewBNgIcIAMgATYCFCADIAA2AgxBACECDLYCCyADQQA2AgALIAMoAgQhACADQQA2AgQgAyAAIAEQKyIARQ2cAiADQe0BNgIcIAMgATYCFCADIAA2AgxBACECDLQCC0HPASECDJoCC0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMtAILQc4BIQIMmgILIANB6wE2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyyAgsgASAERgRAQesBIQIMsgILIAEtAABBL0YEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQbI4NgIQIANBCDYCDEEAIQIMsQILQc0BIQIMlwILIAEgBEcEQCADQQ42AgggAyABNgIEQcwBIQIMlwILQeoBIQIMrwILIAEgBEYEQEHpASECDK8CCyABLQAAQTBrIgBB/wFxQQpJBEAgAyAAOgAqIAFBAWohAUHLASECDJYCCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNlwIgA0HoATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgsgASAERgRAQecBIQIMrgILAkAgAS0AAEEuRgRAIAFBAWohAQwBCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNmAIgA0HmATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgtBygEhAgyUAgsgASAERgRAQeUBIQIMrQILQQAhAEEBIQVBASEHQQAhAgJAAkACQAJAAkACfwJAAkACQAJAAkACQAJAIAEtAABBMGsOCgoJAAECAwQFBggLC0ECDAYLQQMMBQtBBAwEC0EFDAMLQQYMAgtBBwwBC0EICyECQQAhBUEAIQcMAgtBCSECQQEhAEEAIQVBACEHDAELQQAhBUEBIQILIAMgAjoAKyABQQFqIQECQAJAIAMtAC5BEHENAAJAAkACQCADLQAqDgMBAAIECyAHRQ0DDAILIAANAQwCCyAFRQ0BCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNAiADQeIBNgIcIAMgATYCFCADIAA2AgxBACECDK8CCyADKAIEIQAgA0EANgIEIAMgACABEC8iAEUNmgIgA0HjATYCHCADIAE2AhQgAyAANgIMQQAhAgyuAgsgAygCBCEAIANBADYCBCADIAAgARAvIgBFDZgCIANB5AE2AhwgAyABNgIUIAMgADYCDAytAgtByQEhAgyTAgtBACEAAkAgAygCOCICRQ0AIAIoAkQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0GkDTYCECADQSE2AgxBACECDK0CC0HIASECDJMCCyADQeEBNgIcIAMgATYCFCADQdAaNgIQIANBFTYCDEEAIQIMqwILIAEgBEYEQEHhASECDKsCCwJAIAEtAABBIEYEQCADQQA7ATQgAUEBaiEBDAELIANBADYCHCADIAE2AhQgA0GZETYCECADQQk2AgxBACECDKsCC0HHASECDJECCyABIARGBEBB4AEhAgyqAgsCQCABLQAAQTBrQf8BcSICQQpJBEAgAUEBaiEBAkAgAy8BNCIAQZkzSw0AIAMgAEEKbCIAOwE0IABB/v8DcSACQf//A3NLDQAgAyAAIAJqOwE0DAILQQAhAiADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMDKsCCyADQQA2AhwgAyABNgIUIANBlR42AhAgA0ENNgIMQQAhAgyqAgtBxgEhAgyQAgsgASAERgRAQd8BIQIMqQILAkAgAS0AAEEwa0H/AXEiAkEKSQRAIAFBAWohAQJAIAMvATQiAEGZM0sNACADIABBCmwiADsBNCAAQf7/A3EgAkH//wNzSw0AIAMgACACajsBNAwCC0EAIQIgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDAyqAgsgA0EANgIcIAMgATYCFCADQZUeNgIQIANBDTYCDEEAIQIMqQILQcUBIQIMjwILIAEgBEYEQEHeASECDKgCCwJAIAEtAABBMGtB/wFxIgJBCkkEQCABQQFqIQECQCADLwE0IgBBmTNLDQAgAyAAQQpsIgA7ATQgAEH+/wNxIAJB//8Dc0sNACADIAAgAmo7ATQMAgtBACECIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgwMqQILIANBADYCHCADIAE2AhQgA0GVHjYCECADQQ02AgxBACECDKgCC0HEASECDI4CCyABIARGBEBB3QEhAgynAgsCQAJAAkACQCABLQAAQQprDhcCAwMAAwMDAwMDAwMDAwMDAwMDAwMDAQMLIAFBAWoMBQsgAUEBaiEBQcMBIQIMjwILIAFBAWohASADQS9qLQAAQQFxDQggA0EANgIcIAMgATYCFCADQY0LNgIQIANBDTYCDEEAIQIMpwILIANBADYCHCADIAE2AhQgA0GNCzYCECADQQ02AgxBACECDKYCCyABIARHBEAgA0EPNgIIIAMgATYCBEEBIQIMjQILQdwBIQIMpQILAkACQANAAkAgAS0AAEEKaw4EAgAAAwALIAQgAUEBaiIBRw0AC0HbASECDKYCCyADKAIEIQAgA0EANgIEIAMgACABEC0iAEUEQCABQQFqIQEMBAsgA0HaATYCHCADIAA2AgwgAyABQQFqNgIUQQAhAgylAgsgAygCBCEAIANBADYCBCADIAAgARAtIgANASABQQFqCyEBQcEBIQIMigILIANB2QE2AhwgAyAANgIMIAMgAUEBajYCFEEAIQIMogILQcIBIQIMiAILIANBL2otAABBAXENASADQQA2AhwgAyABNgIUIANB5Bw2AhAgA0EZNgIMQQAhAgygAgsgASAERgRAQdkB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CyADIAU2AgAMkAILIANBADYCACAGQQFqIQFBGgw8C0HKASECIAEgBEYNjgIgAygCACIAIAQgAWtqIQUgASAAa0EDaiEGAkADQCABLQAAIABBjdUAai0AAEcNOyAAQQNGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMjwILIANBADYCACAGQQFqIQFBIQw7CyABIARGBEBByQEhAgyOAgsCQAJAIAEtAABBwQBrDhQAPT09PT09PT09PT09PT09PT09AT0LIAFBAWohAUGtASECDPUBCyABQQFqIQFBsAEhAgz0AQsgASAERgRAQcgBIQIMjQILAkACQCABLQAAQdUAaw4LADw8PDw8PDw8PAE8CyABQQFqIQFBrgEhAgz0AQsgAUEBaiEBQa8BIQIM8wELQccBIQIgASAERg2LAiADKAIAIgAgBCABa2ohBSABIABrQQhqIQYCQANAIAEtAAAgAEGE1QBqLQAARw04IABBCEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyMAgsgA0EANgIAIAZBAWohAUEqDDgLIAEgBEYEQEHGASECDIsCCyABLQAAQdAARw04IAFBAWohAUElDDcLQcUBIQIgASAERg2JAiADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEGB1QBqLQAARw02IABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyKAgsgA0EANgIAIAZBAWohAUEODDYLIAEgBEYEQEHEASECDIkCCyABLQAAQcUARw02IAFBAWohAUGrASECDO8BCyABIARGBEBBwwEhAgyIAgsCQAJAAkACQCABLQAAQcIAaw4PAAECOTk5OTk5OTk5OTkDOQsgAUEBaiEBQacBIQIM8QELIAFBAWohAUGoASECDPABCyABQQFqIQFBqQEhAgzvAQsgAUEBaiEBQaoBIQIM7gELQcIBIQIgASAERg2GAiADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEH+1ABqLQAARw0zIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyHAgsgA0EANgIAIAZBAWohAUEUDDMLQcEBIQIgASAERg2FAiADKAIAIgAgBCABa2ohBSABIABrQQRqIQYCQANA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BTYCAAzsAQsgA0EANgIAIAZBAWohAUEXDBgLQaYBIQIgASAERg3qASADKAIAIgAgBCABa2ohBSABIABrQQVqIQYCQANAIAEtAAAgAEHB1ABqLQAARw0XIABBBUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzrAQsgA0EANgIAIAZBAWohAUEYDBcLIAEgBEYEQEGlASECDOoBCwJAAkAgAS0AAEHJAGsOBwAZGRkZGQEZCyABQQFqIQFBiwEhAgzRAQsgAUEBaiEBQYwBIQIM0AELQaQBIQIgASAERg3oASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGm1QBqLQAARw0VIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzpAQsgA0EANgIAIAZBAWohAUEJDBULQaMBIQIgASAERg3nASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGk1QBqLQAARw0UIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzoAQsgA0EANgIAIAZBAWohAUEfDBQLQaIBIQIgASAERg3mASADKAIAIgAgBCABa2ohBSABIABrQQJqIQYCQANAIAEtAAAgAEG+1ABqLQAARw0TIABBAkYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAznAQsgA0EANgIAIAZBAWohAUECDBMLQaEBIQIgASAERg3lASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYDQCABLQAAIABBvNQAai0AAEcNESAAQQFGDQIgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM5QELIAEgBEYEQEGgASECDOUBC0EBIAEtAABB3wBHDREaIAFBAWohAUGHASECDMsBCyADQQA2AgAgBkEBaiEBQYgBIQIMygELQZ8BIQIgASAERg3iASADKAIAIgAgBCABa2ohBSABIABrQQhqIQYCQANAIAEtAAAgAEGE1QBqLQAARw0PIABBCEYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAzjAQsgA0EANgIAIAZBAWohAUEpDA8LQZ4BIQIgASAERg3hASADKAIAIgAgBCABa2ohBSABIABrQQNqIQYCQANAIAEtAAAgAEG41ABqLQAARw0OIABBA0YNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAziAQsgA0EANgIAIAZBAWohAUEtDA4LIAEgBEYEQEGdASECDOEBCyABLQAAQcUARw0OIAFBAWohAUGEASECDMcBCyABIARGBEBBnAEhAgzgAQsCQAJAIAEtAABBzABrDggADw8PDw8PAQ8LIAFBAWohAUGCASECDMcBCyABQQFqIQFBgwEhAgzGAQtBmwEhAiABIARGDd4BIAMoAgAiACAEIAFraiEFIAEgAGtBBGohBgJAA0AgAS0AACAAQbPUAGotAABHDQsgAEEERg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADN8BCyADQQA2AgAgBkEBaiEBQSMMCwtBmgEhAiABIARGDd0BIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQbDUAGotAABHDQogAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADN4BCyADQQA2AgAgBkEBaiEBQQAMCgsgASAERgRAQZkBIQIM3QELAkACQCABLQAAQcgAaw4IAAwMDAwMDAEMCyABQQFqIQFB/QAhAgzEAQsgAUEBaiEBQYABIQIMwwELIAEgBEYEQEGYASECDNwBCwJAAkAgAS0AAEHOAGsOAwALAQsLIAFBAWohAUH+ACECDMMBCyABQQFqIQFB/wAhAgzCAQsgASAERgRAQZcBIQIM2wELIAEtAABB2QBHDQggAUEBaiEBQQgMBwtBlgEhAiABIARGDdkBIAMoAgAiACAEIAFraiEFIAEgAGtBA2ohBgJAA0AgAS0AACAAQazUAGotAABHDQYgAEEDRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNoBCyADQQA2AgAgBkEBaiEBQQUMBgtBlQEhAiABIARGDdgBIAMoAgAiACAEIAFraiEFIAEgAGtBBWohBgJAA0AgAS0AACAAQabUAGotAABHDQUgAEEFRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNkBCyADQQA2AgAgBkEBaiEBQRYMBQtBlAEhAiABIARGDdcBIAMoAgAiACAEIAFraiEFIAEgAGtBAmohBgJAA0AgAS0AACAAQaHVAGotAABHDQQgAEECRg0BIABBAWohACAEIAFBAWoiAUcNAAsgAyAFNgIADNgBCyADQQA2AgAgBkEBaiEBQRAMBAsgASAERgRAQZMBIQIM1wELAkACQCABLQAAQcMAaw4MAAYGBgYGBgYGBgYBBgsgAUEBaiEBQfkAIQIMvgELIAFBAWohAUH6ACECDL0BC0GSASECIAEgBEYN1QEgAygCACIAIAQgAWtqIQUgASAAa0EFaiEGAkADQCABLQAAIABBoNQAai0AAEcNAiAAQQVGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAM1gELIANBADYCACAGQQFqIQFBJAwCCyADQQA2AgAMAgsgASAERgRAQZEBIQIM1AELIAEtAABBzABHDQEgAUEBaiEBQRMLOgApIAMoAgQhACADQQA2AgQgAyAAIAEQLiIADQIMAQtBACECIANBADYCHCADIAE2AhQgA0H+HzYCECADQQY2AgwM0QELQfgAIQIMtwELIANBkAE2AhwgAyABNgIUIAMgADYCDEEAIQIMzwELQQAhAAJAIAMoAjgiAkUNACACKAJAIgJFDQAgAyACEQAAIQALIABFDQAgAEEVRg0BIANBADYCHCADIAE2AhQgA0GCDzYCECADQSA2AgxBACECDM4BC0H3ACECDLQBCyADQY8BNgIcIAMgATYCFCADQewbNgIQIANBFTYCDEEAIQIMzAELIAEgBEYEQEGPASECDMwBCwJAIAEtAABBIEYEQCABQQFqIQEMAQsgA0EANgIcIAMgATYCFCADQZsfNgIQIANBBjYCDEEAIQIMzAELQQIhAgyyAQsDQCABLQAAQSBHDQIgBCABQQFqIgFHDQALQY4BIQIMygELIAEgBEYEQEGNASECDMoBCwJAIAEtAABBCWsOBEoAAEoAC0H1ACECDLABCyADLQApQQVGBEBB9gAhAgywAQtB9AAhAgyvAQsgASAERgRAQYwBIQIMyAELIANBEDYCCCADIAE2AgQMCgsgASAERgRAQYsBIQIMxwELAkAgAS0AAEEJaw4ERwAARwALQfMAIQIMrQELIAEgBEcEQCADQRA2AgggAyABNgIEQfEAIQIMrQELQYoBIQIMxQELAkAgASAERwRAA0AgAS0AAEGg0ABqLQAAIgBBA0cEQAJAIABBAWsOAkkABAtB8AAhAgyvAQsgBCABQQFqIgFHDQALQYgBIQIMxgELQYgBIQIMxQELIANBADYCHCADIAE2AhQgA0HbIDYCECADQQc2AgxBACECDMQBCyABIARGBEBBiQEhAgzEAQsCQAJAAkAgAS0AAEGg0gBqLQAAQQFrDgNGAgABC0HyACECDKwBCyADQQA2AhwgAyABNgIUIANBtBI2AhAgA0EHNgIMQQAhAgzEAQtB6gAhAgyqAQsgASAERwRAIAFBAWohAUHvACECDKoBC0GHASECDMIBCyAEIAEiAEYEQEGGASECDMIBCyAALQAAIgFBL0YEQCAAQQFqIQFB7gAhAgypAQsgAUEJayICQRdLDQEgACEBQQEgAnRBm4CABHENQQwBCyAEIAEiAEYEQEGFASECDMEBCyAALQAAQS9HDQAgAEEBaiEBDAMLQQAhAiADQQA2AhwgAyAANgIUIANB2yA2AhAgA0EHNgIMDL8BCwJAAkACQAJAAkADQCABLQAAQaDOAGotAAAiAEEFRwRAAkACQCAAQQFrDghHBQYHCAAEAQgLQesAIQIMrQELIAFBAWohAUHtACECDKwBCyAEIAFBAWoiAUcNAAtBhAEhAgzDAQsgAUEBagwUCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQdsANgIcIAMgATYCFCADIAA2AgxBACECDMEBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQd0ANgIcIAMgATYCFCADIAA2AgxBACECDMABCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNHiADQfoANgIcIAMgATYCFCADIAA2AgxBACECDL8BCyADQQA2AhwgAyABNgIUIANB+Q82AhAgA0EHNgIMQQAhAgy+AQsgASAERgRAQYMBIQIMvgELAkAgAS0AAEGgzgBqLQAAQQFrDgg+BAUGAAgCAwcLIAFBAWohAQtBAyECDKMBCyABQQFqDA0LQQAhAiADQQA2AhwgA0HREjYCECADQQc2AgwgAyABQQFqNgIUDLoBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQdsANgIcIAMgATYCFCADIAA2AgxBACECDLkBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQd0ANgIcIAMgATYCFCADIAA2AgxBACECDLgBCyADKAIEIQAgA0EANgIEIAMgACABECwiAEUNFiADQfoANgIcIAMgATYCFCADIAA2AgxBACECDLcBCyADQQA2AhwgAyABNgIUIANB+Q82AhAgA0EHNgIMQQAhAgy2AQtB7AAhAgycAQsgASAERgRAQYIBIQIMtQELIAFBAWoMAgsgASAERgRAQYEBIQIMtAELIAFBAWoMAQsgASAERg0BIAFBAWoLIQFBBCECDJgBC0GAASECDLABCwNAIAEtAABBoMwAai0AACIAQQJHBEAgAEEBRwRAQekAIQIMmQELDDELIAQgAUEBaiIBRw0AC0H/ACECDK8BCyABIARGBEBB/gAhAgyvAQsCQCABLQAAQQlrDjcvAwYvBAYGBgYGBgYGBgYGBgYGBgYGBgUGBgIGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYABgsgAUEBagshAUEFIQIMlAELIAFBAWoMBgsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0HbADYCHCADIAE2AhQgAyAANgIMQQAhAgyrAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0HdADYCHCADIAE2AhQgAyAANgIMQQAhAgyqAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQggA0H6ADYCHCADIAE2AhQgAyAANgIMQQAhAgypAQsgA0EANgIcIAMgATYCFCADQY0UNgIQIANBBzYCDEEAIQIMqAELAkACQAJAAkADQCABLQAAQaDKAGotAAAiAEEFRwRAAkAgAEEBaw4GLgMEBQYABgtB6AAhAgyUAQsgBCABQQFqIgFHDQALQf0AIQIMqwELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB2wA2AhwgAyABNgIUIAMgADYCDEEAIQIMqgELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB3QA2AhwgAyABNgIUIAMgADYCDEEAIQIMqQELIAMoAgQhACADQQA2AgQgAyAAIAEQLCIARQ0HIANB+gA2AhwgAyABNgIUIAMgADYCDEEAIQIMqAELIANBADYCHCADIAE2AhQgA0HkCDYCECADQQc2AgxBACECDKcBCyABIARGDQEgAUEBagshAUEGIQIMjAELQfwAIQIMpAELAkACQAJAAkADQCABLQAAQaDIAGotAAAiAEEFRwRAIABBAWsOBCkCAwQFCyAEIAFBAWoiAUcNAAtB+wAhAgynAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0HbADYCHCADIAE2AhQgAyAANgIMQQAhAgymAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0HdADYCHCADIAE2AhQgAyAANgIMQQAhAgylAQsgAygCBCEAIANBADYCBCADIAAgARAsIgBFDQMgA0H6ADYCHCADIAE2AhQgAyAANgIMQQAhAgykAQsgA0EANgIcIAMgATYCFCADQbwKNgIQIANBBzYCDEEAIQIMowELQc8AIQIMiQELQdEAIQIMiAELQecAIQIMhwELIAEgBEYEQEH6ACECDKABCwJAIAEtAABBCWsOBCAAACAACyABQQFqIQFB5gAhAgyGAQsgASAERgRAQfkAIQIMnwELAkAgAS0AAEEJaw4EHwAAHwALQQAhAAJAIAMoAjgiAkUNACACKAI4IgJFDQAgAyACEQAAIQALIABFBEBB4gEhAgyGAQsgAEEVRwRAIANBADYCHCADIAE2AhQgA0HJDTYCECADQRo2AgxBACECDJ8BCyADQfgANgIcIAMgATYCFCADQeoaNgIQIANBFTYCDEEAIQIMngELIAEgBEcEQCADQQ02AgggAyABNgIEQeQAIQIMhQELQfcAIQIMnQELIAEgBEYEQEH2ACECDJ0BCwJAAkACQCABLQAAQcgAaw4LAAELCwsLCwsLCwILCyABQQFqIQFB3QAhAgyFAQsgAUEBaiEBQeAAIQIMhAELIAFBAWohAUHjACECDIMBC0H1ACECIAEgBEYNmwEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBtdUAai0AAEcNCCAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMnAELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgAEQCADQfQANgIcIAMgATYCFCADIAA2AgxBACECDJwBC0HiACECDIIBC0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMnAELQeEAIQIMggELIANB8wA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyaAQsgAy0AKSIAQSNrQQtJDQkCQCAAQQZLDQBBASAAdEHKAHFFDQAMCgtBACECIANBADYCHCADIAE2AhQgA0HtCTYCECADQQg2AgwMmQELQfIAIQIgASAERg2YASADKAIAIgAgBCABa2ohBSABIABrQQFqIQYCQANAIAEtAAAgAEGz1QBqLQAARw0FIABBAUYNASAAQQFqIQAgBCABQQFqIgFHDQALIAMgBTYCAAyZAQsgAygCBCEAIANCADcDACADIAAgBkEBaiIBECsiAARAIANB8QA2AhwgAyABNgIUIAMgADYCDEEAIQIMmQELQd8AIQIMfwtBACEAAkAgAygCOCICRQ0AIAIoAjQiAkUNACADIAIRAAAhAAsCQCAABEAgAEEVRg0BIANBADYCHCADIAE2AhQgA0HqDTYCECADQSY2AgxBACECDJkBC0HeACECDH8LIANB8AA2AhwgAyABNgIUIANBgBs2AhAgA0EVNgIMQQAhAgyXAQsgAy0AKUEhRg0GIANBADYCHCADIAE2AhQgA0GRCjYCECADQQg2AgxBACECDJYBC0HvACECIAEgBEYNlQEgAygCACIAIAQgAWtqIQUgASAAa0ECaiEGAkADQCABLQAAIABBsNUAai0AAEcNAiAAQQJGDQEgAEEBaiEAIAQgAUEBaiIBRw0ACyADIAU2AgAMlgELIAMoAgQhACADQgA3AwAgAyAAIAZBAWoiARArIgBFDQIgA0HtADYCHCADIAE2AhQgAyAANgIMQQAhAgyVAQsgA0EANgIACyADKAIEIQAgA0EANgIEIAMgACABECsiAEUNgAEgA0HuADYCHCADIAE2AhQgAyAANgIMQQAhAgyTAQtB3AAhAgx5C0EAIQACQCADKAI4IgJFDQAgAigCNCICRQ0AIAMgAhEAACEACwJAIAAEQCAAQRVGDQEgA0EANgIcIAMgATYCFCADQeoNNgIQIANBJjYCDEEAIQIMkwELQdsAIQIMeQsgA0HsADYCHCADIAE2AhQgA0GAGzYCECADQRU2AgxBACECDJEBCyADLQApIgBBI0kNACAAQS5GDQAgA0EANgIcIAMgATYCFCADQckJNgIQIANBCDYCDEEAIQIMkAELQdoAIQIMdgsgASAERgRAQesAIQIMjwELAkAgAS0AAEEvRgRAIAFBAWohAQwBCyAD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ciBIVFRQL3gueCByZXF1ZXN0AEludmFsaWQgbWV0aG9kIGZvciBSVFNQL3gueCByZXF1ZXN0AEV4cGVjdGVkIFNPVVJDRSBtZXRob2QgZm9yIElDRS94LnggcmVxdWVzdABJbnZhbGlkIGNoYXIgaW4gdXJsIGZyYWdtZW50IHN0YXJ0AEV4cGVjdGVkIGRvdABTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3N0YXR1cwBJbnZhbGlkIHJlc3BvbnNlIHN0YXR1cwBFeHBlY3RlZCBMRiBhZnRlciBoZWFkZXJzAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMAVXNlciBjYWxsYmFjayBlcnJvcgBgb25fcmVzZXRgIGNhbGxiYWNrIGVycm9yAGBvbl9jaHVua19oZWFkZXJgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2JlZ2luYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX3ZhbHVlYCBjYWxsYmFjayBlcnJvcgBgb25fc3RhdHVzX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fdmVyc2lvbl9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3VybF9jb21wbGV0ZWAgY2FsbGJhY2sgZXJyb3IAYG9uX3Byb3RvY29sX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9oZWFkZXJfdmFsdWVfY29tcGxldGVgIGNhbGxiYWNrIGVycm9yAGBvbl9tZXNzYWdlX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fbWV0aG9kX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25faGVhZGVyX2ZpZWxkX2NvbXBsZXRlYCBjYWxsYmFjayBlcnJvcgBgb25fY2h1bmtfZXh0ZW5zaW9uX25hbWVgIGNhbGxiYWNrIGVycm9yAFVuZXhwZWN0ZWQgY2hhciBpbiB1cmwgc2VydmVyAEludmFsaWQgaGVhZGVyIHZhbHVlIGNoYXIASW52YWxpZCBoZWFkZXIgZmllbGQgY2hhcgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3ZlcnNpb24ASW52YWxpZCBtaW5vciB2ZXJzaW9uAEludmFsaWQgbWFqb3IgdmVyc2lvbgBFeHBlY3RlZCBzcGFjZSBhZnRlciB2ZXJzaW9uAEV4cGVjdGVkIENSTEYgYWZ0ZXIgdmVyc2lvbgBJbnZhbGlkIEhUVFAgdmVyc2lvbgBJbnZhbGlkIGhlYWRlciB0b2tlbgBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX3VybABJbnZhbGlkIGNoYXJhY3RlcnMgaW4gdXJsAFVuZXhwZWN0ZWQgc3RhcnQgY2hhciBpbiB1cmwARG91YmxlIEAgaW4gdXJsAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fcHJvdG9jb2wARW1wdHkgQ29udGVudC1MZW5ndGgASW52YWxpZCBjaGFyYWN0ZXIgaW4gQ29udGVudC1MZW5ndGgAVHJhbnNmZXItRW5jb2RpbmcgY2FuJ3QgYmUgcHJlc2VudCB3aXRoIENvbnRlbnQtTGVuZ3RoAER1cGxpY2F0ZSBDb250ZW50LUxlbmd0aABJbnZhbGlkIGNoYXIgaW4gdXJsIHBhdGgAQ29udGVudC1MZW5ndGggY2FuJ3QgYmUgcHJlc2VudCB3aXRoIFRyYW5zZmVyLUVuY29kaW5nAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgc2l6ZQBFeHBlY3RlZCBMRiBhZnRlciBjaHVuayBzaXplAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIHNpemUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfdmFsdWUAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9jaHVua19leHRlbnNpb25fdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyB2YWx1ZQBVbmV4cGVjdGVkIHdoaXRlc3BhY2UgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgaGVhZGVyIHZhbHVlAE1pc3NpbmcgZXhwZWN0ZWQgTEYgYWZ0ZXIgaGVhZGVyIHZhbHVlAEludmFsaWQgYFRyYW5zZmVyLUVuY29kaW5nYCBoZWFkZXIgdmFsdWUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciBjaHVuayBleHRlbnNpb24gdmFsdWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBxdW90ZSB2YWx1ZQBJbnZhbGlkIHF1b3RlZC1wYWlyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAEludmFsaWQgY2hhcmFjdGVyIGluIGNodW5rIGV4dGVuc2lvbnMgcXVvdGVkIHZhbHVlAFBhdXNlZCBieSBvbl9oZWFkZXJzX2NvbXBsZXRlAEludmFsaWQgRU9GIHN0YXRlAG9uX3Jlc2V0IHBhdXNlAG9uX2NodW5rX2hlYWRlciBwYXVzZQBvbl9tZXNzYWdlX2JlZ2luIHBhdXNlAG9uX2NodW5rX2V4dGVuc2lvbl92YWx1ZSBwYXVzZQBvbl9zdGF0dXNfY29tcGxldGUgcGF1c2UAb25fdmVyc2lvbl9jb21wbGV0ZSBwYXVzZQBvbl91cmxfY29tcGxldGUgcGF1c2UAb25fcHJvdG9jb2xfY29tcGxldGUgcGF1c2UAb25fY2h1bmtfY29tcGxldGUgcGF1c2UAb25faGVhZGVyX3ZhbHVlX2NvbXBsZXRlIHBhdXNlAG9uX21lc3NhZ2VfY29tcGxldGUgcGF1c2UAb25fbWV0aG9kX2NvbXBsZXRlIHBhdXNlAG9uX2hlYWRlcl9maWVsZF9jb21wbGV0ZSBwYXVzZQBvbl9jaHVua19leHRlbnNpb25fbmFtZSBwYXVzZQBVbmV4cGVjdGVkIHNwYWNlIGFmdGVyIHN0YXJ0IGxpbmUATWlzc2luZyBleHBlY3RlZCBDUiBhZnRlciByZXNwb25zZSBsaW5lAFNwYW4gY2FsbGJhY2sgZXJyb3IgaW4gb25fY2h1bmtfZXh0ZW5zaW9uX25hbWUASW52YWxpZCBjaGFyYWN0ZXIgaW4gY2h1bmsgZXh0ZW5zaW9ucyBuYW1lAE1pc3NpbmcgZXhwZWN0ZWQgQ1IgYWZ0ZXIgY2h1bmsgZXh0ZW5zaW9uIG5hbWUASW52YWxpZCBzdGF0dXMgY29kZQBQYXVzZSBvbiBDT05ORUNUL1VwZ3JhZGUAUGF1c2Ugb24gUFJJL1VwZ3JhZGUARXhwZWN0ZWQgSFRUUC8yIENvbm5lY3Rpb24gUHJlZmFjZQBTcGFuIGNhbGxiYWNrIGVycm9yIGluIG9uX21ldGhvZABFeHBlY3RlZCBzcGFjZSBhZnRlciBtZXRob2QAU3BhbiBjYWxsYmFjayBlcnJvciBpbiBvbl9oZWFkZXJfZmllbGQAUGF1c2VkAEludmFsaWQgd29yZCBlbmNvdW50ZXJlZABJbnZhbGlkIG1ldGhvZCBlbmNvdW50ZXJlZABNaXNzaW5nIGV4cGVjdGVkIENSIGFmdGVyIGNodW5rIGRhdGEARXhwZWN0ZWQgTEYgYWZ0ZXIgY2h1bmsgZGF0YQBVbmV4cGVjdGVkIGNoYXIgaW4gdXJsIHNjaGVtYQBSZXF1ZXN0IGhhcyBpbnZhbGlkIGBUcmFuc2Zlci1FbmNvZGluZ2AARGF0YSBhZnRlciBgQ29ubmVjdGlvbjogY2xvc2VgAFNXSVRDSF9QUk9YWQBVU0VfUFJPWFkATUtBQ1RJVklUWQBVTlBST0NFU1NBQkxFX0VOVElUWQBRVUVSWQBDT1BZAE1PVkVEX1BFUk1BTkVOVExZAFRPT19FQVJMWQBOT1RJRlkARkFJTEVEX0RFUEVOREVOQ1kAQkFEX0dBVEVXQVkAUExBWQBQVVQAQ0hFQ0tPVVQAR0FURVdBWV9USU1FT1VUAFJFUVVFU1RfVElNRU9VVABORVRXT1JLX0NPTk5FQ1RfVElNRU9VVABDT05ORUNUSU9OX1RJTUVPVVQATE9HSU5fVElNRU9VVABORVRXT1JLX1JFQURfVElNRU9VVABQT1NUAE1JU0RJUkVDVEVEX1JFUVVFU1QAQ0xJRU5UX0NMT1NFRF9SRVFVRVNUAENMSUVOVF9DTE9TRURfTE9BRF9CQUxBTkNFRF9SRVFVRVNUAEJBRF9SRVFVRVNUAEhUVFBfUkVRVUVTVF9TRU5UX1RPX0hUVFBTX1BPUlQAUkVQT1JUAElNX0FfVEVBUE9UAFJFU0VUX0NPTlRFTlQATk9fQ09OVEVOVABQQVJUSUFMX0NPTlRFTlQASFBFX0lOVkFMSURfQ09OU1RBTlQASFBFX0NCX1JFU0VUAEdFVABIUEVfU1RSSUNUAENPTkZMSUNUAFRFTVBPUkFSWV9SRURJUkVDVABQRVJNQU5FTlRfUkVESVJFQ1QAQ09OTkVDVABNVUxUSV9TVEFUVVMASFBFX0lOVkFMSURfU1RBVFVTAFRPT19NQU5ZX1JFUVVFU1RTAEVBUkxZX0hJTlRTAFVOQVZBSUxBQkxFX0ZPUl9MRUdBTF9SRUFTT05TAE9QVElPTlMAU1dJVENISU5HX1BST1RPQ09MUwBWQVJJQU5UX0FMU09fTkVHT1RJQVRFUwBNVUxUSVBMRV9DSE9JQ0VTAElOVEVSTkFMX1NFUlZFUl9FUlJPUgBXRUJfU0VSVkVSX1VOS05PV05fRVJST1IAUkFJTEdVTl9FUlJPUgBJREVOVElUWV9QUk9WSURFUl9BVVRIRU5USUNBVElPTl9FUlJPUgBTU0xfQ0VSVElGSUNBVEVfRVJST1IASU5WQUxJRF9YX0ZPUldBUkRFRF9GT1IAU0VUX1BBUkFNRVRFUgBHRVRfUEFSQU1FVEVSAEhQRV9VU0VSAFNFRV9PVEhFUgBIUEVfQ0JfQ0hVTktfSEVBREVSAEV4cGVjdGVkIExGIGFmdGVyIENSAE1LQ0FMRU5EQVIAU0VUVVAAV0VCX1NFUlZFUl9JU19ET1dOAFRFQVJET1dOAEhQRV9DTE9TRURfQ09OTkVDVElPTgBIRVVSSVNUSUNfRVhQSVJBVElPTgBESVNDT05ORUNURURfT1BFUkFUSU9OAE5PTl9BVVRIT1JJVEFUSVZFX0lORk9STUFUSU9OAEhQRV9JTlZBTElEX1ZFUlNJT04ASFBFX0NCX01FU1NBR0VfQkVHSU4AU0lURV9JU19GUk9aRU4ASFBFX0lOVkFMSURfSEVBREVSX1RPS0VOAElOVkFMSURfVE9LRU4ARk9SQklEREVOAEVOSEFOQ0VfWU9VUl9DQUxNAEhQRV9JTlZBTElEX1VSTABCTE9DS0VEX0JZX1BBUkVOVEFMX0NPTlRST0wATUtDT0wAQUNMAEhQRV9JTlRFUk5BTABSRVFVRVNUX0hFQURFUl9GSUVMRFNfVE9PX0xBUkdFX1VOT0ZGSUNJQUwASFBFX09LAFVOTElOSwBVTkxPQ0sAUFJJAFJFVFJZX1dJVEgASFBFX0lOVkFMSURfQ09OVEVOVF9MRU5HVEgASFBFX1VORVhQRUNURURfQ09OVEVOVF9MRU5HVEgARkxVU0gAUFJPUFBBVENIAE0tU0VBUkNIAFVSSV9UT09fTE9ORwBQUk9DRVNTSU5HAE1JU0NFTExBTkVPVVNfUEVSU0lTVEVOVF9XQVJOSU5HAE1JU0NFTExBTkVPVVNfV0FSTklORwBIUEVfSU5WQUxJRF9UUkFOU0ZFUl9FTkNPRElORwBFeHBlY3RlZCBDUkxGAEhQRV9JTlZBTElEX0NIVU5LX1NJWkUATU9WRQBDT05USU5VRQBIUEVfQ0JfU1RBVFVTX0NPTVBMRVRFAEhQRV9DQl9IRUFERVJTX0NPTVBMRVRFAEhQRV9DQl9WRVJTSU9OX0NPTVBMRVRFAEhQRV9DQl9VUkxfQ09NUExFVEUASFBFX0NCX1BST1RPQ09MX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19DT01QTEVURQBIUEVfQ0JfSEVBREVSX1ZBTFVFX0NPTVBMRVRFAEhQRV9DQl9DSFVOS19FWFRFTlNJT05fVkFMVUVfQ09NUExFVEUASFBFX0NCX0NIVU5LX0VYVEVOU0lPTl9OQU1FX0NPTVBMRVRFAEhQRV9DQl9NRVNTQUdFX0NPTVBMRVRFAEhQRV9DQl9NRVRIT0RfQ09NUExFVEUASFBFX0NCX0hFQURFUl9GSUVMRF9DT01QTEVURQBERUxFVEUASFBFX0lOVkFMSURfRU9GX1NUQVRFAElOVkFMSURfU1NMX0NFUlRJRklDQVRFAFBBVVNFAE5PX1JFU1BPTlNFAFVOU1VQUE9SVEVEX01FRElBX1RZUEUAR09ORQBOT1RfQUNDRVBUQUJMRQBTRVJWSUNFX1VOQVZBSUxBQkxFAFJBTkdFX05PVF9TQVRJU0ZJQUJMRQBPUklHSU5fSVNfVU5SRUFDSEFCTEUAUkVTUE9OU0VfSVNfU1RBTEUAUFVSR0UATUVSR0UAUkVRVUVTVF9IRUFERVJfRklFTERTX1RPT19MQVJHRQBSRVFVRVNUX0hFQURFUl9UT09fTEFSR0UAUEFZTE9BRF9UT09fTEFSR0UASU5TVUZGSUNJRU5UX1NUT1JBR0UASFBFX1BBVVNFRF9VUEdSQURFAEhQRV9QQVVTRURfSDJfVVBHUkFERQBTT1VSQ0UAQU5OT1VOQ0UAVFJBQ0UASFBFX1VORVhQRUNURURfU1BBQ0UAREVTQ1JJQkUAVU5TVUJTQ1JJQkUAUkVDT1JEAEhQRV9JTlZBTElEX01FVEhPRABOT1RfRk9VTkQAUFJPUEZJTkQAVU5CSU5EAFJFQklORABVTkFVVEhPUklaRUQATUVUSE9EX05PVF9BTExPV0VEAEhUVFBfVkVSU0lPTl9OT1RfU1VQUE9SVEVEAEFMUkVBRFlfUkVQT1JURUQAQUNDRVBURUQATk9UX0lNUExFTUVOVEVEAExPT1BfREVURUNURUQASFBFX0NSX0VYUEVDVEVEAEhQRV9MRl9FWFBFQ1RFRABDUkVBVEVEAElNX1VTRUQASFBFX1BBVVNFRABUSU1FT1VUX09DQ1VSRUQAUEFZTUVOVF9SRVFVSVJFRABQUkVDT05ESVRJT05fUkVRVUlSRUQAUFJPWFlfQVVUSEVOVElDQVRJT05fUkVRVUlSRUQATkVUV09SS19BVVRIRU5USUNBVElPTl9SRVFVSVJFRABMRU5HVEhfUkVRVUlSRUQAU1NMX0NFUlRJRklDQVRFX1JFUVVJUkVEAFVQR1JBREVfUkVRVUlSRUQAUEFHRV9FWFBJUkVEAFBSRUNPTkRJVElPTl9GQUlMRUQARVhQRUNUQVRJT05fRkFJTEVEAFJFVkFMSURBVElPTl9GQUlMRUQAU1NMX0hBTkRTSEFLRV9GQUlMRUQATE9DS0VEAFRSQU5TRk9STUFUSU9OX0FQUExJRUQATk9UX01PRElGSUVEAE5PVF9FWFRFTkRFRABCQU5EV0lEVEhfTElNSVRfRVhDRUVERUQAU0lURV9JU19PVkVSTE9BREVEAEhFQUQARXhwZWN0ZWQgSFRUUC8sIFJUU1AvIG9yIElDRS8A5xUAAK8VAACkEgAAkhoAACYWAACeFAAA2xkAAHkVAAB+EgAA/hQAADYVAAALFgAA2BYAAPMSAABCGAAArBYAABIVAAAUFwAA7xcAAEgUAABxFwAAshoAAGsZAAB+GQAANRQAAIIaAABEFwAA/RYAAB4YAACHFwAAqhkAAJMSAAAHGAAALBcAAMoXAACkFwAA5xUAAOcVAABYFwAAOxgAAKASAAAtHAAAwxEAAEgRAADeEgAAQhMAAKQZAAD9EAAA9xUAAKUVAADvFgAA+BkAAEoWAABWFgAA9RUAAAoaAAAIGgAAARoAAKsVAABCEgAA1xAAAEwRAAAFGQAAVBYAAB4RAADKGQAAyBkAAE4WAAD/GAAAcRQAAPAVAADuFQAAlBkAAPwVAAC/GQAAmxkAAHwUAABDEQAAcBgAAJUUAAAnFAAAGRQAANUSAADUGQAARBYAAPcQAEG5OwsBAQBB0DsL4AEBAQIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBuj0LBAEAAAIAQdE9C14DBAMDAwMDAAADAwADAwADAwMDAwMDAwMDAAUAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAwADAEG6PwsEAQAAAgBB0T8LXgMAAwMDAwMAAAMDAAMDAAMDAwMDAwMDAwMABAAFAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwADAAMAQbDBAAsNbG9zZWVlcC1hbGl2ZQBBycEACwEBAEHgwQAL4AEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQBBycMACwEBAEHgwwAL5wEBAQEBAQEBAQEBAQECAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAWNodW5rZWQAQfHFAAteAQABAQEBAQAAAQEAAQEAAQEBAQEBAQEBAQAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAAEAAQBB0McACyFlY3Rpb25lbnQtbGVuZ3Rob25yb3h5LWNvbm5lY3Rpb24AQYDIAAsgcmFuc2Zlci1lbmNvZGluZ3BncmFkZQ0KDQpTTQ0KDQoAQanIAAsFAQIAAQMAQcDIAAtfBAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanKAAsFAQIAAQMAQcDKAAtfBAUFBgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAQanMAAsEAQAAAQBBwcwAC14CAgACAgICAgICAgICAgICAgICAgICAgICAgICAgIAAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAEGpzgALBQECAAEDAEHAzgALXwQFAAAFBQUFBQUFBQUFBQYFBQUFBQUFBQUFBQUABQAHCAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQAFAAUABQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAAAFAEGp0AALBQEBAAEBAEHA0AALAQEAQdrQAAtBAgAAAAAAAAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAAAAAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAQanSAAsFAQEAAQEAQcDSAAsBAQBBytIACwYCAAAAAAIAQeHSAAs6AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAAAAADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwBBoNQAC50BTk9VTkNFRUNLT1VUTkVDVEVURUNSSUJFTFVTSEVURUFEU0VBUkNIUkdFQ1RJVklUWUxFTkRBUlZFT1RJRllQVElPTlNDSFNFQVlTVEFUQ0hHRVVFUllPUkRJUkVDVE9SVFJDSFBBUkFNRVRFUlVSQ0VCU0NSSUJFQVJET1dOQUNFSU5ETktDS1VCU0NSSUJFVFRQQ0VUU1BBRFRQLw=='
 
 let wasmBuffer
 
@@ -27775,7 +30121,7 @@ class MockAgent extends Dispatcher {
   }
 
   [kMockAgentSet] (origin, dispatcher) {
-    this[kClients].set(origin, { count: 0, dispatcher })
+    this[kClients].set(origin, dispatcher)
   }
 
   [kFactory] (origin) {
@@ -27787,9 +30133,9 @@ class MockAgent extends Dispatcher {
 
   [kMockAgentGet] (origin) {
     // First check if we can immediately find it
-    const result = this[kClients].get(origin)
-    if (result?.dispatcher) {
-      return result.dispatcher
+    const dispatcher = this[kClients].get(origin)
+    if (dispatcher) {
+      return dispatcher
     }
 
     // If the origin is not a string create a dummy parent pool and return to user
@@ -27800,11 +30146,11 @@ class MockAgent extends Dispatcher {
     }
 
     // If we match, create a pool and assign the same dispatches
-    for (const [keyMatcher, result] of Array.from(this[kClients])) {
-      if (result && typeof keyMatcher !== 'string' && matchValue(keyMatcher, origin)) {
+    for (const [keyMatcher, nonExplicitDispatcher] of Array.from(this[kClients])) {
+      if (nonExplicitDispatcher && typeof keyMatcher !== 'string' && matchValue(keyMatcher, origin)) {
         const dispatcher = this[kFactory](origin)
         this[kMockAgentSet](origin, dispatcher)
-        dispatcher[kDispatches] = result.dispatcher[kDispatches]
+        dispatcher[kDispatches] = nonExplicitDispatcher[kDispatches]
         return dispatcher
       }
     }
@@ -27818,7 +30164,7 @@ class MockAgent extends Dispatcher {
     const mockAgentClients = this[kClients]
 
     return Array.from(mockAgentClients.entries())
-      .flatMap(([origin, result]) => result.dispatcher[kDispatches].map(dispatch => ({ ...dispatch, origin })))
+      .flatMap(([origin, dispatcher]) => dispatcher[kDispatches].map(dispatch => ({ ...dispatch, origin })))
       .filter(({ pending }) => pending)
   }
 
@@ -27851,14 +30197,14 @@ module.exports = MockAgent
 const { kMockCallHistoryAddLog } = __nccwpck_require__(89327)
 const { InvalidArgumentError } = __nccwpck_require__(45253)
 
-function handleFilterCallsWithOptions (criteria, options, handler, store) {
+function handleFilterCallsWithOptions (criteria, options, handler, store, allLogs) {
   switch (options.operator) {
     case 'OR':
-      store.push(...handler(criteria))
+      store.push(...handler(criteria, allLogs))
 
       return store
     case 'AND':
-      return handler.call({ logs: store }, criteria)
+      return handler(criteria, store)
     default:
       // guard -- should never happens because buildAndValidateFilterCallsOptions is called before
       throw new InvalidArgumentError('options.operator must to be a case insensitive string equal to \'OR\' or \'AND\'')
@@ -27883,14 +30229,14 @@ function buildAndValidateFilterCallsOptions (options = {}) {
 }
 
 function makeFilterCalls (parameterName) {
-  return (parameterValue) => {
+  return (parameterValue, logs) => {
     if (typeof parameterValue === 'string' || parameterValue == null) {
-      return this.logs.filter((log) => {
+      return logs.filter((log) => {
         return log[parameterName] === parameterValue
       })
     }
     if (parameterValue instanceof RegExp) {
-      return this.logs.filter((log) => {
+      return logs.filter((log) => {
         return parameterValue.test(log[parameterName])
       })
     }
@@ -28023,30 +30369,30 @@ class MockCallHistory {
 
       const finalOptions = { operator: 'OR', ...buildAndValidateFilterCallsOptions(options) }
 
-      let maybeDuplicatedLogsFiltered = []
+      let maybeDuplicatedLogsFiltered = finalOptions.operator === 'AND' ? this.logs : []
       if ('protocol' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.protocol, finalOptions, this.filterCallsByProtocol, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.protocol, finalOptions, this.filterCallsByProtocol, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('host' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.host, finalOptions, this.filterCallsByHost, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.host, finalOptions, this.filterCallsByHost, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('port' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.port, finalOptions, this.filterCallsByPort, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.port, finalOptions, this.filterCallsByPort, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('origin' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.origin, finalOptions, this.filterCallsByOrigin, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.origin, finalOptions, this.filterCallsByOrigin, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('path' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.path, finalOptions, this.filterCallsByPath, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.path, finalOptions, this.filterCallsByPath, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('hash' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.hash, finalOptions, this.filterCallsByHash, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.hash, finalOptions, this.filterCallsByHash, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('fullUrl' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.fullUrl, finalOptions, this.filterCallsByFullUrl, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.fullUrl, finalOptions, this.filterCallsByFullUrl, maybeDuplicatedLogsFiltered, this.logs)
       }
       if ('method' in criteria) {
-        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.method, finalOptions, this.filterCallsByMethod, maybeDuplicatedLogsFiltered)
+        maybeDuplicatedLogsFiltered = handleFilterCallsWithOptions(criteria.method, finalOptions, this.filterCallsByMethod, maybeDuplicatedLogsFiltered, this.logs)
       }
 
       const uniqLogsFiltered = [...new Set(maybeDuplicatedLogsFiltered)]
@@ -28537,7 +30883,8 @@ module.exports = {
   kMockAgentAddCallHistoryLog: Symbol('mock agent add call history log'),
   kMockAgentIsCallHistoryEnabled: Symbol('mock agent is call history enabled'),
   kMockAgentAcceptsNonStandardSearchParameters: Symbol('mock agent accepts non standard search parameters'),
-  kMockCallHistoryAddLog: Symbol('mock call history add log')
+  kMockCallHistoryAddLog: Symbol('mock call history add log'),
+  kTotalDispatchCount: Symbol('total dispatch count')
 }
 
 
@@ -28555,9 +30902,10 @@ const {
   kMockAgent,
   kOriginalDispatch,
   kOrigin,
-  kGetNetConnect
+  kGetNetConnect,
+  kTotalDispatchCount
 } = __nccwpck_require__(89327)
-const { serializePathWithQuery } = __nccwpck_require__(23270)
+const { serializePathWithQuery, parseHeaders } = __nccwpck_require__(23270)
 const { STATUS_CODES } = __nccwpck_require__(37067)
 const {
   types: {
@@ -28755,6 +31103,8 @@ function addMockDispatch (mockDispatches, key, data, opts) {
   const replyData = typeof data === 'function' ? { callback: data } : { ...data }
   const newMockDispatch = { ...baseData, ...key, pending: true, data: { error: null, ...replyData } }
   mockDispatches.push(newMockDispatch)
+  // Track total number of intercepts ever registered for better error messages
+  mockDispatches[kTotalDispatchCount] = (mockDispatches[kTotalDispatchCount] || 0) + 1
   return newMockDispatch
 }
 
@@ -28857,7 +31207,7 @@ function mockDispatch (opts, handler) {
   // If specified, trigger dispatch error
   if (error !== null) {
     deleteMockDispatch(this[kDispatches], key)
-    handler.onError(error)
+    handler.onResponseError(null, error)
     return true
   }
 
@@ -28865,24 +31215,35 @@ function mockDispatch (opts, handler) {
   let aborted = false
   let timer = null
 
-  function abort (err) {
-    if (aborted) {
-      return
-    }
-    aborted = true
+  // Create the controller early so abort can use it
+  const controller = {
+    paused: false,
+    rawHeaders: null,
+    rawTrailers: null,
+    pause () {
+      this.paused = true
+    },
+    resume () {
+      this.paused = false
+    },
+    abort: (reason) => {
+      if (aborted) {
+        return
+      }
+      aborted = true
 
-    // Clear the pending delayed response if any
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
+      // Clear the pending delayed response if any
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
 
-    // Notify the handler of the abort
-    handler.onError(err)
+      handler.onResponseError?.(controller, reason)
+    }
   }
 
-  // Call onConnect to allow the handler to register the abort callback
-  handler.onConnect?.(abort, null)
+  // Call onRequestStart to allow the handler to receive the controller
+  handler.onRequestStart?.(controller, null)
 
   // Handle the request with a delay if necessary
   if (typeof delay === 'number' && delay > 0) {
@@ -28927,13 +31288,15 @@ function mockDispatch (opts, handler) {
     const responseHeaders = generateKeyValues(headers)
     const responseTrailers = generateKeyValues(trailers)
 
-    handler.onHeaders?.(statusCode, responseHeaders, resume, getStatusText(statusCode))
-    handler.onData?.(Buffer.from(responseData))
-    handler.onComplete?.(responseTrailers)
+    // Update the controller with response data
+    controller.rawHeaders = responseHeaders
+    controller.rawTrailers = responseTrailers
+
+    handler.onResponseStart?.(controller, statusCode, parseHeaders(responseHeaders), getStatusText(statusCode))
+    handler.onResponseData?.(controller, Buffer.from(responseData))
+    handler.onResponseEnd?.(controller, parseHeaders(responseTrailers))
     deleteMockDispatch(mockDispatches, key)
   }
-
-  function resume () {}
 
   return true
 }
@@ -28950,13 +31313,18 @@ function buildMockDispatch () {
       } catch (error) {
         if (error.code === 'UND_MOCK_ERR_MOCK_NOT_MATCHED') {
           const netConnect = agent[kGetNetConnect]()
+          const totalInterceptsCount = this[kDispatches][kTotalDispatchCount] || this[kDispatches].length
+          const pendingInterceptsCount = this[kDispatches].filter(({ consumed }) => !consumed).length
+          const interceptsMessage = `, ${pendingInterceptsCount} interceptor(s) remaining out of ${totalInterceptsCount} defined`
           if (netConnect === false) {
-            throw new MockNotMatchedError(`${error.message}: subsequent request to origin ${origin} was not allowed (net.connect disabled)`)
+            throw new MockNotMatchedError(`${error.message}: subsequent request to origin ${origin} was not allowed (net.connect disabled)${interceptsMessage}`)
           }
           if (checkNetConnect(netConnect, origin)) {
-            originalDispatch.call(this, opts, handler)
+            originalDispatch.call(this, '__mockAgentBodyForDispatch' in opts
+              ? { ...opts, body: opts.__mockAgentBodyForDispatch }
+              : opts, handler)
           } else {
-            throw new MockNotMatchedError(`${error.message}: subsequent request to origin ${origin} was not allowed (net.connect is not enabled for this origin)`)
+            throw new MockNotMatchedError(`${error.message}: subsequent request to origin ${origin} was not allowed (net.connect is not enabled for this origin)${interceptsMessage}`)
           }
         } else {
           throw error
@@ -29091,8 +31459,8 @@ module.exports = class PendingInterceptorsFormatter {
 const Agent = __nccwpck_require__(68135)
 const MockAgent = __nccwpck_require__(44039)
 const { SnapshotRecorder } = __nccwpck_require__(91332)
-const WrapHandler = __nccwpck_require__(14588)
 const { InvalidArgumentError, UndiciError } = __nccwpck_require__(45253)
+const util = __nccwpck_require__(23270)
 const { validateSnapshotMode } = __nccwpck_require__(30989)
 
 const kSnapshotRecorder = Symbol('kSnapshotRecorder')
@@ -29143,7 +31511,9 @@ class SnapshotAgent extends MockAgent {
       ignoreHeaders: opts.ignoreHeaders,
       excludeHeaders: opts.excludeHeaders,
       matchBody: opts.matchBody,
+      normalizeBody: opts.normalizeBody,
       matchQuery: opts.matchQuery,
+      normalizeQuery: opts.normalizeQuery,
       caseSensitive: opts.caseSensitive,
       shouldRecord: opts.shouldRecord,
       shouldPlayback: opts.shouldPlayback,
@@ -29167,7 +31537,6 @@ class SnapshotAgent extends MockAgent {
   }
 
   dispatch (opts, handler) {
-    handler = WrapHandler.wrap(handler)
     const mode = this[kSnapshotMode]
 
     // Check if URL should be excluded (pass through without mocking/recording)
@@ -29195,8 +31564,8 @@ class SnapshotAgent extends MockAgent {
       } else {
         // Playback mode but no snapshot found
         const error = new UndiciError(`No snapshot found for ${opts.method || 'GET'} ${opts.path}`)
-        if (handler.onError) {
-          handler.onError(error)
+        if (handler.onResponseError) {
+          handler.onResponseError(null, error)
           return
         }
         throw error
@@ -29261,6 +31630,10 @@ class SnapshotAgent extends MockAgent {
         })
           .then(() => handler.onResponseEnd(controller, trailers))
           .catch((error) => handler.onResponseError(controller, error))
+      },
+
+      onResponseError (controller, error) {
+        return handler.onResponseError(controller, error)
       }
     }
 
@@ -29280,7 +31653,12 @@ class SnapshotAgent extends MockAgent {
     try {
       const { response } = snapshot
 
+      const rawHeaders = response.headers ? util.toRawHeaders(response.headers) : []
+      const rawTrailers = response.trailers ? util.toRawHeaders(response.trailers) : []
+
       const controller = {
+        rawHeaders,
+        rawTrailers,
         pause () { },
         resume () { },
         abort (reason) {
@@ -29294,7 +31672,7 @@ class SnapshotAgent extends MockAgent {
 
       handler.onRequestStart(controller)
 
-      handler.onResponseStart(controller, response.statusCode, response.headers)
+      handler.onResponseStart(controller, response.statusCode, response.headers, response.statusMessage)
 
       // Body is always stored as base64 string
       const body = Buffer.from(response.body, 'base64')
@@ -29302,7 +31680,7 @@ class SnapshotAgent extends MockAgent {
 
       handler.onResponseEnd(controller, response.trailers)
     } catch (error) {
-      handler.onError?.(error)
+      handler.onResponseError?.(null, error)
     }
   }
 
@@ -29495,7 +31873,9 @@ const { hashId, isUrlExcludedFactory, normalizeHeaders, createHeaderFilters } = 
  * @property {Array<string>} [ignoreHeaders=[]] - Headers to ignore for matching
  * @property {Array<string>} [excludeHeaders=[]] - Headers to exclude from matching
  * @property {boolean} [matchBody=true] - Whether to match request body
- * @property {boolean} [matchQuery=true] - Whether to match query properties
+ * @property {(body: string|Buffer|null|undefined) => string} [normalizeBody] - Function to normalize the body before matching (e.g. strip timestamps)
+ * @property {boolean} [matchQuery=true] - Whether to match query parameters
+ * @property {(query: URLSearchParams) => string} [normalizeQuery] - Function to normalize query parameters before matching (e.g. strip volatile params)
  * @property {boolean} [caseSensitive=false] - Whether header matching is case-sensitive
  */
 
@@ -29529,6 +31909,37 @@ const { hashId, isUrlExcludedFactory, normalizeHeaders, createHeaderFilters } = 
  */
 
 /**
+ * Normalizes the URL string used for request matching.
+ *
+ * @param {URL} url - Parsed request URL
+ * @param {boolean} matchQuery - Whether to include query parameters in matching
+ * @param {((query: URLSearchParams) => string)|undefined} normalizeQuery - Optional normalization function
+ * @returns {string} - URL string for hashing
+ */
+function normalizeUrlForMatching (url, matchQuery, normalizeQuery) {
+  if (matchQuery === false) return `${url.origin}${url.pathname}`
+  if (normalizeQuery) {
+    const normalized = String(normalizeQuery(url.searchParams) ?? '')
+    return normalized ? `${url.origin}${url.pathname}?${normalized}` : `${url.origin}${url.pathname}`
+  }
+  return url.toString()
+}
+
+/**
+ * Normalizes the body value used for request matching.
+ *
+ * @param {string|Buffer|null|undefined} body - Raw request body
+ * @param {boolean} matchBody - Whether to include the body in matching
+ * @param {((body: string|Buffer|null|undefined) => string)|undefined} normalizeBody - Optional normalization function
+ * @returns {string} - Body string for hashing
+ */
+function normalizeBodyForMatching (body, matchBody, normalizeBody) {
+  if (matchBody === false) return ''
+  if (normalizeBody) return String(normalizeBody(body) ?? '')
+  return body ? String(body) : ''
+}
+
+/**
  * Formats a request for consistent snapshot storage
  * Caches normalized headers to avoid repeated processing
  *
@@ -29548,9 +31959,9 @@ function formatRequestKey (opts, headerFilters, matchOptions = {}) {
 
   return {
     method: opts.method || 'GET',
-    url: matchOptions.matchQuery !== false ? url.toString() : `${url.origin}${url.pathname}`,
+    url: normalizeUrlForMatching(url, matchOptions.matchQuery, matchOptions.normalizeQuery),
     headers: filterHeadersForMatching(normalized, headerFilters, matchOptions),
-    body: matchOptions.matchBody !== false && opts.body ? String(opts.body) : ''
+    body: normalizeBodyForMatching(opts.body, matchOptions.matchBody, matchOptions.normalizeBody)
   }
 }
 
@@ -29699,7 +32110,9 @@ class SnapshotRecorder {
       ignoreHeaders: options.ignoreHeaders || [],
       excludeHeaders: options.excludeHeaders || [],
       matchBody: options.matchBody !== false, // default: true
+      normalizeBody: options.normalizeBody || undefined,
       matchQuery: options.matchQuery !== false, // default: true
+      normalizeQuery: options.normalizeQuery || undefined,
       caseSensitive: options.caseSensitive || false
     }
 
@@ -30213,7 +32626,8 @@ module.exports = {
 
 const {
   safeHTTPMethods,
-  pathHasQueryOrFragment
+  pathHasQueryOrFragment,
+  hasSafeIterator
 } = __nccwpck_require__(23270)
 
 const { serializePathWithQuery } = __nccwpck_require__(23270)
@@ -30228,7 +32642,7 @@ function makeCacheKey (opts) {
 
   let fullPath = opts.path || '/'
 
-  if (opts.query && !pathHasQueryOrFragment(opts.path)) {
+  if (opts.query && !pathHasQueryOrFragment(fullPath)) {
     fullPath = serializePathWithQuery(fullPath, opts.query)
   }
 
@@ -30248,23 +32662,24 @@ function normalizeHeaders (opts) {
   let headers
   if (opts.headers == null) {
     headers = {}
-  } else if (typeof opts.headers[Symbol.iterator] === 'function') {
-    headers = {}
-    for (const x of opts.headers) {
-      if (!Array.isArray(x)) {
-        throw new Error('opts.headers is not a valid header map')
-      }
-      const [key, val] = x
-      if (typeof key !== 'string' || typeof val !== 'string') {
-        throw new Error('opts.headers is not a valid header map')
-      }
-      headers[key.toLowerCase()] = val
-    }
   } else if (typeof opts.headers === 'object') {
     headers = {}
 
-    for (const key of Object.keys(opts.headers)) {
-      headers[key.toLowerCase()] = opts.headers[key]
+    if (hasSafeIterator(opts.headers)) {
+      for (const x of opts.headers) {
+        if (!Array.isArray(x)) {
+          throw new Error('opts.headers is not a valid header map')
+        }
+        const [key, val] = x
+        if (typeof key !== 'string' || typeof val !== 'string') {
+          throw new Error('opts.headers is not a valid header map')
+        }
+        headers[key.toLowerCase()] = val
+      }
+    } else {
+      for (const key of Object.keys(opts.headers)) {
+        headers[key.toLowerCase()] = opts.headers[key]
+      }
     }
   } else {
     throw new Error('opts.headers is not an object')
@@ -30583,9 +32998,11 @@ function assertCacheMethods (methods, name = 'CacheMethods') {
  * @returns {string}
  */
 function makeDeduplicationKey (cacheKey, excludeHeaders) {
-  // Create a deterministic string key from the cache key
-  // Include origin, method, path, and sorted headers
-  let key = `${cacheKey.origin}:${cacheKey.method}:${cacheKey.path}`
+  // Use JSON.stringify to produce a collision-resistant key.
+  // Previous format used `:` and `=` delimiters without escaping, which
+  // allowed different header sets to produce identical keys (e.g.
+  // {a:"x:b=y"} vs {a:"x", b:"y"}). See: https://github.com/nodejs/undici/issues/5012
+  const headers = {}
 
   if (cacheKey.headers) {
     const sortedHeaders = Object.keys(cacheKey.headers).sort()
@@ -30594,12 +33011,11 @@ function makeDeduplicationKey (cacheKey, excludeHeaders) {
       if (excludeHeaders?.has(header.toLowerCase())) {
         continue
       }
-      const value = cacheKey.headers[header]
-      key += `:${header}=${Array.isArray(value) ? value.join(',') : value}`
+      headers[header] = cacheKey.headers[header]
     }
   }
 
-  return key
+  return JSON.stringify([cacheKey.origin, cacheKey.method, cacheKey.path, headers])
 }
 
 module.exports = {
@@ -31279,42 +33695,6 @@ module.exports = {
 
 /***/ }),
 
-/***/ 32302:
-/***/ ((module) => {
-
-"use strict";
-
-
-/**
- * @template {*} T
- * @typedef {Object} DeferredPromise
- * @property {Promise<T>} promise
- * @property {(value?: T) => void} resolve
- * @property {(reason?: any) => void} reject
- */
-
-/**
- * @template {*} T
- * @returns {DeferredPromise<T>} An object containing a promise and its resolve/reject methods.
- */
-function createDeferredPromise () {
-  let res
-  let rej
-  const promise = new Promise((resolve, reject) => {
-    res = resolve
-    rej = reject
-  })
-
-  return { promise, resolve: res, reject: rej }
-}
-
-module.exports = {
-  createDeferredPromise
-}
-
-
-/***/ }),
-
 /***/ 52231:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -31327,9 +33707,7 @@ module.exports = {
 const lazyLoaders = {
   __proto__: null,
   'node:crypto': () => __nccwpck_require__(77598),
-  'node:sqlite': () => __nccwpck_require__(80099),
-  'node:worker_threads': () => __nccwpck_require__(75919),
-  'node:zlib': () => __nccwpck_require__(38522)
+  'node:sqlite': () => __nccwpck_require__(80099)
 }
 
 /**
@@ -31348,35 +33726,9 @@ function detectRuntimeFeatureByNodeModule (moduleName) {
   }
 }
 
-/**
- * @param {NodeModuleName} moduleName
- * @param {string} property
- * @returns {boolean}
- */
-function detectRuntimeFeatureByExportedProperty (moduleName, property) {
-  const module = lazyLoaders[moduleName]()
-  return typeof module[property] !== 'undefined'
-}
-
-const runtimeFeaturesByExportedProperty = /** @type {const} */ (['markAsUncloneable', 'zstd'])
-
-/** @type {Record<RuntimeFeatureByExportedProperty, [NodeModuleName, string]>} */
-const exportedPropertyLookup = {
-  markAsUncloneable: ['node:worker_threads', 'markAsUncloneable'],
-  zstd: ['node:zlib', 'createZstdDecompress']
-}
-
-/** @typedef {typeof runtimeFeaturesByExportedProperty[number]} RuntimeFeatureByExportedProperty */
-
 const runtimeFeaturesAsNodeModule = /** @type {const} */ (['crypto', 'sqlite'])
 /** @typedef {typeof runtimeFeaturesAsNodeModule[number]} RuntimeFeatureByNodeModule */
-
-const features = /** @type {const} */ ([
-  ...runtimeFeaturesAsNodeModule,
-  ...runtimeFeaturesByExportedProperty
-])
-
-/** @typedef {typeof features[number]} Feature */
+/** @typedef {RuntimeFeatureByNodeModule} Feature */
 
 /**
  * @param {Feature} feature
@@ -31385,9 +33737,6 @@ const features = /** @type {const} */ ([
 function detectRuntimeFeature (feature) {
   if (runtimeFeaturesAsNodeModule.includes(/** @type {RuntimeFeatureByNodeModule} */ (feature))) {
     return detectRuntimeFeatureByNodeModule(`node:${feature}`)
-  } else if (runtimeFeaturesByExportedProperty.includes(/** @type {RuntimeFeatureByExportedProperty} */ (feature))) {
-    const [moduleName, property] = exportedPropertyLookup[feature]
-    return detectRuntimeFeatureByExportedProperty(moduleName, property)
   }
   throw new TypeError(`unknown feature: ${feature}`)
 }
@@ -31422,7 +33771,7 @@ class RuntimeFeatures {
    * @param {boolean} value
    */
   set (feature, value) {
-    if (features.includes(feature) === false) {
+    if (runtimeFeaturesAsNodeModule.includes(feature) === false) {
       throw new TypeError(`unknown feature: ${feature}`)
     }
     this.#map.set(feature, value)
@@ -31936,8 +34285,6 @@ const { cloneResponse, fromInnerResponse, getResponseState } = __nccwpck_require
 const { Request, fromInnerRequest, getRequestState } = __nccwpck_require__(98133)
 const { fetching } = __nccwpck_require__(51832)
 const { urlIsHttpHttpsScheme, readAllBytes } = __nccwpck_require__(546)
-const { createDeferredPromise } = __nccwpck_require__(32302)
-
 /**
  * @see https://w3c.github.io/ServiceWorker/#dfn-cache-batch-operation
  * @typedef {Object} CacheBatchOperation
@@ -32079,7 +34426,7 @@ class Cache {
       requestList.push(r)
 
       // 5.6
-      const responsePromise = createDeferredPromise()
+      const responsePromise = Promise.withResolvers()
 
       // 5.7
       fetchControllers.push(fetching({
@@ -32157,7 +34504,7 @@ class Cache {
     }
 
     // 7.5
-    const cacheJobPromise = createDeferredPromise()
+    const cacheJobPromise = Promise.withResolvers()
 
     // 7.6.1
     let errorData = null
@@ -32251,7 +34598,7 @@ class Cache {
     const clonedResponse = cloneResponse(innerResponse)
 
     // 10.
-    const bodyReadPromise = createDeferredPromise()
+    const bodyReadPromise = Promise.withResolvers()
 
     // 11.
     if (innerResponse.body != null) {
@@ -32290,7 +34637,7 @@ class Cache {
     }
 
     // 19.1
-    const cacheJobPromise = createDeferredPromise()
+    const cacheJobPromise = Promise.withResolvers()
 
     // 19.2.1
     let errorData = null
@@ -32353,7 +34700,7 @@ class Cache {
 
     operations.push(operation)
 
-    const cacheJobPromise = createDeferredPromise()
+    const cacheJobPromise = Promise.withResolvers()
 
     let errorData = null
     let requestResponses
@@ -32409,7 +34756,7 @@ class Cache {
     }
 
     // 4.
-    const promise = createDeferredPromise()
+    const promise = Promise.withResolvers()
 
     // 5.
     // 5.1
@@ -33881,6 +36228,49 @@ const COLON = 0x3A
  */
 const SPACE = 0x20
 
+const DATA = Buffer.from('data')
+const EVENT = Buffer.from('event')
+const ID = Buffer.from('id')
+const RETRY = Buffer.from('retry')
+
+function isASCIINumberBytes (buffer, start) {
+  if (start >= buffer.length) {
+    return false
+  }
+
+  for (let i = start; i < buffer.length; i++) {
+    if (buffer[i] < 0x30 || buffer[i] > 0x39) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function isValidLastEventIdBytes (buffer, start) {
+  for (let i = start; i < buffer.length; i++) {
+    if (buffer[i] === 0x00) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function isFieldName (line, length, field) {
+  if (length !== field.length) {
+    return false
+  }
+
+  for (let i = 0; i < length; i++) {
+    if (line[i] !== field[i]) {
+      return false
+    }
+  }
+
+  return true
+}
+
 /**
  * @typedef {object} EventSourceStreamEvent
  * @type {object}
@@ -33921,11 +36311,14 @@ class EventSourceStream extends Transform {
   eventEndCheck = false
 
   /**
-   * @type {Buffer|null}
+   * @type {Buffer[]}
    */
-  buffer = null
+  chunks = []
 
+  chunkIndex = 0
   pos = 0
+  lineChunkIndex = 0
+  linePos = 0
 
   event = {
     data: undefined,
@@ -33965,92 +36358,20 @@ class EventSourceStream extends Transform {
       return
     }
 
-    // Cache the chunk in the buffer, as the data might not be complete while
-    // processing it
-    // TODO: Investigate if there is a more performant way to handle
-    // incoming chunks
-    // see: https://github.com/nodejs/undici/issues/2630
-    if (this.buffer) {
-      this.buffer = Buffer.concat([this.buffer, chunk])
-    } else {
-      this.buffer = chunk
-    }
+    this.chunks.push(chunk)
 
     // Strip leading byte-order-mark if we opened the stream and started
     // the processing of the incoming data
     if (this.checkBOM) {
-      switch (this.buffer.length) {
-        case 1:
-          // Check if the first byte is the same as the first byte of the BOM
-          if (this.buffer[0] === BOM[0]) {
-            // If it is, we need to wait for more data
-            callback()
-            return
-          }
-          // Set the checkBOM flag to false as we don't need to check for the
-          // BOM anymore
-          this.checkBOM = false
-
-          // The buffer only contains one byte so we need to wait for more data
-          callback()
-          return
-        case 2:
-          // Check if the first two bytes are the same as the first two bytes
-          // of the BOM
-          if (
-            this.buffer[0] === BOM[0] &&
-            this.buffer[1] === BOM[1]
-          ) {
-            // If it is, we need to wait for more data, because the third byte
-            // is needed to determine if it is the BOM or not
-            callback()
-            return
-          }
-
-          // Set the checkBOM flag to false as we don't need to check for the
-          // BOM anymore
-          this.checkBOM = false
-          break
-        case 3:
-          // Check if the first three bytes are the same as the first three
-          // bytes of the BOM
-          if (
-            this.buffer[0] === BOM[0] &&
-            this.buffer[1] === BOM[1] &&
-            this.buffer[2] === BOM[2]
-          ) {
-            // If it is, we can drop the buffered data, as it is only the BOM
-            this.buffer = Buffer.alloc(0)
-            // Set the checkBOM flag to false as we don't need to check for the
-            // BOM anymore
-            this.checkBOM = false
-
-            // Await more data
-            callback()
-            return
-          }
-          // If it is not the BOM, we can start processing the data
-          this.checkBOM = false
-          break
-        default:
-          // The buffer is longer than 3 bytes, so we can drop the BOM if it is
-          // present
-          if (
-            this.buffer[0] === BOM[0] &&
-            this.buffer[1] === BOM[1] &&
-            this.buffer[2] === BOM[2]
-          ) {
-            // Remove the BOM from the buffer
-            this.buffer = this.buffer.subarray(3)
-          }
-
-          // Set the checkBOM flag to false as we don't need to check for the
-          this.checkBOM = false
-          break
+      if (this.handleBOM()) {
+        callback()
+        return
       }
     }
 
-    while (this.pos < this.buffer.length) {
+    while (this.hasCurrentByte()) {
+      const byte = this.currentByte()
+
       // If the previous line ended with an end-of-line, we need to check
       // if the next character is also an end-of-line.
       if (this.eventEndCheck) {
@@ -34063,10 +36384,9 @@ class EventSourceStream extends Transform {
         if (this.crlfCheck) {
           // If the current character is a line feed, we can remove it
           // from the buffer and reset the crlfCheck flag
-          if (this.buffer[this.pos] === LF) {
-            this.buffer = this.buffer.subarray(this.pos + 1)
-            this.pos = 0
+          if (byte === LF) {
             this.crlfCheck = false
+            this.consumeCurrentByte()
 
             // It is possible that the line feed is not the end of the
             // event. We need to check if the next character is an
@@ -34082,19 +36402,17 @@ class EventSourceStream extends Transform {
           this.crlfCheck = false
         }
 
-        if (this.buffer[this.pos] === LF || this.buffer[this.pos] === CR) {
+        if (byte === LF || byte === CR) {
           // If the current character is a carriage return, we need to
           // set the crlfCheck flag to true, as we need to check if the
           // next character is a line feed so we can remove it from the
           // buffer
-          if (this.buffer[this.pos] === CR) {
+          if (byte === CR) {
             this.crlfCheck = true
           }
 
-          this.buffer = this.buffer.subarray(this.pos + 1)
-          this.pos = 0
-          if (
-            this.event.data !== undefined || this.event.event || this.event.id !== undefined || this.event.retry) {
+          this.consumeCurrentByte()
+          if (this.hasPendingEvent()) {
             this.processEvent(this.event)
           }
           this.clearEvent()
@@ -34108,22 +36426,18 @@ class EventSourceStream extends Transform {
 
       // If the current character is an end-of-line, we can process the
       // line
-      if (this.buffer[this.pos] === LF || this.buffer[this.pos] === CR) {
+      if (byte === LF || byte === CR) {
         // If the current character is a carriage return, we need to
         // set the crlfCheck flag to true, as we need to check if the
         // next character is a line feed
-        if (this.buffer[this.pos] === CR) {
+        if (byte === CR) {
           this.crlfCheck = true
         }
 
         // In any case, we can process the line as we reached an
         // end-of-line character
-        this.parseLine(this.buffer.subarray(0, this.pos), this.event)
-
-        // Remove the processed line from the buffer
-        this.buffer = this.buffer.subarray(this.pos + 1)
-        // Reset the position as we removed the processed line from the buffer
-        this.pos = 0
+        this.parseLine(this.readLine(), this.event)
+        this.consumeCurrentByte()
         // A line was processed and this could be the end of the event. We need
         // to check if the next line is empty to determine if the event is
         // finished.
@@ -34131,7 +36445,7 @@ class EventSourceStream extends Transform {
         continue
       }
 
-      this.pos++
+      this.advanceCursor()
     }
 
     callback()
@@ -34156,64 +36470,53 @@ class EventSourceStream extends Transform {
       return
     }
 
-    let field = ''
-    let value = ''
+    let fieldLength = line.length
+    let valueStart = line.length
 
     // If the line contains a U+003A COLON character (:)
     if (colonPosition !== -1) {
-      // Collect the characters on the line before the first U+003A COLON
-      // character (:), and let field be that string.
-      // TODO: Investigate if there is a more performant way to extract the
-      // field
-      // see: https://github.com/nodejs/undici/issues/2630
-      field = line.subarray(0, colonPosition).toString('utf8')
+      fieldLength = colonPosition
 
       // Collect the characters on the line after the first U+003A COLON
       // character (:), and let value be that string.
       // If value starts with a U+0020 SPACE character, remove it from value.
-      let valueStart = colonPosition + 1
+      valueStart = colonPosition + 1
       if (line[valueStart] === SPACE) {
         ++valueStart
       }
-      // TODO: Investigate if there is a more performant way to extract the
-      // value
-      // see: https://github.com/nodejs/undici/issues/2630
-      value = line.subarray(valueStart).toString('utf8')
-
-      // Otherwise, the string is not empty but does not contain a U+003A COLON
-      // character (:)
-    } else {
-      // Process the field using the steps described below, using the whole
-      // line as the field name, and the empty string as the field value.
-      field = line.toString('utf8')
-      value = ''
     }
 
-    // Modify the event with the field name and value. The value is also
-    // decoded as UTF-8
-    switch (field) {
-      case 'data':
-        if (event[field] === undefined) {
-          event[field] = value
-        } else {
-          event[field] += `\n${value}`
-        }
-        break
-      case 'retry':
-        if (isASCIINumber(value)) {
-          event[field] = value
-        }
-        break
-      case 'id':
-        if (isValidLastEventId(value)) {
-          event[field] = value
-        }
-        break
-      case 'event':
-        if (value.length > 0) {
-          event[field] = value
-        }
-        break
+    if (isFieldName(line, fieldLength, DATA)) {
+      const value = line.toString('utf8', valueStart)
+
+      if (event.data === undefined) {
+        event.data = value
+      } else {
+        event.data += `\n${value}`
+      }
+      return
+    }
+
+    if (isFieldName(line, fieldLength, RETRY)) {
+      if (isASCIINumberBytes(line, valueStart)) {
+        event.retry = line.toString('utf8', valueStart)
+      }
+      return
+    }
+
+    if (isFieldName(line, fieldLength, ID)) {
+      if (isValidLastEventIdBytes(line, valueStart)) {
+        event.id = line.toString('utf8', valueStart)
+      }
+      return
+    }
+
+    if (isFieldName(line, fieldLength, EVENT)) {
+      const value = line.toString('utf8', valueStart)
+
+      if (value.length > 0) {
+        event.event = value
+      }
     }
   }
 
@@ -34243,12 +36546,151 @@ class EventSourceStream extends Transform {
   }
 
   clearEvent () {
-    this.event = {
-      data: undefined,
-      event: undefined,
-      id: undefined,
-      retry: undefined
+    this.event.data = undefined
+    this.event.event = undefined
+    this.event.id = undefined
+    this.event.retry = undefined
+  }
+
+  hasPendingEvent () {
+    return this.event.data !== undefined ||
+      this.event.event !== undefined ||
+      this.event.id !== undefined ||
+      this.event.retry !== undefined
+  }
+
+  hasCurrentByte () {
+    return this.chunkIndex < this.chunks.length &&
+      this.pos < this.chunks[this.chunkIndex].length
+  }
+
+  currentByte () {
+    return this.chunks[this.chunkIndex][this.pos]
+  }
+
+  consumeCurrentByte () {
+    this.advanceCursor()
+    this.syncLineStartToCursor()
+  }
+
+  advanceCursor () {
+    this.pos++
+
+    while (this.chunkIndex < this.chunks.length && this.pos >= this.chunks[this.chunkIndex].length) {
+      this.chunkIndex++
+      this.pos = 0
     }
+  }
+
+  syncLineStartToCursor () {
+    this.lineChunkIndex = this.chunkIndex
+    this.linePos = this.pos
+    this.dropConsumedChunks()
+  }
+
+  dropConsumedChunks () {
+    while (this.lineChunkIndex > 0) {
+      this.chunks.shift()
+      this.lineChunkIndex--
+      this.chunkIndex--
+    }
+
+    if (this.chunkIndex === this.chunks.length) {
+      this.chunks.length = 0
+      this.chunkIndex = 0
+      this.pos = 0
+      this.lineChunkIndex = 0
+      this.linePos = 0
+    }
+  }
+
+  readLine () {
+    if (this.lineChunkIndex === this.chunkIndex) {
+      return this.chunks[this.chunkIndex].subarray(this.linePos, this.pos)
+    }
+
+    const chunks = []
+    let length = 0
+
+    for (let i = this.lineChunkIndex; i <= this.chunkIndex; i++) {
+      const chunk = this.chunks[i]
+      const start = i === this.lineChunkIndex ? this.linePos : 0
+      const end = i === this.chunkIndex ? this.pos : chunk.length
+      const slice = chunk.subarray(start, end)
+      length += slice.length
+      chunks.push(slice)
+    }
+
+    return Buffer.concat(chunks, length)
+  }
+
+  peekBufferedByte (offset) {
+    let chunkIndex = this.lineChunkIndex
+    let pos = this.linePos
+
+    while (chunkIndex < this.chunks.length) {
+      const chunk = this.chunks[chunkIndex]
+      const remaining = chunk.length - pos
+
+      if (offset < remaining) {
+        return chunk[pos + offset]
+      }
+
+      offset -= remaining
+      chunkIndex++
+      pos = 0
+    }
+  }
+
+  discardLeadingBytes (count) {
+    while (count > 0 && this.lineChunkIndex < this.chunks.length) {
+      const chunk = this.chunks[this.lineChunkIndex]
+      const remaining = chunk.length - this.linePos
+
+      if (count < remaining) {
+        this.linePos += count
+        count = 0
+      } else {
+        count -= remaining
+        this.lineChunkIndex++
+        this.linePos = 0
+      }
+    }
+
+    this.chunkIndex = this.lineChunkIndex
+    this.pos = this.linePos
+    this.dropConsumedChunks()
+  }
+
+  handleBOM () {
+    const first = this.peekBufferedByte(0)
+    const second = this.peekBufferedByte(1)
+    const third = this.peekBufferedByte(2)
+
+    if (second === undefined) {
+      if (first === BOM[0]) {
+        return true
+      }
+
+      this.checkBOM = false
+      return true
+    }
+
+    if (third === undefined) {
+      if (first === BOM[0] && second === BOM[1]) {
+        return true
+      }
+
+      this.checkBOM = false
+      return false
+    }
+
+    if (first === BOM[0] && second === BOM[1] && third === BOM[2]) {
+      this.discardLeadingBytes(3)
+    }
+
+    this.checkBOM = false
+    return !this.hasCurrentByte()
   }
 }
 
@@ -34818,21 +37260,15 @@ const {
   fullyReadBody,
   extractMimeType
 } = __nccwpck_require__(546)
-const { FormData, setFormDataState } = __nccwpck_require__(38220)
+const { FormData, setFormDataState, getFormDataBoundary } = __nccwpck_require__(38220)
 const { webidl } = __nccwpck_require__(52109)
 const assert = __nccwpck_require__(34589)
 const { isErrored, isDisturbed } = __nccwpck_require__(57075)
 const { isUint8Array } = __nccwpck_require__(73429)
 const { serializeAMimeType } = __nccwpck_require__(22130)
 const { multipartFormDataParser } = __nccwpck_require__(3474)
-const { createDeferredPromise } = __nccwpck_require__(32302)
 const { parseJSONFromBytes } = __nccwpck_require__(17314)
 const { utf8DecodeBytes } = __nccwpck_require__(99010)
-const { runtimeFeatures } = __nccwpck_require__(52231)
-
-const random = runtimeFeatures.has('crypto')
-  ? (__nccwpck_require__(77598).randomInt)
-  : (max) => Math.floor(Math.random() * max)
 
 const textEncoder = new TextEncoder()
 function noop () {}
@@ -34918,7 +37354,7 @@ function extractBody (object, keepalive = false) {
     // Set source to a copy of the bytes held by object.
     source = webidl.util.getCopyOfBytesHeldByBufferSource(object)
   } else if (webidl.is.FormData(object)) {
-    const boundary = `----formdata-undici-0${`${random(1e11)}`.padStart(11, '0')}`
+    const boundary = getFormDataBoundary(object)
     const prefix = `--${boundary}\r\nContent-Disposition: form-data`
 
     /*! formdata-polyfill. MIT License. Jimmy Wärting <https://jimmy.warting.se/opensource> */
@@ -35242,7 +37678,7 @@ function consumeBody (object, convertBytesToJSValue, instance, getInternalState)
   }
 
   // 2. Let promise be a new promise.
-  const promise = createDeferredPromise()
+  const promise = Promise.withResolvers()
 
   // 3. Let errorSteps given error be to reject promise with error.
   const errorSteps = promise.reject
@@ -36077,10 +38513,10 @@ const { makeEntry } = __nccwpck_require__(38220)
 const { webidl } = __nccwpck_require__(52109)
 const assert = __nccwpck_require__(34589)
 const { isomorphicDecode } = __nccwpck_require__(17314)
-const { utf8DecodeBytes } = __nccwpck_require__(99010)
 
 const dd = Buffer.from('--')
 const decoder = new TextDecoder()
+const decoderIgnoreBOM = new TextDecoder('utf-8', { ignoreBOM: true })
 
 /**
  * @param {string} chars
@@ -36259,7 +38695,7 @@ function multipartFormDataParser (input, mimeType) {
       // 5.11. Otherwise:
 
       // 5.11.1. Let value be the UTF-8 decoding without BOM of body.
-      value = utf8DecodeBytes(Buffer.from(body))
+      value = decoderIgnoreBOM.decode(Buffer.from(body))
     }
 
     // 5.12. Assert: name is a scalar value string and value is either a scalar value string or a File object.
@@ -36275,7 +38711,7 @@ function multipartFormDataParser (input, mimeType) {
  * Parses content-disposition attributes (e.g., name="value" or filename*=utf-8''encoded)
  * @param {Buffer} input
  * @param {{ position: number }} position
- * @returns {{ name: string, value: string }}
+ * @returns {{ name: string, value: string, extended: boolean } | null}
  */
 function parseContentDispositionAttribute (input, position) {
   // Skip leading semicolon and whitespace
@@ -36375,7 +38811,7 @@ function parseContentDispositionAttribute (input, position) {
     value = decoder.decode(tokenValue)
   }
 
-  return { name: attrNameStr, value }
+  return { name: attrNameStr, value, extended: isExtended }
 }
 
 /**
@@ -36439,6 +38875,9 @@ function parseMultipartFormDataHeaders (input, position) {
     switch (bufferToLowerCasedHeaderName(headerName)) {
       case 'content-disposition': {
         name = filename = null
+        // Track whether filename was set from the extended (RFC 5987) form so
+        // a subsequent legacy `filename` attribute does not override it.
+        let filenameIsExtended = false
 
         // Collect the disposition type (should be "form-data")
         const dispositionType = collectASequenceOfBytes(
@@ -36454,8 +38893,8 @@ function parseMultipartFormDataHeaders (input, position) {
         // Parse attributes recursively until CRLF
         while (
           position.position < input.length &&
-          input[position.position] !== 0x0d &&
-          input[position.position + 1] !== 0x0a
+          (input[position.position] !== 0x0d ||
+          input[position.position + 1] !== 0x0a)
         ) {
           const attribute = parseContentDispositionAttribute(input, position)
 
@@ -36466,7 +38905,15 @@ function parseMultipartFormDataHeaders (input, position) {
           if (attribute.name === 'name') {
             name = attribute.value
           } else if (attribute.name === 'filename') {
-            filename = attribute.value
+            // Per RFC 5987 §4.1, when both legacy and extended forms of the
+            // same parameter are present, the extended (filename*) form takes
+            // precedence regardless of the order they appear in.
+            if (attribute.extended) {
+              filename = attribute.value
+              filenameIsExtended = true
+            } else if (!filenameIsExtended) {
+              filename = attribute.value
+            }
           }
         }
 
@@ -36519,7 +38966,7 @@ function parseMultipartFormDataHeaders (input, position) {
 
     // 2.9. If position does not point to a sequence of bytes starting with 0x0D 0x0A
     //      (CR LF), return failure. Otherwise, advance position by 2 (past the newline).
-    if (input[position.position] !== 0x0d && input[position.position + 1] !== 0x0a) {
+    if (input[position.position] !== 0x0d || input[position.position + 1] !== 0x0a) {
       throw parsingError('expected CRLF')
     } else {
       position.position += 2
@@ -36658,10 +39105,16 @@ const { iteratorMixin } = __nccwpck_require__(546)
 const { kEnumerableProperty } = __nccwpck_require__(23270)
 const { webidl } = __nccwpck_require__(52109)
 const nodeUtil = __nccwpck_require__(57975)
+const { runtimeFeatures } = __nccwpck_require__(52231)
+
+const random = runtimeFeatures.has('crypto')
+  ? (__nccwpck_require__(77598).randomInt)
+  : (max) => Math.floor(Math.random() * max)
 
 // https://xhr.spec.whatwg.org/#formdata
 class FormData {
   #state = []
+  #boundary = null
 
   constructor (form = undefined) {
     webidl.util.markAsUncloneable(this)
@@ -36846,11 +39299,24 @@ class FormData {
   static setFormDataState (formData, newState) {
     formData.#state = newState
   }
+
+  /**
+   * @param {FormData} formData
+   * @returns {string | null}
+   */
+  static getFormDataBoundary (formData) {
+    const boundary = formData.#boundary
+    if (boundary != null) return boundary
+
+    // eslint-disable-next-line no-return-assign
+    return formData.#boundary = `----formdata-undici-0${`${random(1e11)}`.padStart(11, '0')}`
+  }
 }
 
-const { getFormDataState, setFormDataState } = FormData
+const { getFormDataState, setFormDataState, getFormDataBoundary } = FormData
 Reflect.deleteProperty(FormData, 'getFormDataState')
 Reflect.deleteProperty(FormData, 'setFormDataState')
+Reflect.deleteProperty(FormData, 'getFormDataBoundary')
 
 iteratorMixin('FormData', FormData, getFormDataState, 'name', 'value')
 
@@ -36910,7 +39376,7 @@ function makeEntry (name, value, filename) {
 
 webidl.is.FormData = webidl.util.MakeTypeAssertion(FormData)
 
-module.exports = { FormData, makeEntry, setFormDataState }
+module.exports = { FormData, makeEntry, setFormDataState, getFormDataBoundary }
 
 
 /***/ }),
@@ -37760,12 +40226,7 @@ const { getGlobalDispatcher } = __nccwpck_require__(24875)
 const { webidl } = __nccwpck_require__(52109)
 const { STATUS_CODES } = __nccwpck_require__(37067)
 const { bytesMatch } = __nccwpck_require__(76936)
-const { createDeferredPromise } = __nccwpck_require__(32302)
 const { isomorphicEncode } = __nccwpck_require__(17314)
-const { runtimeFeatures } = __nccwpck_require__(52231)
-
-// Node.js v23.8.0+ and v22.15.0+ supports Zstandard
-const hasZstd = runtimeFeatures.has('zstd')
 
 const GET_OR_HEAD = ['GET', 'HEAD']
 
@@ -37775,6 +40236,35 @@ const defaultUserAgent = typeof __UNDICI_IS_NODE__ !== 'undefined' || typeof esb
 
 /** @type {import('buffer').resolveObjectURL} */
 let resolveObjectURL
+
+function appendHeadersListFromResponseHeaders (headersList, headers, rawHeaders) {
+  if (Array.isArray(rawHeaders)) {
+    for (let i = 0; i < rawHeaders.length; i += 2) {
+      const nameStr = bufferToLowerCasedHeaderName(rawHeaders[i])
+      const value = rawHeaders[i + 1]
+
+      if (Array.isArray(value) && !Buffer.isBuffer(value)) {
+        for (const val of value) {
+          headersList.append(nameStr, val.toString('latin1'), true)
+        }
+      } else {
+        headersList.append(nameStr, value.toString('latin1'), true)
+      }
+    }
+
+    return
+  }
+
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        headersList.append(name, `${entry}`, true)
+      }
+    } else {
+      headersList.append(name, `${value}`, true)
+    }
+  }
+}
 
 class Fetch extends EE {
   constructor (dispatcher) {
@@ -37832,7 +40322,7 @@ function fetch (input, init = undefined) {
   webidl.argumentLengthCheck(arguments, 1, 'globalThis.fetch')
 
   // 1. Let p be a new promise.
-  let p = createDeferredPromise()
+  let p = Promise.withResolvers()
 
   // 2. Let requestObject be the result of invoking the initial value of
   // Request as constructor with input and init as arguments. If this throws
@@ -37947,7 +40437,10 @@ function fetch (input, init = undefined) {
     request,
     processResponseEndOfBody: handleFetchDone,
     processResponse,
-    dispatcher: getRequestDispatcher(requestObject) // undici
+    dispatcher: getRequestDispatcher(requestObject), // undici
+    // Keep requestObject alive to prevent its AbortController from being GC'd
+    // See https://github.com/nodejs/undici/issues/4627
+    requestObject
   })
 
   // 14. Return p.
@@ -38066,7 +40559,8 @@ function fetching ({
   processResponseEndOfBody,
   processResponseConsumeBody,
   useParallelQueue = false,
-  dispatcher = getGlobalDispatcher() // undici
+  dispatcher = getGlobalDispatcher(), // undici
+  requestObject = null // Keep alive to prevent AbortController GC, see #4627
 }) {
   // Ensure that the dispatcher is set accordingly
   assert(dispatcher)
@@ -38120,7 +40614,9 @@ function fetching ({
     processResponseConsumeBody,
     processResponseEndOfBody,
     taskDestination,
-    crossOriginIsolatedCapability
+    crossOriginIsolatedCapability,
+    // Keep requestObject alive to prevent its AbortController from being GC'd
+    requestObject
   }
 
   // 7. If request’s body is a byte sequence, then set request’s body to
@@ -38720,7 +41216,7 @@ function fetchFinale (fetchParams, response) {
       let responseStatus = 0
 
       // 7. If fetchParams’s request’s mode is not "navigate" or response’s has-cross-origin-redirects is false:
-      if (fetchParams.request.mode !== 'navigator' || !response.hasCrossOriginRedirects) {
+      if (fetchParams.request.mode !== 'navigate' || !response.hasCrossOriginRedirects) {
         // 1. Set responseStatus to response’s status.
         responseStatus = response.status
 
@@ -39123,7 +41619,10 @@ async function httpNetworkOrCacheFetch (
   //    8. If contentLengthHeaderValue is non-null, then append
   //    `Content-Length`/contentLengthHeaderValue to httpRequest’s header
   //    list.
-  if (contentLengthHeaderValue != null) {
+  if (
+    contentLengthHeaderValue != null &&
+    !httpRequest.headersList.contains('content-length', true)
+  ) {
     httpRequest.headersList.append('content-length', contentLengthHeaderValue, true)
   }
 
@@ -39334,12 +41833,25 @@ async function httpNetworkOrCacheFetch (
   // 14. If response’s status is 401, httpRequest’s response tainting is not "cors",
   //     includeCredentials is true, and request’s traversable for user prompts is
   //     a traversable navigable:
-  if (response.status === 401 && httpRequest.responseTainting !== 'cors' && includeCredentials && isTraversableNavigable(request.traversableForUserPrompts)) {
+  //
+  //     In Node.js there is no traversable navigable to prompt the user, but we
+  //     still need to handle URL-embedded credentials so authentication retries
+  //     for WebSocket handshakes continue to work.
+  if (response.status === 401 && httpRequest.responseTainting !== 'cors' && includeCredentials && (
+    request.useURLCredentials !== undefined ||
+    isTraversableNavigable(request.traversableForUserPrompts)
+  )) {
     // 2. If request’s body is non-null, then:
     if (request.body != null) {
       // 1. If request’s body’s source is null, then return a network error.
       if (request.body.source == null) {
-        return makeNetworkError('expected non-null body source')
+        // Note: In Node.js, this code path should not be reached because
+        // isTraversableNavigable() returns false for non-navigable contexts.
+        // However, we handle it gracefully by returning the response instead of
+        // a network error, as we won't actually retry the request.
+        // This aligns with the Fetch spec discussion in whatwg/fetch#1132,
+        // which allows implementations flexibility when credentials can't be obtained.
+        return response
       }
 
       // 2. Set request’s body to the body of the result of safely extracting
@@ -39822,241 +42334,226 @@ async function httpNetworkFetch (
     /** @type {import('../../..').Agent} */
     const agent = fetchParams.controller.dispatcher
 
-    return new Promise((resolve, reject) => agent.dispatch(
-      {
-        path: url.pathname + url.search,
-        origin: url.origin,
-        method: request.method,
-        body: agent.isMockActive ? request.body && (request.body.source || request.body.stream) : body,
-        headers: request.headersList.entries,
-        maxRedirections: 0,
-        upgrade: request.mode === 'websocket' ? 'websocket' : undefined
-      },
-      {
-        body: null,
-        abort: null,
+    const path = url.pathname + url.search
+    const hasTrailingQuestionMark = url.search.length === 0 && url.href[url.href.length - url.hash.length - 1] === '?'
 
-        onConnect (abort) {
-          // TODO (fix): Do we need connection here?
-          const { connection } = fetchParams.controller
+    return dispatchWithProtocolPreference(body)
 
-          // Set timingInfo’s final connection timing info to the result of calling clamp and coarsen
-          // connection timing info with connection’s timing info, timingInfo’s post-redirect start
-          // time, and fetchParams’s cross-origin isolated capability.
-          // TODO: implement connection timing
-          timingInfo.finalConnectionTimingInfo = clampAndCoarsenConnectionTimingInfo(undefined, timingInfo.postRedirectStartTime, fetchParams.crossOriginIsolatedCapability)
-
-          if (connection.destroyed) {
-            abort(new DOMException('The operation was aborted.', 'AbortError'))
-          } else {
-            fetchParams.controller.on('terminated', abort)
-            this.abort = connection.abort = abort
-          }
-
-          // Set timingInfo’s final network-request start time to the coarsened shared current time given
-          // fetchParams’s cross-origin isolated capability.
-          timingInfo.finalNetworkRequestStartTime = coarsenedSharedCurrentTime(fetchParams.crossOriginIsolatedCapability)
+    function dispatchWithProtocolPreference (body, allowH2) {
+      return new Promise((resolve, reject) => agent.dispatch(
+        {
+          path: hasTrailingQuestionMark ? `${path}?` : path,
+          origin: url.origin,
+          method: request.method,
+          body: agent.isMockActive ? request.body && (request.body.source || request.body.stream) : body,
+          // Preserve the serialized fetch body for MockAgent net-connect fallthroughs.
+          __mockAgentBodyForDispatch: body,
+          headers: request.headersList.entries,
+          maxRedirections: 0,
+          upgrade: request.mode === 'websocket' ? 'websocket' : undefined,
+          ...(allowH2 === false ? { allowH2 } : null)
         },
+        {
+          body: null,
+          abort: null,
 
-        onResponseStarted () {
-          // Set timingInfo’s final network-response start time to the coarsened shared current
-          // time given fetchParams’s cross-origin isolated capability, immediately after the
-          // user agent’s HTTP parser receives the first byte of the response (e.g., frame header
-          // bytes for HTTP/2 or response status line for HTTP/1.x).
-          timingInfo.finalNetworkResponseStartTime = coarsenedSharedCurrentTime(fetchParams.crossOriginIsolatedCapability)
-        },
+          onRequestStart (controller) {
+            // TODO (fix): Do we need connection here?
+            const { connection } = fetchParams.controller
 
-        onHeaders (status, rawHeaders, resume, statusText) {
-          if (status < 200) {
-            return false
-          }
+            // Set timingInfo’s final connection timing info to the result of calling clamp and coarsen
+            // connection timing info with connection’s timing info, timingInfo’s post-redirect start
+            // time, and fetchParams’s cross-origin isolated capability.
+            // TODO: implement connection timing
+            timingInfo.finalConnectionTimingInfo = clampAndCoarsenConnectionTimingInfo(undefined, timingInfo.postRedirectStartTime, fetchParams.crossOriginIsolatedCapability)
 
-          const headersList = new HeadersList()
+            const abort = (reason) => controller.abort(reason)
 
-          for (let i = 0; i < rawHeaders.length; i += 2) {
-            headersList.append(bufferToLowerCasedHeaderName(rawHeaders[i]), rawHeaders[i + 1].toString('latin1'), true)
-          }
-          const location = headersList.get('location', true)
-
-          this.body = new Readable({ read: resume })
-
-          const willFollow = location && request.redirect === 'follow' &&
-            redirectStatusSet.has(status)
-
-          const decoders = []
-
-          // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding
-          if (request.method !== 'HEAD' && request.method !== 'CONNECT' && !nullBodyStatus.includes(status) && !willFollow) {
-            // https://www.rfc-editor.org/rfc/rfc7231#section-3.1.2.1
-            const contentEncoding = headersList.get('content-encoding', true)
-            // "All content-coding values are case-insensitive..."
-            /** @type {string[]} */
-            const codings = contentEncoding ? contentEncoding.toLowerCase().split(',') : []
-
-            // Limit the number of content-encodings to prevent resource exhaustion.
-            // CVE fix similar to urllib3 (GHSA-gm62-xv2j-4w53) and curl (CVE-2022-32206).
-            const maxContentEncodings = 5
-            if (codings.length > maxContentEncodings) {
-              reject(new Error(`too many content-encodings in response: ${codings.length}, maximum allowed is ${maxContentEncodings}`))
-              return true
-            }
-
-            for (let i = codings.length - 1; i >= 0; --i) {
-              const coding = codings[i].trim()
-              // https://www.rfc-editor.org/rfc/rfc9112.html#section-7.2
-              if (coding === 'x-gzip' || coding === 'gzip') {
-                decoders.push(zlib.createGunzip({
-                  // Be less strict when decoding compressed responses, since sometimes
-                  // servers send slightly invalid responses that are still accepted
-                  // by common browsers.
-                  // Always using Z_SYNC_FLUSH is what cURL does.
-                  flush: zlib.constants.Z_SYNC_FLUSH,
-                  finishFlush: zlib.constants.Z_SYNC_FLUSH
-                }))
-              } else if (coding === 'deflate') {
-                decoders.push(createInflate({
-                  flush: zlib.constants.Z_SYNC_FLUSH,
-                  finishFlush: zlib.constants.Z_SYNC_FLUSH
-                }))
-              } else if (coding === 'br') {
-                decoders.push(zlib.createBrotliDecompress({
-                  flush: zlib.constants.BROTLI_OPERATION_FLUSH,
-                  finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH
-                }))
-              } else if (coding === 'zstd' && hasZstd) {
-                decoders.push(zlib.createZstdDecompress({
-                  flush: zlib.constants.ZSTD_e_continue,
-                  finishFlush: zlib.constants.ZSTD_e_end
-                }))
-              } else {
-                decoders.length = 0
-                break
-              }
-            }
-          }
-
-          const onError = this.onError.bind(this)
-
-          resolve({
-            status,
-            statusText,
-            headersList,
-            body: decoders.length
-              ? pipeline(this.body, ...decoders, (err) => {
-                if (err) {
-                  this.onError(err)
-                }
-              }).on('error', onError)
-              : this.body.on('error', onError)
-          })
-
-          return true
-        },
-
-        onData (chunk) {
-          if (fetchParams.controller.dump) {
-            return
-          }
-
-          // 1. If one or more bytes have been transmitted from response’s
-          // message body, then:
-
-          //  1. Let bytes be the transmitted bytes.
-          const bytes = chunk
-
-          //  2. Let codings be the result of extracting header list values
-          //  given `Content-Encoding` and response’s header list.
-          //  See pullAlgorithm.
-
-          //  3. Increase timingInfo’s encoded body size by bytes’s length.
-          timingInfo.encodedBodySize += bytes.byteLength
-
-          //  4. See pullAlgorithm...
-
-          return this.body.push(bytes)
-        },
-
-        onComplete () {
-          if (this.abort) {
-            fetchParams.controller.off('terminated', this.abort)
-          }
-
-          fetchParams.controller.ended = true
-
-          this.body.push(null)
-        },
-
-        onError (error) {
-          if (this.abort) {
-            fetchParams.controller.off('terminated', this.abort)
-          }
-
-          this.body?.destroy(error)
-
-          fetchParams.controller.terminate(error)
-
-          reject(error)
-        },
-
-        onRequestUpgrade (_controller, status, headers, socket) {
-          // We need to support 200 for websocket over h2 as per RFC-8441
-          // Absence of session means H1
-          if ((socket.session != null && status !== 200) || (socket.session == null && status !== 101)) {
-            return false
-          }
-
-          const headersList = new HeadersList()
-
-          for (const [name, value] of Object.entries(headers)) {
-            if (value == null) {
-              continue
-            }
-
-            const headerName = name.toLowerCase()
-
-            if (Array.isArray(value)) {
-              for (const entry of value) {
-                headersList.append(headerName, String(entry), true)
-              }
+            if (connection.destroyed) {
+              abort(new DOMException('The operation was aborted.', 'AbortError'))
             } else {
-              headersList.append(headerName, String(value), true)
+              fetchParams.controller.on('terminated', abort)
+              this.abort = connection.abort = abort
             }
+
+            // Set timingInfo’s final network-request start time to the coarsened shared current time given
+            // fetchParams’s cross-origin isolated capability.
+            timingInfo.finalNetworkRequestStartTime = coarsenedSharedCurrentTime(fetchParams.crossOriginIsolatedCapability)
+          },
+
+          onResponseStarted () {
+            // Set timingInfo’s final network-response start time to the coarsened shared current
+            // time given fetchParams’s cross-origin isolated capability, immediately after the
+            // user agent’s HTTP parser receives the first byte of the response (e.g., frame header
+            // bytes for HTTP/2 or response status line for HTTP/1.x).
+            timingInfo.finalNetworkResponseStartTime = coarsenedSharedCurrentTime(fetchParams.crossOriginIsolatedCapability)
+          },
+
+          onResponseStart (controller, status, headers, statusText) {
+            if (status < 200) {
+              return
+            }
+
+            const rawHeaders = controller?.rawHeaders ?? []
+            const headersList = new HeadersList()
+            appendHeadersListFromResponseHeaders(headersList, headers, rawHeaders)
+            const location = headersList.get('location', true)
+
+            this.body = new Readable({ read: () => controller.resume() })
+
+            const willFollow = location && request.redirect === 'follow' &&
+              redirectStatusSet.has(status)
+
+            const decoders = []
+
+            // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding
+            if (request.method !== 'HEAD' && request.method !== 'CONNECT' && !nullBodyStatus.includes(status) && !willFollow) {
+              // https://www.rfc-editor.org/rfc/rfc7231#section-3.1.2.1
+              const contentEncoding = headersList.get('content-encoding', true)
+              // "All content-coding values are case-insensitive..."
+              /** @type {string[]} */
+              const codings = contentEncoding ? contentEncoding.toLowerCase().split(',') : []
+
+              // Limit the number of content-encodings to prevent resource exhaustion.
+              // CVE fix similar to urllib3 (GHSA-gm62-xv2j-4w53) and curl (CVE-2022-32206).
+              const maxContentEncodings = 5
+              if (codings.length > maxContentEncodings) {
+                reject(new Error(`too many content-encodings in response: ${codings.length}, maximum allowed is ${maxContentEncodings}`))
+                return
+              }
+
+              for (let i = codings.length - 1; i >= 0; --i) {
+                const coding = codings[i].trim()
+                // https://www.rfc-editor.org/rfc/rfc9112.html#section-7.2
+                if (coding === 'x-gzip' || coding === 'gzip') {
+                  decoders.push(zlib.createGunzip({
+                    // Be less strict when decoding compressed responses, since sometimes
+                    // servers send slightly invalid responses that are still accepted
+                    // by common browsers.
+                    // Always using Z_SYNC_FLUSH is what cURL does.
+                    flush: zlib.constants.Z_SYNC_FLUSH,
+                    finishFlush: zlib.constants.Z_SYNC_FLUSH
+                  }))
+                } else if (coding === 'deflate') {
+                  decoders.push(createInflate({
+                    flush: zlib.constants.Z_SYNC_FLUSH,
+                    finishFlush: zlib.constants.Z_SYNC_FLUSH
+                  }))
+                } else if (coding === 'br') {
+                  decoders.push(zlib.createBrotliDecompress({
+                    flush: zlib.constants.BROTLI_OPERATION_FLUSH,
+                    finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH
+                  }))
+                } else if (coding === 'zstd') {
+                  decoders.push(zlib.createZstdDecompress({
+                    flush: zlib.constants.ZSTD_e_continue,
+                    finishFlush: zlib.constants.ZSTD_e_end
+                  }))
+                } else {
+                  decoders.length = 0
+                  break
+                }
+              }
+            }
+
+            const onError = (err) => this.onResponseError(controller, err)
+
+            resolve({
+              status,
+              statusText,
+              headersList,
+              body: decoders.length
+                ? pipeline(this.body, ...decoders, (err) => {
+                  if (err) {
+                    this.onResponseError(controller, err)
+                  }
+                }).on('error', onError)
+                : this.body.on('error', onError)
+            })
+          },
+
+          onResponseData (controller, chunk) {
+            if (fetchParams.controller.dump) {
+              return
+            }
+
+            // 1. If one or more bytes have been transmitted from response’s
+            // message body, then:
+
+            //  1. Let bytes be the transmitted bytes.
+            const bytes = chunk
+
+            //  2. Let codings be the result of extracting header list values
+            //  given `Content-Encoding` and response’s header list.
+            //  See pullAlgorithm.
+
+            //  3. Increase timingInfo’s encoded body size by bytes’s length.
+            timingInfo.encodedBodySize += bytes.byteLength
+
+            //  4. See pullAlgorithm...
+
+            if (this.body.push(bytes) === false) {
+              controller.pause()
+            }
+          },
+
+          onResponseEnd () {
+            if (this.abort) {
+              fetchParams.controller.off('terminated', this.abort)
+            }
+
+            fetchParams.controller.ended = true
+
+            this.body?.push(null)
+          },
+
+          onResponseError (_controller, error) {
+            if (this.abort) {
+              fetchParams.controller.off('terminated', this.abort)
+            }
+
+            if (
+              request.mode === 'websocket' &&
+              allowH2 !== false &&
+              error?.code === 'UND_ERR_INFO' &&
+              error?.message === 'HTTP/2: Extended CONNECT protocol not supported by server'
+            ) {
+              // The origin negotiated H2, but RFC 8441 websocket support is unavailable.
+              // Retry the opening handshake on a fresh HTTP/1.1-only connection instead.
+              resolve(dispatchWithProtocolPreference(body, false))
+              return
+            }
+
+            this.body?.destroy(error)
+
+            fetchParams.controller.terminate(error)
+
+            reject(error)
+          },
+
+          onRequestUpgrade (controller, status, headers, socket) {
+            // We need to support 200 for websocket over h2 as per RFC-8441
+            // Absence of session means H1
+            if ((socket.session != null && status !== 200) || (socket.session == null && status !== 101)) {
+              return false
+            }
+
+            const rawHeaders = controller?.rawHeaders ?? []
+            const headersList = new HeadersList()
+            appendHeadersListFromResponseHeaders(headersList, headers, rawHeaders)
+
+            resolve({
+              status,
+              statusText: STATUS_CODES[status],
+              headersList,
+              socket
+            })
+
+            return true
           }
-
-          resolve({
-            status,
-            statusText: STATUS_CODES[status],
-            headersList,
-            socket
-          })
-
-          return true
-        },
-
-        onUpgrade (status, rawHeaders, socket) {
-          // We need to support 200 for websocket over h2 as per RFC-8441
-          // Absence of session means H1
-          if ((socket.session != null && status !== 200) || (socket.session == null && status !== 101)) {
-            return false
-          }
-
-          const headersList = new HeadersList()
-
-          for (let i = 0; i < rawHeaders.length; i += 2) {
-            headersList.append(bufferToLowerCasedHeaderName(rawHeaders[i]), rawHeaders[i + 1].toString('latin1'), true)
-          }
-
-          resolve({
-            status,
-            statusText: STATUS_CODES[status],
-            headersList,
-            socket
-          })
-
-          return true
         }
-      }
-    ))
+      ))
+    }
   }
 }
 
@@ -43295,8 +45792,10 @@ function includesCredentials (url) {
  * @param {object|string} navigable
  */
 function isTraversableNavigable (navigable) {
-  // TODO
-  return true
+  // Returns true only if we have an actual traversable navigable object
+  // that can prompt the user for credentials. In Node.js, this will always
+  // be false since there's no Window object or navigable.
+  return navigable != null && navigable !== 'client' && navigable !== 'no-traversable'
 }
 
 class EnvironmentSettingsObjectBase {
@@ -43930,7 +46429,7 @@ module.exports = {
 
 const assert = __nccwpck_require__(34589)
 const { types, inspect } = __nccwpck_require__(57975)
-const { runtimeFeatures } = __nccwpck_require__(52231)
+const { markAsUncloneable } = __nccwpck_require__(75919)
 
 const UNDEFINED = 1
 const BOOLEAN = 2
@@ -44086,9 +46585,7 @@ webidl.util.TypeValueToString = function (o) {
   }
 }
 
-webidl.util.markAsUncloneable = runtimeFeatures.has('markAsUncloneable')
-  ? (__nccwpck_require__(75919).markAsUncloneable)
-  : () => {}
+webidl.util.markAsUncloneable = markAsUncloneable
 
 // https://webidl.spec.whatwg.org/#abstract-opdef-converttoint
 webidl.util.ConvertToInt = function (V, bitLength, signedness, flags) {
@@ -44118,10 +46615,10 @@ webidl.util.ConvertToInt = function (V, bitLength, signedness, flags) {
   } else {
     // 3. Otherwise:
 
-    // 1. Let lowerBound be -2^bitLength − 1.
-    lowerBound = Math.pow(-2, bitLength) - 1
+    // 1. Let lowerBound be -2^(bitLength − 1).
+    lowerBound = -Math.pow(2, bitLength - 1)
 
-    // 2. Let upperBound be 2^bitLength − 1 − 1.
+    // 2. Let upperBound be 2^(bitLength − 1) − 1.
     upperBound = Math.pow(2, bitLength - 1) - 1
   }
 
@@ -44200,9 +46697,9 @@ webidl.util.ConvertToInt = function (V, bitLength, signedness, flags) {
   // 10. Set x to x modulo 2^bitLength.
   x = x % Math.pow(2, bitLength)
 
-  // 11. If signedness is "signed" and x ≥ 2^bitLength − 1,
+  // 11. If signedness is "signed" and x ≥ 2^(bitLength − 1),
   //    then return x − 2^bitLength.
-  if (signedness === 'signed' && x >= Math.pow(2, bitLength) - 1) {
+  if (signedness === 'signed' && x >= Math.pow(2, bitLength - 1)) {
     return x - Math.pow(2, bitLength)
   }
 
@@ -44380,6 +46877,9 @@ webidl.interfaceConverter = function (TypeCheck, name) {
 }
 
 webidl.dictionaryConverter = function (converters) {
+  // "For each dictionary member member declared on dictionary, in lexicographical order:"
+  converters.sort((a, b) => (a.key > b.key) - (a.key < b.key))
+
   return (dictionary, prefix, argument) => {
     const dict = {}
 
@@ -45759,13 +48259,7 @@ let bufIdx = BUFFER_SIZE
 
 const randomFillSync = runtimeFeatures.has('crypto')
   ? (__nccwpck_require__(77598).randomFillSync)
-  // not full compatibility, but minimum.
-  : function randomFillSync (buffer, _offset, _size) {
-    for (let i = 0; i < buffer.length; ++i) {
-      buffer[i] = Math.random() * 255 | 0
-    }
-    return buffer
-  }
+  : null
 
 function generateMask () {
   if (bufIdx === BUFFER_SIZE) {
@@ -45892,6 +48386,7 @@ module.exports = {
 
 const { createInflateRaw, Z_DEFAULT_WINDOWBITS } = __nccwpck_require__(38522)
 const { isValidClientWindowBits } = __nccwpck_require__(67979)
+const { MessageSizeExceededError } = __nccwpck_require__(45253)
 
 const tail = Buffer.from([0x00, 0x00, 0xff, 0xff])
 const kBuffer = Symbol('kBuffer')
@@ -45903,17 +48398,29 @@ class PerMessageDeflate {
 
   #options = {}
 
-  constructor (extensions) {
+  #maxPayloadSize = 0
+
+  /**
+   * @param {Map<string, string>} extensions
+   */
+  constructor (extensions, options) {
     this.#options.serverNoContextTakeover = extensions.has('server_no_context_takeover')
     this.#options.serverMaxWindowBits = extensions.get('server_max_window_bits')
+
+    this.#maxPayloadSize = options.maxPayloadSize
   }
 
+  /**
+   * Decompress a compressed payload.
+   * @param {Buffer} chunk Compressed data
+   * @param {boolean} fin Final fragment flag
+   * @param {Function} callback Callback function
+   */
   decompress (chunk, fin, callback) {
     // An endpoint uses the following algorithm to decompress a message.
     // 1.  Append 4 octets of 0x00 0x00 0xff 0xff to the tail end of the
     //     payload of the message.
     // 2.  Decompress the resulting data using DEFLATE.
-
     if (!this.#inflate) {
       let windowBits = Z_DEFAULT_WINDOWBITS
 
@@ -45926,13 +48433,26 @@ class PerMessageDeflate {
         windowBits = Number.parseInt(this.#options.serverMaxWindowBits)
       }
 
-      this.#inflate = createInflateRaw({ windowBits })
+      try {
+        this.#inflate = createInflateRaw({ windowBits })
+      } catch (err) {
+        callback(err)
+        return
+      }
       this.#inflate[kBuffer] = []
       this.#inflate[kLength] = 0
 
       this.#inflate.on('data', (data) => {
-        this.#inflate[kBuffer].push(data)
         this.#inflate[kLength] += data.length
+
+        if (this.#maxPayloadSize > 0 && this.#inflate[kLength] > this.#maxPayloadSize) {
+          callback(new MessageSizeExceededError())
+          this.#inflate.removeAllListeners()
+          this.#inflate = null
+          return
+        }
+
+        this.#inflate[kBuffer].push(data)
       })
 
       this.#inflate.on('error', (err) => {
@@ -45947,6 +48467,10 @@ class PerMessageDeflate {
     }
 
     this.#inflate.flush(() => {
+      if (!this.#inflate) {
+        return
+      }
+
       const full = Buffer.concat(this.#inflate[kBuffer], this.#inflate[kLength])
 
       this.#inflate[kBuffer].length = 0
@@ -45983,6 +48507,7 @@ const {
 const { failWebsocketConnection } = __nccwpck_require__(54095)
 const { WebsocketFrameSend } = __nccwpck_require__(37166)
 const { PerMessageDeflate } = __nccwpck_require__(84923)
+const { MessageSizeExceededError } = __nccwpck_require__(45253)
 
 // This code was influenced by ws released under the MIT license.
 // Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
@@ -46006,14 +48531,23 @@ class ByteParser extends Writable {
   /** @type {import('./websocket').Handler} */
   #handler
 
-  constructor (handler, extensions) {
+  /** @type {number} */
+  #maxPayloadSize
+
+  /**
+   * @param {import('./websocket').Handler} handler
+   * @param {Map<string, string>|null} extensions
+   * @param {{ maxPayloadSize?: number }} [options]
+   */
+  constructor (handler, extensions, options = {}) {
     super()
 
     this.#handler = handler
     this.#extensions = extensions == null ? new Map() : extensions
+    this.#maxPayloadSize = options.maxPayloadSize ?? 0
 
     if (this.#extensions.has('permessage-deflate')) {
-      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions))
+      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions, options))
     }
   }
 
@@ -46027,6 +48561,19 @@ class ByteParser extends Writable {
     this.#loop = true
 
     this.run(callback)
+  }
+
+  #validatePayloadLength () {
+    if (
+      this.#maxPayloadSize > 0 &&
+      !isControlFrame(this.#info.opcode) &&
+      this.#info.payloadLength > this.#maxPayloadSize
+    ) {
+      failWebsocketConnection(this.#handler, 1009, 'Payload size exceeds maximum allowed size')
+      return false
+    }
+
+    return true
   }
 
   /**
@@ -46117,6 +48664,10 @@ class ByteParser extends Writable {
         if (payloadLength <= 125) {
           this.#info.payloadLength = payloadLength
           this.#state = parserStates.READ_DATA
+
+          if (!this.#validatePayloadLength()) {
+            return
+          }
         } else if (payloadLength === 126) {
           this.#state = parserStates.PAYLOADLENGTH_16
         } else if (payloadLength === 127) {
@@ -46141,6 +48692,10 @@ class ByteParser extends Writable {
 
         this.#info.payloadLength = buffer.readUInt16BE(0)
         this.#state = parserStates.READ_DATA
+
+        if (!this.#validatePayloadLength()) {
+          return
+        }
       } else if (this.#state === parserStates.PAYLOADLENGTH_64) {
         if (this.#byteOffset < 8) {
           return callback()
@@ -46148,6 +48703,7 @@ class ByteParser extends Writable {
 
         const buffer = this.consume(8)
         const upper = buffer.readUInt32BE(0)
+        const lower = buffer.readUInt32BE(4)
 
         // 2^31 is the maximum bytes an arraybuffer can contain
         // on 32-bit systems. Although, on 64-bit systems, this is
@@ -46155,15 +48711,17 @@ class ByteParser extends Writable {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Errors/Invalid_array_length
         // https://source.chromium.org/chromium/chromium/src/+/main:v8/src/common/globals.h;drc=1946212ac0100668f14eb9e2843bdd846e510a1e;bpv=1;bpt=1;l=1275
         // https://source.chromium.org/chromium/chromium/src/+/main:v8/src/objects/js-array-buffer.h;l=34;drc=1946212ac0100668f14eb9e2843bdd846e510a1e
-        if (upper > 2 ** 31 - 1) {
+        if (upper !== 0 || lower > 2 ** 31 - 1) {
           failWebsocketConnection(this.#handler, 1009, 'Received payload length > 2^31 bytes.')
           return
         }
 
-        const lower = buffer.readUInt32BE(4)
-
-        this.#info.payloadLength = (upper << 8) + lower
+        this.#info.payloadLength = lower
         this.#state = parserStates.READ_DATA
+
+        if (!this.#validatePayloadLength()) {
+          return
+        }
       } else if (this.#state === parserStates.READ_DATA) {
         if (this.#byteOffset < this.#info.payloadLength) {
           return callback()
@@ -46188,27 +48746,39 @@ class ByteParser extends Writable {
 
             this.#state = parserStates.INFO
           } else {
-            this.#extensions.get('permessage-deflate').decompress(body, this.#info.fin, (error, data) => {
-              if (error) {
-                failWebsocketConnection(this.#handler, 1007, error.message)
-                return
-              }
+            this.#extensions.get('permessage-deflate').decompress(
+              body,
+              this.#info.fin,
+              (error, data) => {
+                if (error) {
+                  const code = error instanceof MessageSizeExceededError ? 1009 : 1007
+                  failWebsocketConnection(this.#handler, code, error.message)
+                  return
+                }
 
-              this.writeFragments(data)
+                this.writeFragments(data)
 
-              if (!this.#info.fin) {
-                this.#state = parserStates.INFO
+                // Check cumulative fragment size
+                if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+                  failWebsocketConnection(this.#handler, 1009, new MessageSizeExceededError().message)
+                  return
+                }
+
+                if (!this.#info.fin) {
+                  this.#state = parserStates.INFO
+                  this.#loop = true
+                  this.run(callback)
+                  return
+                }
+
+                websocketMessageReceived(this.#handler, this.#info.binaryType, this.consumeFragments())
+
                 this.#loop = true
+                this.#state = parserStates.INFO
                 this.run(callback)
-                return
-              }
-
-              websocketMessageReceived(this.#handler, this.#info.binaryType, this.consumeFragments())
-
-              this.#loop = true
-              this.#state = parserStates.INFO
-              this.run(callback)
-            })
+              },
+              this.#fragmentsBytes
+            )
 
             this.#loop = false
             break
@@ -46649,8 +49219,8 @@ module.exports = { WebSocketError, createUnvalidatedWebSocketError }
 "use strict";
 
 
-const { createDeferredPromise } = __nccwpck_require__(32302)
-const { environmentSettingsObject } = __nccwpck_require__(546)
+const { addAbortListener } = __nccwpck_require__(78474)
+const { environmentSettingsObject, readableStreamClose } = __nccwpck_require__(546)
 const { states, opcodes, sentCloseFrameState } = __nccwpck_require__(58406)
 const { webidl } = __nccwpck_require__(52109)
 const { getURLRecord, isValidSubprotocol, isEstablished, utf8Decode } = __nccwpck_require__(67979)
@@ -46670,11 +49240,11 @@ class WebSocketStream {
   #url
 
   // Each WebSocketStream object has an associated opened promise , which is a promise.
-  /** @type {import('../../../util/promise').DeferredPromise} */
+  /** @type {ReturnType<typeof Promise.withResolvers>} */
   #openedPromise
 
   // Each WebSocketStream object has an associated closed promise , which is a promise.
-  /** @type {import('../../../util/promise').DeferredPromise} */
+  /** @type {ReturnType<typeof Promise.withResolvers>} */
   #closedPromise
 
   // Each WebSocketStream object has an associated readable stream , which is a ReadableStream .
@@ -46762,8 +49332,8 @@ class WebSocketStream {
     this.#url = urlRecord.toString()
 
     // 6. Set this 's opened promise and closed promise to new promises.
-    this.#openedPromise = createDeferredPromise()
-    this.#closedPromise = createDeferredPromise()
+    this.#openedPromise = Promise.withResolvers()
+    this.#closedPromise = Promise.withResolvers()
 
     // 7. Apply backpressure to the WebSocket.
     // TODO
@@ -46782,7 +49352,7 @@ class WebSocketStream {
       }
 
       // 8.3. Add the following abort steps to signal :
-      signal.addEventListener('abort', () => {
+      addAbortListener(signal, () => {
         // 8.3.1. If the WebSocket connection is not yet established : [WSP]
         if (!isEstablished(this.#handler.readyState)) {
           // 8.3.1.1. Fail the WebSocket connection .
@@ -46798,7 +49368,7 @@ class WebSocketStream {
           // Set this 's handshake aborted to true.
           this.#handshakeAborted = true
         }
-      }, { once: true })
+      })
     }
 
     // 9.  Let client be this 's relevant settings object .
@@ -46851,7 +49421,7 @@ class WebSocketStream {
     chunk = webidl.converters.WebSocketStreamWrite(chunk)
 
     // 1. Let promise be a new promise created in stream ’s relevant realm .
-    const promise = createDeferredPromise()
+    const promise = Promise.withResolvers()
 
     // 2. Let data be null.
     let data = null
@@ -46933,12 +49503,6 @@ class WebSocketStream {
       start: (controller) => {
         this.#readableStreamController = controller
       },
-      pull (controller) {
-        let chunk
-        while (controller.desiredSize > 0 && (chunk = response.socket.read()) !== null) {
-          controller.enqueue(chunk)
-        }
-      },
       cancel: (reason) => this.#cancel(reason)
     })
 
@@ -46987,7 +49551,7 @@ class WebSocketStream {
       try {
         chunk = utf8Decode(data)
       } catch {
-        failWebsocketConnection(this.#handler, 'Received invalid UTF-8 in text frame.')
+        failWebsocketConnection(this.#handler, 1007, 'Received invalid UTF-8 in text frame.')
         return
       }
     } else if (type === opcodes.BINARY) {
@@ -47041,7 +49605,7 @@ class WebSocketStream {
     // 6. If the connection was closed cleanly ,
     if (wasClean) {
       // 6.1. Close stream ’s readable stream .
-      this.#readableStreamController.close()
+      readableStreamClose(this.#readableStreamController)
 
       // 6.2. Error stream ’s writable stream with an " InvalidStateError " DOMException indicating that a closed WebSocketStream cannot be written to.
       if (!this.#writableStream.locked) {
@@ -47381,6 +49945,12 @@ function parseExtensions (extensions) {
  * @returns {boolean}
  */
 function isValidClientWindowBits (value) {
+  // Must have at least one character
+  if (value.length === 0) {
+    return false
+  }
+
+  // Check all characters are ASCII digits
   for (let i = 0; i < value.length; i++) {
     const byte = value.charCodeAt(i)
 
@@ -47389,7 +49959,9 @@ function isValidClientWindowBits (value) {
     }
   }
 
-  return true
+  // Check numeric range: zlib requires windowBits in range 8-15
+  const num = Number.parseInt(value, 10)
+  return num >= 8 && num <= 15
 }
 
 /**
@@ -47525,6 +50097,18 @@ const { ErrorEvent, CloseEvent, createFastMessageEvent } = __nccwpck_require__(2
 const { SendQueue } = __nccwpck_require__(5874)
 const { WebsocketFrameSend } = __nccwpck_require__(37166)
 const { channels } = __nccwpck_require__(1224)
+
+function getSocketAddress (socket) {
+  if (typeof socket?.address === 'function') {
+    return socket.address()
+  }
+
+  if (typeof socket?.session?.socket?.address === 'function') {
+    return socket.session.socket.address()
+  }
+
+  return null
+}
 
 /**
  * @typedef {object} Handler
@@ -47953,11 +50537,16 @@ class WebSocket extends EventTarget {
    * @see https://websockets.spec.whatwg.org/#feedback-from-the-protocol
    */
   #onConnectionEstablished (response, parsedExtensions) {
-    // processResponse is called when the "response’s header list has been received and initialized."
+    // processResponse is called when the "response's header list has been received and initialized."
     // once this happens, the connection is open
     this.#handler.socket = response.socket
 
-    const parser = new ByteParser(this.#handler, parsedExtensions)
+    // Get maxPayloadSize from dispatcher options
+    const maxPayloadSize = this.#handler.controller.dispatcher?.webSocketOptions?.maxPayloadSize
+
+    const parser = new ByteParser(this.#handler, parsedExtensions, {
+      maxPayloadSize
+    })
     parser.on('drain', () => this.#handler.onParserDrain())
     parser.on('error', (err) => this.#handler.onParserError(err))
 
@@ -47992,7 +50581,7 @@ class WebSocket extends EventTarget {
       // Convert headers to a plain object for the event
       const headers = response.headersList.entries
       channels.open.publish({
-        address: response.socket.address(),
+        address: getSocketAddress(response.socket),
         protocol: this.#protocol,
         extensions: this.#extensions,
         websocket: this,
@@ -58592,6 +61181,22 @@ function charFromCodepoint(c) {
   );
 }
 
+// set a property of a literal object, while protecting against prototype pollution,
+// see https://github.com/nodeca/js-yaml/issues/164 for more details
+function setProperty(object, key, value) {
+  // used for this specific key only because Object.defineProperty is slow
+  if (key === '__proto__') {
+    Object.defineProperty(object, key, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: value
+    });
+  } else {
+    object[key] = value;
+  }
+}
+
 var simpleEscapeCheck = new Array(256); // integer, for fast access
 var simpleEscapeMap = new Array(256);
 for (var i = 0; i < 256; i++) {
@@ -58770,7 +61375,7 @@ function mergeMappings(state, destination, source, overridableKeys) {
     key = sourceKeys[index];
 
     if (!_hasOwnProperty.call(destination, key)) {
-      destination[key] = source[key];
+      setProperty(destination, key, source[key]);
       overridableKeys[key] = true;
     }
   }
@@ -58830,17 +61435,7 @@ function storeMappingPair(state, _result, overridableKeys, keyTag, keyNode, valu
       throwError(state, 'duplicated mapping key');
     }
 
-    // used for this specific key only because Object.defineProperty is slow
-    if (keyNode === '__proto__') {
-      Object.defineProperty(_result, keyNode, {
-        configurable: true,
-        enumerable: true,
-        writable: true,
-        value: valueNode
-      });
-    } else {
-      _result[keyNode] = valueNode;
-    }
+    setProperty(_result, keyNode, valueNode);
     delete overridableKeys[keyNode];
   }
 
@@ -65628,7 +68223,7 @@ const diff = (version1, version2) => {
     return prefix + 'patch'
   }
 
-  // high and low are preleases
+  // high and low are prereleases
   return 'prerelease'
 }
 
@@ -65884,6 +68479,62 @@ module.exports = sort
 
 /***/ }),
 
+/***/ 16114:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const parse = __nccwpck_require__(16353)
+const constants = __nccwpck_require__(45101)
+const SemVer = __nccwpck_require__(7163)
+
+const truncate = (version, truncation, options) => {
+  if (!constants.RELEASE_TYPES.includes(truncation)) {
+    return null
+  }
+
+  const clonedVersion = cloneInputVersion(version, options)
+  return clonedVersion && doTruncation(clonedVersion, truncation)
+}
+
+const cloneInputVersion = (version, options) => {
+  const versionStringToParse = (
+    version instanceof SemVer ? version.version : version
+  )
+
+  return parse(versionStringToParse, options)
+}
+
+const doTruncation = (version, truncation) => {
+  if (isPrerelease(truncation)) {
+    return version.version
+  }
+
+  version.prerelease = []
+
+  switch (truncation) {
+    case 'major':
+      version.minor = 0
+      version.patch = 0
+      break
+    case 'minor':
+      version.patch = 0
+      break
+  }
+
+  return version.format()
+}
+
+const isPrerelease = (type) => {
+  return type.startsWith('pre')
+}
+
+module.exports = truncate
+
+
+/***/ }),
+
 /***/ 58780:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -65934,6 +68585,7 @@ const gte = __nccwpck_require__(41236)
 const lte = __nccwpck_require__(56717)
 const cmp = __nccwpck_require__(28646)
 const coerce = __nccwpck_require__(35385)
+const truncate = __nccwpck_require__(16114)
 const Comparator = __nccwpck_require__(89379)
 const Range = __nccwpck_require__(96782)
 const satisfies = __nccwpck_require__(68011)
@@ -65972,6 +68624,7 @@ module.exports = {
   lte,
   cmp,
   coerce,
+  truncate,
   Comparator,
   Range,
   satisfies,
@@ -66259,8 +68912,8 @@ createToken('MAINVERSIONLOOSE', `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
 
 // ## Pre-release Version Identifier
 // A numeric identifier, or a non-numeric identifier.
-// Non-numberic identifiers include numberic identifiers but can be longer.
-// Therefore non-numberic identifiers must go first.
+// Non-numeric identifiers include numeric identifiers but can be longer.
+// Therefore non-numeric identifiers must go first.
 
 createToken('PRERELEASEIDENTIFIER', `(?:${src[t.NONNUMERICIDENTIFIER]
 }|${src[t.NUMERICIDENTIFIER]})`)
@@ -66317,7 +68970,7 @@ createToken('LOOSE', `^${src[t.LOOSEPLAIN]}$`)
 createToken('GTLT', '((?:<|>)?=?)')
 
 // Something like "2.*" or "1.2.x".
-// Note that "x.x" is a valid xRange identifer, meaning "any version"
+// Note that "x.x" is a valid xRange identifier, meaning "any version"
 // Only the first item is strictly required.
 createToken('XRANGEIDENTIFIERLOOSE', `${src[t.NUMERICIDENTIFIERLOOSE]}|x|X|\\*`)
 createToken('XRANGEIDENTIFIER', `${src[t.NUMERICIDENTIFIER]}|x|X|\\*`)
@@ -66782,7 +69435,7 @@ const compare = __nccwpck_require__(78469)
 // - If LT
 //   - If LT.semver is greater than any < or <= comp in C, return false
 //   - If LT is <=, and LT.semver does not satisfy every C, return false
-//   - If GT.semver has a prerelease, and not in prerelease mode
+//   - If LT.semver has a prerelease, and not in prerelease mode
 //     - If no C has a prerelease and the LT.semver tuple, return false
 // - Else return true
 
@@ -95934,443 +98587,6 @@ module.exports = parseParams
 
 /***/ }),
 
-/***/ 69084:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.WriteStreamSync = exports.WriteStream = exports.ReadStreamSync = exports.ReadStream = void 0;
-const events_1 = __importDefault(__nccwpck_require__(24434));
-const fs_1 = __importDefault(__nccwpck_require__(79896));
-const minipass_1 = __nccwpck_require__(78275);
-const writev = fs_1.default.writev;
-const _autoClose = Symbol('_autoClose');
-const _close = Symbol('_close');
-const _ended = Symbol('_ended');
-const _fd = Symbol('_fd');
-const _finished = Symbol('_finished');
-const _flags = Symbol('_flags');
-const _flush = Symbol('_flush');
-const _handleChunk = Symbol('_handleChunk');
-const _makeBuf = Symbol('_makeBuf');
-const _mode = Symbol('_mode');
-const _needDrain = Symbol('_needDrain');
-const _onerror = Symbol('_onerror');
-const _onopen = Symbol('_onopen');
-const _onread = Symbol('_onread');
-const _onwrite = Symbol('_onwrite');
-const _open = Symbol('_open');
-const _path = Symbol('_path');
-const _pos = Symbol('_pos');
-const _queue = Symbol('_queue');
-const _read = Symbol('_read');
-const _readSize = Symbol('_readSize');
-const _reading = Symbol('_reading');
-const _remain = Symbol('_remain');
-const _size = Symbol('_size');
-const _write = Symbol('_write');
-const _writing = Symbol('_writing');
-const _defaultFlag = Symbol('_defaultFlag');
-const _errored = Symbol('_errored');
-class ReadStream extends minipass_1.Minipass {
-    [_errored] = false;
-    [_fd];
-    [_path];
-    [_readSize];
-    [_reading] = false;
-    [_size];
-    [_remain];
-    [_autoClose];
-    constructor(path, opt) {
-        opt = opt || {};
-        super(opt);
-        this.readable = true;
-        this.writable = false;
-        if (typeof path !== 'string') {
-            throw new TypeError('path must be a string');
-        }
-        this[_errored] = false;
-        this[_fd] = typeof opt.fd === 'number' ? opt.fd : undefined;
-        this[_path] = path;
-        this[_readSize] = opt.readSize || 16 * 1024 * 1024;
-        this[_reading] = false;
-        this[_size] = typeof opt.size === 'number' ? opt.size : Infinity;
-        this[_remain] = this[_size];
-        this[_autoClose] =
-            typeof opt.autoClose === 'boolean' ? opt.autoClose : true;
-        if (typeof this[_fd] === 'number') {
-            this[_read]();
-        }
-        else {
-            this[_open]();
-        }
-    }
-    get fd() {
-        return this[_fd];
-    }
-    get path() {
-        return this[_path];
-    }
-    //@ts-ignore
-    write() {
-        throw new TypeError('this is a readable stream');
-    }
-    //@ts-ignore
-    end() {
-        throw new TypeError('this is a readable stream');
-    }
-    [_open]() {
-        fs_1.default.open(this[_path], 'r', (er, fd) => this[_onopen](er, fd));
-    }
-    [_onopen](er, fd) {
-        if (er) {
-            this[_onerror](er);
-        }
-        else {
-            this[_fd] = fd;
-            this.emit('open', fd);
-            this[_read]();
-        }
-    }
-    [_makeBuf]() {
-        return Buffer.allocUnsafe(Math.min(this[_readSize], this[_remain]));
-    }
-    [_read]() {
-        if (!this[_reading]) {
-            this[_reading] = true;
-            const buf = this[_makeBuf]();
-            /* c8 ignore start */
-            if (buf.length === 0) {
-                return process.nextTick(() => this[_onread](null, 0, buf));
-            }
-            /* c8 ignore stop */
-            fs_1.default.read(this[_fd], buf, 0, buf.length, null, (er, br, b) => this[_onread](er, br, b));
-        }
-    }
-    [_onread](er, br, buf) {
-        this[_reading] = false;
-        if (er) {
-            this[_onerror](er);
-        }
-        else if (this[_handleChunk](br, buf)) {
-            this[_read]();
-        }
-    }
-    [_close]() {
-        if (this[_autoClose] && typeof this[_fd] === 'number') {
-            const fd = this[_fd];
-            this[_fd] = undefined;
-            fs_1.default.close(fd, er => er ? this.emit('error', er) : this.emit('close'));
-        }
-    }
-    [_onerror](er) {
-        this[_reading] = true;
-        this[_close]();
-        this.emit('error', er);
-    }
-    [_handleChunk](br, buf) {
-        let ret = false;
-        // no effect if infinite
-        this[_remain] -= br;
-        if (br > 0) {
-            ret = super.write(br < buf.length ? buf.subarray(0, br) : buf);
-        }
-        if (br === 0 || this[_remain] <= 0) {
-            ret = false;
-            this[_close]();
-            super.end();
-        }
-        return ret;
-    }
-    emit(ev, ...args) {
-        switch (ev) {
-            case 'prefinish':
-            case 'finish':
-                return false;
-            case 'drain':
-                if (typeof this[_fd] === 'number') {
-                    this[_read]();
-                }
-                return false;
-            case 'error':
-                if (this[_errored]) {
-                    return false;
-                }
-                this[_errored] = true;
-                return super.emit(ev, ...args);
-            default:
-                return super.emit(ev, ...args);
-        }
-    }
-}
-exports.ReadStream = ReadStream;
-class ReadStreamSync extends ReadStream {
-    [_open]() {
-        let threw = true;
-        try {
-            this[_onopen](null, fs_1.default.openSync(this[_path], 'r'));
-            threw = false;
-        }
-        finally {
-            if (threw) {
-                this[_close]();
-            }
-        }
-    }
-    [_read]() {
-        let threw = true;
-        try {
-            if (!this[_reading]) {
-                this[_reading] = true;
-                do {
-                    const buf = this[_makeBuf]();
-                    /* c8 ignore start */
-                    const br = buf.length === 0
-                        ? 0
-                        : fs_1.default.readSync(this[_fd], buf, 0, buf.length, null);
-                    /* c8 ignore stop */
-                    if (!this[_handleChunk](br, buf)) {
-                        break;
-                    }
-                } while (true);
-                this[_reading] = false;
-            }
-            threw = false;
-        }
-        finally {
-            if (threw) {
-                this[_close]();
-            }
-        }
-    }
-    [_close]() {
-        if (this[_autoClose] && typeof this[_fd] === 'number') {
-            const fd = this[_fd];
-            this[_fd] = undefined;
-            fs_1.default.closeSync(fd);
-            this.emit('close');
-        }
-    }
-}
-exports.ReadStreamSync = ReadStreamSync;
-class WriteStream extends events_1.default {
-    readable = false;
-    writable = true;
-    [_errored] = false;
-    [_writing] = false;
-    [_ended] = false;
-    [_queue] = [];
-    [_needDrain] = false;
-    [_path];
-    [_mode];
-    [_autoClose];
-    [_fd];
-    [_defaultFlag];
-    [_flags];
-    [_finished] = false;
-    [_pos];
-    constructor(path, opt) {
-        opt = opt || {};
-        super(opt);
-        this[_path] = path;
-        this[_fd] = typeof opt.fd === 'number' ? opt.fd : undefined;
-        this[_mode] = opt.mode === undefined ? 0o666 : opt.mode;
-        this[_pos] = typeof opt.start === 'number' ? opt.start : undefined;
-        this[_autoClose] =
-            typeof opt.autoClose === 'boolean' ? opt.autoClose : true;
-        // truncating makes no sense when writing into the middle
-        const defaultFlag = this[_pos] !== undefined ? 'r+' : 'w';
-        this[_defaultFlag] = opt.flags === undefined;
-        this[_flags] = opt.flags === undefined ? defaultFlag : opt.flags;
-        if (this[_fd] === undefined) {
-            this[_open]();
-        }
-    }
-    emit(ev, ...args) {
-        if (ev === 'error') {
-            if (this[_errored]) {
-                return false;
-            }
-            this[_errored] = true;
-        }
-        return super.emit(ev, ...args);
-    }
-    get fd() {
-        return this[_fd];
-    }
-    get path() {
-        return this[_path];
-    }
-    [_onerror](er) {
-        this[_close]();
-        this[_writing] = true;
-        this.emit('error', er);
-    }
-    [_open]() {
-        fs_1.default.open(this[_path], this[_flags], this[_mode], (er, fd) => this[_onopen](er, fd));
-    }
-    [_onopen](er, fd) {
-        if (this[_defaultFlag] &&
-            this[_flags] === 'r+' &&
-            er &&
-            er.code === 'ENOENT') {
-            this[_flags] = 'w';
-            this[_open]();
-        }
-        else if (er) {
-            this[_onerror](er);
-        }
-        else {
-            this[_fd] = fd;
-            this.emit('open', fd);
-            if (!this[_writing]) {
-                this[_flush]();
-            }
-        }
-    }
-    end(buf, enc) {
-        if (buf) {
-            //@ts-ignore
-            this.write(buf, enc);
-        }
-        this[_ended] = true;
-        // synthetic after-write logic, where drain/finish live
-        if (!this[_writing] &&
-            !this[_queue].length &&
-            typeof this[_fd] === 'number') {
-            this[_onwrite](null, 0);
-        }
-        return this;
-    }
-    write(buf, enc) {
-        if (typeof buf === 'string') {
-            buf = Buffer.from(buf, enc);
-        }
-        if (this[_ended]) {
-            this.emit('error', new Error('write() after end()'));
-            return false;
-        }
-        if (this[_fd] === undefined || this[_writing] || this[_queue].length) {
-            this[_queue].push(buf);
-            this[_needDrain] = true;
-            return false;
-        }
-        this[_writing] = true;
-        this[_write](buf);
-        return true;
-    }
-    [_write](buf) {
-        fs_1.default.write(this[_fd], buf, 0, buf.length, this[_pos], (er, bw) => this[_onwrite](er, bw));
-    }
-    [_onwrite](er, bw) {
-        if (er) {
-            this[_onerror](er);
-        }
-        else {
-            if (this[_pos] !== undefined && typeof bw === 'number') {
-                this[_pos] += bw;
-            }
-            if (this[_queue].length) {
-                this[_flush]();
-            }
-            else {
-                this[_writing] = false;
-                if (this[_ended] && !this[_finished]) {
-                    this[_finished] = true;
-                    this[_close]();
-                    this.emit('finish');
-                }
-                else if (this[_needDrain]) {
-                    this[_needDrain] = false;
-                    this.emit('drain');
-                }
-            }
-        }
-    }
-    [_flush]() {
-        if (this[_queue].length === 0) {
-            if (this[_ended]) {
-                this[_onwrite](null, 0);
-            }
-        }
-        else if (this[_queue].length === 1) {
-            this[_write](this[_queue].pop());
-        }
-        else {
-            const iovec = this[_queue];
-            this[_queue] = [];
-            writev(this[_fd], iovec, this[_pos], (er, bw) => this[_onwrite](er, bw));
-        }
-    }
-    [_close]() {
-        if (this[_autoClose] && typeof this[_fd] === 'number') {
-            const fd = this[_fd];
-            this[_fd] = undefined;
-            fs_1.default.close(fd, er => er ? this.emit('error', er) : this.emit('close'));
-        }
-    }
-}
-exports.WriteStream = WriteStream;
-class WriteStreamSync extends WriteStream {
-    [_open]() {
-        let fd;
-        // only wrap in a try{} block if we know we'll retry, to avoid
-        // the rethrow obscuring the error's source frame in most cases.
-        if (this[_defaultFlag] && this[_flags] === 'r+') {
-            try {
-                fd = fs_1.default.openSync(this[_path], this[_flags], this[_mode]);
-            }
-            catch (er) {
-                if (er?.code === 'ENOENT') {
-                    this[_flags] = 'w';
-                    return this[_open]();
-                }
-                else {
-                    throw er;
-                }
-            }
-        }
-        else {
-            fd = fs_1.default.openSync(this[_path], this[_flags], this[_mode]);
-        }
-        this[_onopen](null, fd);
-    }
-    [_close]() {
-        if (this[_autoClose] && typeof this[_fd] === 'number') {
-            const fd = this[_fd];
-            this[_fd] = undefined;
-            fs_1.default.closeSync(fd);
-            this.emit('close');
-        }
-    }
-    [_write](buf) {
-        // throw the original, but try to close if it fails
-        let threw = true;
-        try {
-            this[_onwrite](null, fs_1.default.writeSync(this[_fd], buf, 0, buf.length, this[_pos]));
-            threw = false;
-        }
-        finally {
-            if (threw) {
-                try {
-                    this[_close]();
-                }
-                catch {
-                    // ok error
-                }
-            }
-        }
-    }
-}
-exports.WriteStreamSync = WriteStreamSync;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
 /***/ 21521:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -98903,7191 +101119,15 @@ exports.unescape = unescape;
 
 /***/ }),
 
-/***/ 39052:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.chownrSync = exports.chownr = void 0;
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const node_path_1 = __importDefault(__nccwpck_require__(76760));
-const lchownSync = (path, uid, gid) => {
-    try {
-        return node_fs_1.default.lchownSync(path, uid, gid);
-    }
-    catch (er) {
-        if (er?.code !== 'ENOENT')
-            throw er;
-    }
-};
-const chown = (cpath, uid, gid, cb) => {
-    node_fs_1.default.lchown(cpath, uid, gid, er => {
-        // Skip ENOENT error
-        cb(er && er?.code !== 'ENOENT' ? er : null);
-    });
-};
-const chownrKid = (p, child, uid, gid, cb) => {
-    if (child.isDirectory()) {
-        (0, exports.chownr)(node_path_1.default.resolve(p, child.name), uid, gid, (er) => {
-            if (er)
-                return cb(er);
-            const cpath = node_path_1.default.resolve(p, child.name);
-            chown(cpath, uid, gid, cb);
-        });
-    }
-    else {
-        const cpath = node_path_1.default.resolve(p, child.name);
-        chown(cpath, uid, gid, cb);
-    }
-};
-const chownr = (p, uid, gid, cb) => {
-    node_fs_1.default.readdir(p, { withFileTypes: true }, (er, children) => {
-        // any error other than ENOTDIR or ENOTSUP means it's not readable,
-        // or doesn't exist.  give up.
-        if (er) {
-            if (er.code === 'ENOENT')
-                return cb();
-            else if (er.code !== 'ENOTDIR' && er.code !== 'ENOTSUP')
-                return cb(er);
-        }
-        if (er || !children.length)
-            return chown(p, uid, gid, cb);
-        let len = children.length;
-        let errState = null;
-        const then = (er) => {
-            /* c8 ignore start */
-            if (errState)
-                return;
-            /* c8 ignore stop */
-            if (er)
-                return cb((errState = er));
-            if (--len === 0)
-                return chown(p, uid, gid, cb);
-        };
-        for (const child of children) {
-            chownrKid(p, child, uid, gid, then);
-        }
-    });
-};
-exports.chownr = chownr;
-const chownrKidSync = (p, child, uid, gid) => {
-    if (child.isDirectory())
-        (0, exports.chownrSync)(node_path_1.default.resolve(p, child.name), uid, gid);
-    lchownSync(node_path_1.default.resolve(p, child.name), uid, gid);
-};
-const chownrSync = (p, uid, gid) => {
-    let children;
-    try {
-        children = node_fs_1.default.readdirSync(p, { withFileTypes: true });
-    }
-    catch (er) {
-        const e = er;
-        if (e?.code === 'ENOENT')
-            return;
-        else if (e?.code === 'ENOTDIR' || e?.code === 'ENOTSUP')
-            return lchownSync(p, uid, gid);
-        else
-            throw e;
-    }
-    for (const child of children) {
-        chownrKidSync(p, child, uid, gid);
-    }
-    return lchownSync(p, uid, gid);
-};
-exports.chownrSync = chownrSync;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 78275:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Minipass = exports.isWritable = exports.isReadable = exports.isStream = void 0;
-const proc = typeof process === 'object' && process
-    ? process
-    : {
-        stdout: null,
-        stderr: null,
-    };
-const node_events_1 = __nccwpck_require__(78474);
-const node_stream_1 = __importDefault(__nccwpck_require__(57075));
-const node_string_decoder_1 = __nccwpck_require__(46193);
-/**
- * Return true if the argument is a Minipass stream, Node stream, or something
- * else that Minipass can interact with.
- */
-const isStream = (s) => !!s &&
-    typeof s === 'object' &&
-    (s instanceof Minipass ||
-        s instanceof node_stream_1.default ||
-        (0, exports.isReadable)(s) ||
-        (0, exports.isWritable)(s))
-/**
- * Return true if the argument is a valid {@link Minipass.Readable}
- */
-;
-exports.isStream = isStream;
-/**
- * Return true if the argument is a valid {@link Minipass.Readable}
- */
-const isReadable = (s) => !!s &&
-    typeof s === 'object' &&
-    s instanceof node_events_1.EventEmitter &&
-    typeof s.pipe === 'function' &&
-    // node core Writable streams have a pipe() method, but it throws
-    s.pipe !== node_stream_1.default.Writable.prototype.pipe
-/**
- * Return true if the argument is a valid {@link Minipass.Writable}
- */
-;
-exports.isReadable = isReadable;
-/**
- * Return true if the argument is a valid {@link Minipass.Writable}
- */
-const isWritable = (s) => !!s &&
-    typeof s === 'object' &&
-    s instanceof node_events_1.EventEmitter &&
-    typeof s.write === 'function' &&
-    typeof s.end === 'function';
-exports.isWritable = isWritable;
-const EOF = Symbol('EOF');
-const MAYBE_EMIT_END = Symbol('maybeEmitEnd');
-const EMITTED_END = Symbol('emittedEnd');
-const EMITTING_END = Symbol('emittingEnd');
-const EMITTED_ERROR = Symbol('emittedError');
-const CLOSED = Symbol('closed');
-const READ = Symbol('read');
-const FLUSH = Symbol('flush');
-const FLUSHCHUNK = Symbol('flushChunk');
-const ENCODING = Symbol('encoding');
-const DECODER = Symbol('decoder');
-const FLOWING = Symbol('flowing');
-const PAUSED = Symbol('paused');
-const RESUME = Symbol('resume');
-const BUFFER = Symbol('buffer');
-const PIPES = Symbol('pipes');
-const BUFFERLENGTH = Symbol('bufferLength');
-const BUFFERPUSH = Symbol('bufferPush');
-const BUFFERSHIFT = Symbol('bufferShift');
-const OBJECTMODE = Symbol('objectMode');
-// internal event when stream is destroyed
-const DESTROYED = Symbol('destroyed');
-// internal event when stream has an error
-const ERROR = Symbol('error');
-const EMITDATA = Symbol('emitData');
-const EMITEND = Symbol('emitEnd');
-const EMITEND2 = Symbol('emitEnd2');
-const ASYNC = Symbol('async');
-const ABORT = Symbol('abort');
-const ABORTED = Symbol('aborted');
-const SIGNAL = Symbol('signal');
-const DATALISTENERS = Symbol('dataListeners');
-const DISCARDED = Symbol('discarded');
-const defer = (fn) => Promise.resolve().then(fn);
-const nodefer = (fn) => fn();
-const isEndish = (ev) => ev === 'end' || ev === 'finish' || ev === 'prefinish';
-const isArrayBufferLike = (b) => b instanceof ArrayBuffer ||
-    (!!b &&
-        typeof b === 'object' &&
-        b.constructor &&
-        b.constructor.name === 'ArrayBuffer' &&
-        b.byteLength >= 0);
-const isArrayBufferView = (b) => !Buffer.isBuffer(b) && ArrayBuffer.isView(b);
-/**
- * Internal class representing a pipe to a destination stream.
- *
- * @internal
- */
-class Pipe {
-    src;
-    dest;
-    opts;
-    ondrain;
-    constructor(src, dest, opts) {
-        this.src = src;
-        this.dest = dest;
-        this.opts = opts;
-        this.ondrain = () => src[RESUME]();
-        this.dest.on('drain', this.ondrain);
-    }
-    unpipe() {
-        this.dest.removeListener('drain', this.ondrain);
-    }
-    // only here for the prototype
-    /* c8 ignore start */
-    proxyErrors(_er) { }
-    /* c8 ignore stop */
-    end() {
-        this.unpipe();
-        if (this.opts.end)
-            this.dest.end();
-    }
-}
-/**
- * Internal class representing a pipe to a destination stream where
- * errors are proxied.
- *
- * @internal
- */
-class PipeProxyErrors extends Pipe {
-    unpipe() {
-        this.src.removeListener('error', this.proxyErrors);
-        super.unpipe();
-    }
-    constructor(src, dest, opts) {
-        super(src, dest, opts);
-        this.proxyErrors = (er) => this.dest.emit('error', er);
-        src.on('error', this.proxyErrors);
-    }
-}
-const isObjectModeOptions = (o) => !!o.objectMode;
-const isEncodingOptions = (o) => !o.objectMode && !!o.encoding && o.encoding !== 'buffer';
-/**
- * Main export, the Minipass class
- *
- * `RType` is the type of data emitted, defaults to Buffer
- *
- * `WType` is the type of data to be written, if RType is buffer or string,
- * then any {@link Minipass.ContiguousData} is allowed.
- *
- * `Events` is the set of event handler signatures that this object
- * will emit, see {@link Minipass.Events}
- */
-class Minipass extends node_events_1.EventEmitter {
-    [FLOWING] = false;
-    [PAUSED] = false;
-    [PIPES] = [];
-    [BUFFER] = [];
-    [OBJECTMODE];
-    [ENCODING];
-    [ASYNC];
-    [DECODER];
-    [EOF] = false;
-    [EMITTED_END] = false;
-    [EMITTING_END] = false;
-    [CLOSED] = false;
-    [EMITTED_ERROR] = null;
-    [BUFFERLENGTH] = 0;
-    [DESTROYED] = false;
-    [SIGNAL];
-    [ABORTED] = false;
-    [DATALISTENERS] = 0;
-    [DISCARDED] = false;
-    /**
-     * true if the stream can be written
-     */
-    writable = true;
-    /**
-     * true if the stream can be read
-     */
-    readable = true;
-    /**
-     * If `RType` is Buffer, then options do not need to be provided.
-     * Otherwise, an options object must be provided to specify either
-     * {@link Minipass.SharedOptions.objectMode} or
-     * {@link Minipass.SharedOptions.encoding}, as appropriate.
-     */
-    constructor(...args) {
-        const options = (args[0] ||
-            {});
-        super();
-        if (options.objectMode && typeof options.encoding === 'string') {
-            throw new TypeError('Encoding and objectMode may not be used together');
-        }
-        if (isObjectModeOptions(options)) {
-            this[OBJECTMODE] = true;
-            this[ENCODING] = null;
-        }
-        else if (isEncodingOptions(options)) {
-            this[ENCODING] = options.encoding;
-            this[OBJECTMODE] = false;
-        }
-        else {
-            this[OBJECTMODE] = false;
-            this[ENCODING] = null;
-        }
-        this[ASYNC] = !!options.async;
-        this[DECODER] = this[ENCODING]
-            ? new node_string_decoder_1.StringDecoder(this[ENCODING])
-            : null;
-        //@ts-ignore - private option for debugging and testing
-        if (options && options.debugExposeBuffer === true) {
-            Object.defineProperty(this, 'buffer', { get: () => this[BUFFER] });
-        }
-        //@ts-ignore - private option for debugging and testing
-        if (options && options.debugExposePipes === true) {
-            Object.defineProperty(this, 'pipes', { get: () => this[PIPES] });
-        }
-        const { signal } = options;
-        if (signal) {
-            this[SIGNAL] = signal;
-            if (signal.aborted) {
-                this[ABORT]();
-            }
-            else {
-                signal.addEventListener('abort', () => this[ABORT]());
-            }
-        }
-    }
-    /**
-     * The amount of data stored in the buffer waiting to be read.
-     *
-     * For Buffer strings, this will be the total byte length.
-     * For string encoding streams, this will be the string character length,
-     * according to JavaScript's `string.length` logic.
-     * For objectMode streams, this is a count of the items waiting to be
-     * emitted.
-     */
-    get bufferLength() {
-        return this[BUFFERLENGTH];
-    }
-    /**
-     * The `BufferEncoding` currently in use, or `null`
-     */
-    get encoding() {
-        return this[ENCODING];
-    }
-    /**
-     * @deprecated - This is a read only property
-     */
-    set encoding(_enc) {
-        throw new Error('Encoding must be set at instantiation time');
-    }
-    /**
-     * @deprecated - Encoding may only be set at instantiation time
-     */
-    setEncoding(_enc) {
-        throw new Error('Encoding must be set at instantiation time');
-    }
-    /**
-     * True if this is an objectMode stream
-     */
-    get objectMode() {
-        return this[OBJECTMODE];
-    }
-    /**
-     * @deprecated - This is a read-only property
-     */
-    set objectMode(_om) {
-        throw new Error('objectMode must be set at instantiation time');
-    }
-    /**
-     * true if this is an async stream
-     */
-    get ['async']() {
-        return this[ASYNC];
-    }
-    /**
-     * Set to true to make this stream async.
-     *
-     * Once set, it cannot be unset, as this would potentially cause incorrect
-     * behavior.  Ie, a sync stream can be made async, but an async stream
-     * cannot be safely made sync.
-     */
-    set ['async'](a) {
-        this[ASYNC] = this[ASYNC] || !!a;
-    }
-    // drop everything and get out of the flow completely
-    [ABORT]() {
-        this[ABORTED] = true;
-        this.emit('abort', this[SIGNAL]?.reason);
-        this.destroy(this[SIGNAL]?.reason);
-    }
-    /**
-     * True if the stream has been aborted.
-     */
-    get aborted() {
-        return this[ABORTED];
-    }
-    /**
-     * No-op setter. Stream aborted status is set via the AbortSignal provided
-     * in the constructor options.
-     */
-    set aborted(_) { }
-    write(chunk, encoding, cb) {
-        if (this[ABORTED])
-            return false;
-        if (this[EOF])
-            throw new Error('write after end');
-        if (this[DESTROYED]) {
-            this.emit('error', Object.assign(new Error('Cannot call write after a stream was destroyed'), { code: 'ERR_STREAM_DESTROYED' }));
-            return true;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = 'utf8';
-        }
-        if (!encoding)
-            encoding = 'utf8';
-        const fn = this[ASYNC] ? defer : nodefer;
-        // convert array buffers and typed array views into buffers
-        // at some point in the future, we may want to do the opposite!
-        // leave strings and buffers as-is
-        // anything is only allowed if in object mode, so throw
-        if (!this[OBJECTMODE] && !Buffer.isBuffer(chunk)) {
-            if (isArrayBufferView(chunk)) {
-                //@ts-ignore - sinful unsafe type changing
-                chunk = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-            }
-            else if (isArrayBufferLike(chunk)) {
-                //@ts-ignore - sinful unsafe type changing
-                chunk = Buffer.from(chunk);
-            }
-            else if (typeof chunk !== 'string') {
-                throw new Error('Non-contiguous data written to non-objectMode stream');
-            }
-        }
-        // handle object mode up front, since it's simpler
-        // this yields better performance, fewer checks later.
-        if (this[OBJECTMODE]) {
-            // maybe impossible?
-            /* c8 ignore start */
-            if (this[FLOWING] && this[BUFFERLENGTH] !== 0)
-                this[FLUSH](true);
-            /* c8 ignore stop */
-            if (this[FLOWING])
-                this.emit('data', chunk);
-            else
-                this[BUFFERPUSH](chunk);
-            if (this[BUFFERLENGTH] !== 0)
-                this.emit('readable');
-            if (cb)
-                fn(cb);
-            return this[FLOWING];
-        }
-        // at this point the chunk is a buffer or string
-        // don't buffer it up or send it to the decoder
-        if (!chunk.length) {
-            if (this[BUFFERLENGTH] !== 0)
-                this.emit('readable');
-            if (cb)
-                fn(cb);
-            return this[FLOWING];
-        }
-        // fast-path writing strings of same encoding to a stream with
-        // an empty buffer, skipping the buffer/decoder dance
-        if (typeof chunk === 'string' &&
-            // unless it is a string already ready for us to use
-            !(encoding === this[ENCODING] && !this[DECODER]?.lastNeed)) {
-            //@ts-ignore - sinful unsafe type change
-            chunk = Buffer.from(chunk, encoding);
-        }
-        if (Buffer.isBuffer(chunk) && this[ENCODING]) {
-            //@ts-ignore - sinful unsafe type change
-            chunk = this[DECODER].write(chunk);
-        }
-        // Note: flushing CAN potentially switch us into not-flowing mode
-        if (this[FLOWING] && this[BUFFERLENGTH] !== 0)
-            this[FLUSH](true);
-        if (this[FLOWING])
-            this.emit('data', chunk);
-        else
-            this[BUFFERPUSH](chunk);
-        if (this[BUFFERLENGTH] !== 0)
-            this.emit('readable');
-        if (cb)
-            fn(cb);
-        return this[FLOWING];
-    }
-    /**
-     * Low-level explicit read method.
-     *
-     * In objectMode, the argument is ignored, and one item is returned if
-     * available.
-     *
-     * `n` is the number of bytes (or in the case of encoding streams,
-     * characters) to consume. If `n` is not provided, then the entire buffer
-     * is returned, or `null` is returned if no data is available.
-     *
-     * If `n` is greater that the amount of data in the internal buffer,
-     * then `null` is returned.
-     */
-    read(n) {
-        if (this[DESTROYED])
-            return null;
-        this[DISCARDED] = false;
-        if (this[BUFFERLENGTH] === 0 ||
-            n === 0 ||
-            (n && n > this[BUFFERLENGTH])) {
-            this[MAYBE_EMIT_END]();
-            return null;
-        }
-        if (this[OBJECTMODE])
-            n = null;
-        if (this[BUFFER].length > 1 && !this[OBJECTMODE]) {
-            // not object mode, so if we have an encoding, then RType is string
-            // otherwise, must be Buffer
-            this[BUFFER] = [
-                (this[ENCODING]
-                    ? this[BUFFER].join('')
-                    : Buffer.concat(this[BUFFER], this[BUFFERLENGTH])),
-            ];
-        }
-        const ret = this[READ](n || null, this[BUFFER][0]);
-        this[MAYBE_EMIT_END]();
-        return ret;
-    }
-    [READ](n, chunk) {
-        if (this[OBJECTMODE])
-            this[BUFFERSHIFT]();
-        else {
-            const c = chunk;
-            if (n === c.length || n === null)
-                this[BUFFERSHIFT]();
-            else if (typeof c === 'string') {
-                this[BUFFER][0] = c.slice(n);
-                chunk = c.slice(0, n);
-                this[BUFFERLENGTH] -= n;
-            }
-            else {
-                this[BUFFER][0] = c.subarray(n);
-                chunk = c.subarray(0, n);
-                this[BUFFERLENGTH] -= n;
-            }
-        }
-        this.emit('data', chunk);
-        if (!this[BUFFER].length && !this[EOF])
-            this.emit('drain');
-        return chunk;
-    }
-    end(chunk, encoding, cb) {
-        if (typeof chunk === 'function') {
-            cb = chunk;
-            chunk = undefined;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = 'utf8';
-        }
-        if (chunk !== undefined)
-            this.write(chunk, encoding);
-        if (cb)
-            this.once('end', cb);
-        this[EOF] = true;
-        this.writable = false;
-        // if we haven't written anything, then go ahead and emit,
-        // even if we're not reading.
-        // we'll re-emit if a new 'end' listener is added anyway.
-        // This makes MP more suitable to write-only use cases.
-        if (this[FLOWING] || !this[PAUSED])
-            this[MAYBE_EMIT_END]();
-        return this;
-    }
-    // don't let the internal resume be overwritten
-    [RESUME]() {
-        if (this[DESTROYED])
-            return;
-        if (!this[DATALISTENERS] && !this[PIPES].length) {
-            this[DISCARDED] = true;
-        }
-        this[PAUSED] = false;
-        this[FLOWING] = true;
-        this.emit('resume');
-        if (this[BUFFER].length)
-            this[FLUSH]();
-        else if (this[EOF])
-            this[MAYBE_EMIT_END]();
-        else
-            this.emit('drain');
-    }
-    /**
-     * Resume the stream if it is currently in a paused state
-     *
-     * If called when there are no pipe destinations or `data` event listeners,
-     * this will place the stream in a "discarded" state, where all data will
-     * be thrown away. The discarded state is removed if a pipe destination or
-     * data handler is added, if pause() is called, or if any synchronous or
-     * asynchronous iteration is started.
-     */
-    resume() {
-        return this[RESUME]();
-    }
-    /**
-     * Pause the stream
-     */
-    pause() {
-        this[FLOWING] = false;
-        this[PAUSED] = true;
-        this[DISCARDED] = false;
-    }
-    /**
-     * true if the stream has been forcibly destroyed
-     */
-    get destroyed() {
-        return this[DESTROYED];
-    }
-    /**
-     * true if the stream is currently in a flowing state, meaning that
-     * any writes will be immediately emitted.
-     */
-    get flowing() {
-        return this[FLOWING];
-    }
-    /**
-     * true if the stream is currently in a paused state
-     */
-    get paused() {
-        return this[PAUSED];
-    }
-    [BUFFERPUSH](chunk) {
-        if (this[OBJECTMODE])
-            this[BUFFERLENGTH] += 1;
-        else
-            this[BUFFERLENGTH] += chunk.length;
-        this[BUFFER].push(chunk);
-    }
-    [BUFFERSHIFT]() {
-        if (this[OBJECTMODE])
-            this[BUFFERLENGTH] -= 1;
-        else
-            this[BUFFERLENGTH] -= this[BUFFER][0].length;
-        return this[BUFFER].shift();
-    }
-    [FLUSH](noDrain = false) {
-        do { } while (this[FLUSHCHUNK](this[BUFFERSHIFT]()) &&
-            this[BUFFER].length);
-        if (!noDrain && !this[BUFFER].length && !this[EOF])
-            this.emit('drain');
-    }
-    [FLUSHCHUNK](chunk) {
-        this.emit('data', chunk);
-        return this[FLOWING];
-    }
-    /**
-     * Pipe all data emitted by this stream into the destination provided.
-     *
-     * Triggers the flow of data.
-     */
-    pipe(dest, opts) {
-        if (this[DESTROYED])
-            return dest;
-        this[DISCARDED] = false;
-        const ended = this[EMITTED_END];
-        opts = opts || {};
-        if (dest === proc.stdout || dest === proc.stderr)
-            opts.end = false;
-        else
-            opts.end = opts.end !== false;
-        opts.proxyErrors = !!opts.proxyErrors;
-        // piping an ended stream ends immediately
-        if (ended) {
-            if (opts.end)
-                dest.end();
-        }
-        else {
-            // "as" here just ignores the WType, which pipes don't care about,
-            // since they're only consuming from us, and writing to the dest
-            this[PIPES].push(!opts.proxyErrors
-                ? new Pipe(this, dest, opts)
-                : new PipeProxyErrors(this, dest, opts));
-            if (this[ASYNC])
-                defer(() => this[RESUME]());
-            else
-                this[RESUME]();
-        }
-        return dest;
-    }
-    /**
-     * Fully unhook a piped destination stream.
-     *
-     * If the destination stream was the only consumer of this stream (ie,
-     * there are no other piped destinations or `'data'` event listeners)
-     * then the flow of data will stop until there is another consumer or
-     * {@link Minipass#resume} is explicitly called.
-     */
-    unpipe(dest) {
-        const p = this[PIPES].find(p => p.dest === dest);
-        if (p) {
-            if (this[PIPES].length === 1) {
-                if (this[FLOWING] && this[DATALISTENERS] === 0) {
-                    this[FLOWING] = false;
-                }
-                this[PIPES] = [];
-            }
-            else
-                this[PIPES].splice(this[PIPES].indexOf(p), 1);
-            p.unpipe();
-        }
-    }
-    /**
-     * Alias for {@link Minipass#on}
-     */
-    addListener(ev, handler) {
-        return this.on(ev, handler);
-    }
-    /**
-     * Mostly identical to `EventEmitter.on`, with the following
-     * behavior differences to prevent data loss and unnecessary hangs:
-     *
-     * - Adding a 'data' event handler will trigger the flow of data
-     *
-     * - Adding a 'readable' event handler when there is data waiting to be read
-     *   will cause 'readable' to be emitted immediately.
-     *
-     * - Adding an 'endish' event handler ('end', 'finish', etc.) which has
-     *   already passed will cause the event to be emitted immediately and all
-     *   handlers removed.
-     *
-     * - Adding an 'error' event handler after an error has been emitted will
-     *   cause the event to be re-emitted immediately with the error previously
-     *   raised.
-     */
-    on(ev, handler) {
-        const ret = super.on(ev, handler);
-        if (ev === 'data') {
-            this[DISCARDED] = false;
-            this[DATALISTENERS]++;
-            if (!this[PIPES].length && !this[FLOWING]) {
-                this[RESUME]();
-            }
-        }
-        else if (ev === 'readable' && this[BUFFERLENGTH] !== 0) {
-            super.emit('readable');
-        }
-        else if (isEndish(ev) && this[EMITTED_END]) {
-            super.emit(ev);
-            this.removeAllListeners(ev);
-        }
-        else if (ev === 'error' && this[EMITTED_ERROR]) {
-            const h = handler;
-            if (this[ASYNC])
-                defer(() => h.call(this, this[EMITTED_ERROR]));
-            else
-                h.call(this, this[EMITTED_ERROR]);
-        }
-        return ret;
-    }
-    /**
-     * Alias for {@link Minipass#off}
-     */
-    removeListener(ev, handler) {
-        return this.off(ev, handler);
-    }
-    /**
-     * Mostly identical to `EventEmitter.off`
-     *
-     * If a 'data' event handler is removed, and it was the last consumer
-     * (ie, there are no pipe destinations or other 'data' event listeners),
-     * then the flow of data will stop until there is another consumer or
-     * {@link Minipass#resume} is explicitly called.
-     */
-    off(ev, handler) {
-        const ret = super.off(ev, handler);
-        // if we previously had listeners, and now we don't, and we don't
-        // have any pipes, then stop the flow, unless it's been explicitly
-        // put in a discarded flowing state via stream.resume().
-        if (ev === 'data') {
-            this[DATALISTENERS] = this.listeners('data').length;
-            if (this[DATALISTENERS] === 0 &&
-                !this[DISCARDED] &&
-                !this[PIPES].length) {
-                this[FLOWING] = false;
-            }
-        }
-        return ret;
-    }
-    /**
-     * Mostly identical to `EventEmitter.removeAllListeners`
-     *
-     * If all 'data' event handlers are removed, and they were the last consumer
-     * (ie, there are no pipe destinations), then the flow of data will stop
-     * until there is another consumer or {@link Minipass#resume} is explicitly
-     * called.
-     */
-    removeAllListeners(ev) {
-        const ret = super.removeAllListeners(ev);
-        if (ev === 'data' || ev === undefined) {
-            this[DATALISTENERS] = 0;
-            if (!this[DISCARDED] && !this[PIPES].length) {
-                this[FLOWING] = false;
-            }
-        }
-        return ret;
-    }
-    /**
-     * true if the 'end' event has been emitted
-     */
-    get emittedEnd() {
-        return this[EMITTED_END];
-    }
-    [MAYBE_EMIT_END]() {
-        if (!this[EMITTING_END] &&
-            !this[EMITTED_END] &&
-            !this[DESTROYED] &&
-            this[BUFFER].length === 0 &&
-            this[EOF]) {
-            this[EMITTING_END] = true;
-            this.emit('end');
-            this.emit('prefinish');
-            this.emit('finish');
-            if (this[CLOSED])
-                this.emit('close');
-            this[EMITTING_END] = false;
-        }
-    }
-    /**
-     * Mostly identical to `EventEmitter.emit`, with the following
-     * behavior differences to prevent data loss and unnecessary hangs:
-     *
-     * If the stream has been destroyed, and the event is something other
-     * than 'close' or 'error', then `false` is returned and no handlers
-     * are called.
-     *
-     * If the event is 'end', and has already been emitted, then the event
-     * is ignored. If the stream is in a paused or non-flowing state, then
-     * the event will be deferred until data flow resumes. If the stream is
-     * async, then handlers will be called on the next tick rather than
-     * immediately.
-     *
-     * If the event is 'close', and 'end' has not yet been emitted, then
-     * the event will be deferred until after 'end' is emitted.
-     *
-     * If the event is 'error', and an AbortSignal was provided for the stream,
-     * and there are no listeners, then the event is ignored, matching the
-     * behavior of node core streams in the presense of an AbortSignal.
-     *
-     * If the event is 'finish' or 'prefinish', then all listeners will be
-     * removed after emitting the event, to prevent double-firing.
-     */
-    emit(ev, ...args) {
-        const data = args[0];
-        // error and close are only events allowed after calling destroy()
-        if (ev !== 'error' &&
-            ev !== 'close' &&
-            ev !== DESTROYED &&
-            this[DESTROYED]) {
-            return false;
-        }
-        else if (ev === 'data') {
-            return !this[OBJECTMODE] && !data
-                ? false
-                : this[ASYNC]
-                    ? (defer(() => this[EMITDATA](data)), true)
-                    : this[EMITDATA](data);
-        }
-        else if (ev === 'end') {
-            return this[EMITEND]();
-        }
-        else if (ev === 'close') {
-            this[CLOSED] = true;
-            // don't emit close before 'end' and 'finish'
-            if (!this[EMITTED_END] && !this[DESTROYED])
-                return false;
-            const ret = super.emit('close');
-            this.removeAllListeners('close');
-            return ret;
-        }
-        else if (ev === 'error') {
-            this[EMITTED_ERROR] = data;
-            super.emit(ERROR, data);
-            const ret = !this[SIGNAL] || this.listeners('error').length
-                ? super.emit('error', data)
-                : false;
-            this[MAYBE_EMIT_END]();
-            return ret;
-        }
-        else if (ev === 'resume') {
-            const ret = super.emit('resume');
-            this[MAYBE_EMIT_END]();
-            return ret;
-        }
-        else if (ev === 'finish' || ev === 'prefinish') {
-            const ret = super.emit(ev);
-            this.removeAllListeners(ev);
-            return ret;
-        }
-        // Some other unknown event
-        const ret = super.emit(ev, ...args);
-        this[MAYBE_EMIT_END]();
-        return ret;
-    }
-    [EMITDATA](data) {
-        for (const p of this[PIPES]) {
-            if (p.dest.write(data) === false)
-                this.pause();
-        }
-        const ret = this[DISCARDED] ? false : super.emit('data', data);
-        this[MAYBE_EMIT_END]();
-        return ret;
-    }
-    [EMITEND]() {
-        if (this[EMITTED_END])
-            return false;
-        this[EMITTED_END] = true;
-        this.readable = false;
-        return this[ASYNC]
-            ? (defer(() => this[EMITEND2]()), true)
-            : this[EMITEND2]();
-    }
-    [EMITEND2]() {
-        if (this[DECODER]) {
-            const data = this[DECODER].end();
-            if (data) {
-                for (const p of this[PIPES]) {
-                    p.dest.write(data);
-                }
-                if (!this[DISCARDED])
-                    super.emit('data', data);
-            }
-        }
-        for (const p of this[PIPES]) {
-            p.end();
-        }
-        const ret = super.emit('end');
-        this.removeAllListeners('end');
-        return ret;
-    }
-    /**
-     * Return a Promise that resolves to an array of all emitted data once
-     * the stream ends.
-     */
-    async collect() {
-        const buf = Object.assign([], {
-            dataLength: 0,
-        });
-        if (!this[OBJECTMODE])
-            buf.dataLength = 0;
-        // set the promise first, in case an error is raised
-        // by triggering the flow here.
-        const p = this.promise();
-        this.on('data', c => {
-            buf.push(c);
-            if (!this[OBJECTMODE])
-                buf.dataLength += c.length;
-        });
-        await p;
-        return buf;
-    }
-    /**
-     * Return a Promise that resolves to the concatenation of all emitted data
-     * once the stream ends.
-     *
-     * Not allowed on objectMode streams.
-     */
-    async concat() {
-        if (this[OBJECTMODE]) {
-            throw new Error('cannot concat in objectMode');
-        }
-        const buf = await this.collect();
-        return (this[ENCODING]
-            ? buf.join('')
-            : Buffer.concat(buf, buf.dataLength));
-    }
-    /**
-     * Return a void Promise that resolves once the stream ends.
-     */
-    async promise() {
-        return new Promise((resolve, reject) => {
-            this.on(DESTROYED, () => reject(new Error('stream destroyed')));
-            this.on('error', er => reject(er));
-            this.on('end', () => resolve());
-        });
-    }
-    /**
-     * Asynchronous `for await of` iteration.
-     *
-     * This will continue emitting all chunks until the stream terminates.
-     */
-    [Symbol.asyncIterator]() {
-        // set this up front, in case the consumer doesn't call next()
-        // right away.
-        this[DISCARDED] = false;
-        let stopped = false;
-        const stop = async () => {
-            this.pause();
-            stopped = true;
-            return { value: undefined, done: true };
-        };
-        const next = () => {
-            if (stopped)
-                return stop();
-            const res = this.read();
-            if (res !== null)
-                return Promise.resolve({ done: false, value: res });
-            if (this[EOF])
-                return stop();
-            let resolve;
-            let reject;
-            const onerr = (er) => {
-                this.off('data', ondata);
-                this.off('end', onend);
-                this.off(DESTROYED, ondestroy);
-                stop();
-                reject(er);
-            };
-            const ondata = (value) => {
-                this.off('error', onerr);
-                this.off('end', onend);
-                this.off(DESTROYED, ondestroy);
-                this.pause();
-                resolve({ value, done: !!this[EOF] });
-            };
-            const onend = () => {
-                this.off('error', onerr);
-                this.off('data', ondata);
-                this.off(DESTROYED, ondestroy);
-                stop();
-                resolve({ done: true, value: undefined });
-            };
-            const ondestroy = () => onerr(new Error('stream destroyed'));
-            return new Promise((res, rej) => {
-                reject = rej;
-                resolve = res;
-                this.once(DESTROYED, ondestroy);
-                this.once('error', onerr);
-                this.once('end', onend);
-                this.once('data', ondata);
-            });
-        };
-        return {
-            next,
-            throw: stop,
-            return: stop,
-            [Symbol.asyncIterator]() {
-                return this;
-            },
-            [Symbol.asyncDispose]: async () => { },
-        };
-    }
-    /**
-     * Synchronous `for of` iteration.
-     *
-     * The iteration will terminate when the internal buffer runs out, even
-     * if the stream has not yet terminated.
-     */
-    [Symbol.iterator]() {
-        // set this up front, in case the consumer doesn't call next()
-        // right away.
-        this[DISCARDED] = false;
-        let stopped = false;
-        const stop = () => {
-            this.pause();
-            this.off(ERROR, stop);
-            this.off(DESTROYED, stop);
-            this.off('end', stop);
-            stopped = true;
-            return { done: true, value: undefined };
-        };
-        const next = () => {
-            if (stopped)
-                return stop();
-            const value = this.read();
-            return value === null ? stop() : { done: false, value };
-        };
-        this.once('end', stop);
-        this.once(ERROR, stop);
-        this.once(DESTROYED, stop);
-        return {
-            next,
-            throw: stop,
-            return: stop,
-            [Symbol.iterator]() {
-                return this;
-            },
-            [Symbol.dispose]: () => { },
-        };
-    }
-    /**
-     * Destroy a stream, preventing it from being used for any further purpose.
-     *
-     * If the stream has a `close()` method, then it will be called on
-     * destruction.
-     *
-     * After destruction, any attempt to write data, read data, or emit most
-     * events will be ignored.
-     *
-     * If an error argument is provided, then it will be emitted in an
-     * 'error' event.
-     */
-    destroy(er) {
-        if (this[DESTROYED]) {
-            if (er)
-                this.emit('error', er);
-            else
-                this.emit(DESTROYED);
-            return this;
-        }
-        this[DESTROYED] = true;
-        this[DISCARDED] = true;
-        // throw away all buffered data, it's never coming out
-        this[BUFFER].length = 0;
-        this[BUFFERLENGTH] = 0;
-        const wc = this;
-        if (typeof wc.close === 'function' && !this[CLOSED])
-            wc.close();
-        if (er)
-            this.emit('error', er);
-        // if no error to emit, still reject pending promises
-        else
-            this.emit(DESTROYED);
-        return this;
-    }
-    /**
-     * Alias for {@link isStream}
-     *
-     * Former export location, maintained for backwards compatibility.
-     *
-     * @deprecated
-     */
-    static get isStream() {
-        return exports.isStream;
-    }
-}
-exports.Minipass = Minipass;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 5474:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.constants = void 0;
-// Update with any zlib constants that are added or changed in the future.
-// Node v6 didn't export this, so we just hard code the version and rely
-// on all the other hard-coded values from zlib v4736.  When node v6
-// support drops, we can just export the realZlibConstants object.
-const zlib_1 = __importDefault(__nccwpck_require__(43106));
-/* c8 ignore start */
-const realZlibConstants = zlib_1.default.constants || { ZLIB_VERNUM: 4736 };
-/* c8 ignore stop */
-exports.constants = Object.freeze(Object.assign(Object.create(null), {
-    Z_NO_FLUSH: 0,
-    Z_PARTIAL_FLUSH: 1,
-    Z_SYNC_FLUSH: 2,
-    Z_FULL_FLUSH: 3,
-    Z_FINISH: 4,
-    Z_BLOCK: 5,
-    Z_OK: 0,
-    Z_STREAM_END: 1,
-    Z_NEED_DICT: 2,
-    Z_ERRNO: -1,
-    Z_STREAM_ERROR: -2,
-    Z_DATA_ERROR: -3,
-    Z_MEM_ERROR: -4,
-    Z_BUF_ERROR: -5,
-    Z_VERSION_ERROR: -6,
-    Z_NO_COMPRESSION: 0,
-    Z_BEST_SPEED: 1,
-    Z_BEST_COMPRESSION: 9,
-    Z_DEFAULT_COMPRESSION: -1,
-    Z_FILTERED: 1,
-    Z_HUFFMAN_ONLY: 2,
-    Z_RLE: 3,
-    Z_FIXED: 4,
-    Z_DEFAULT_STRATEGY: 0,
-    DEFLATE: 1,
-    INFLATE: 2,
-    GZIP: 3,
-    GUNZIP: 4,
-    DEFLATERAW: 5,
-    INFLATERAW: 6,
-    UNZIP: 7,
-    BROTLI_DECODE: 8,
-    BROTLI_ENCODE: 9,
-    Z_MIN_WINDOWBITS: 8,
-    Z_MAX_WINDOWBITS: 15,
-    Z_DEFAULT_WINDOWBITS: 15,
-    Z_MIN_CHUNK: 64,
-    Z_MAX_CHUNK: Infinity,
-    Z_DEFAULT_CHUNK: 16384,
-    Z_MIN_MEMLEVEL: 1,
-    Z_MAX_MEMLEVEL: 9,
-    Z_DEFAULT_MEMLEVEL: 8,
-    Z_MIN_LEVEL: -1,
-    Z_MAX_LEVEL: 9,
-    Z_DEFAULT_LEVEL: -1,
-    BROTLI_OPERATION_PROCESS: 0,
-    BROTLI_OPERATION_FLUSH: 1,
-    BROTLI_OPERATION_FINISH: 2,
-    BROTLI_OPERATION_EMIT_METADATA: 3,
-    BROTLI_MODE_GENERIC: 0,
-    BROTLI_MODE_TEXT: 1,
-    BROTLI_MODE_FONT: 2,
-    BROTLI_DEFAULT_MODE: 0,
-    BROTLI_MIN_QUALITY: 0,
-    BROTLI_MAX_QUALITY: 11,
-    BROTLI_DEFAULT_QUALITY: 11,
-    BROTLI_MIN_WINDOW_BITS: 10,
-    BROTLI_MAX_WINDOW_BITS: 24,
-    BROTLI_LARGE_MAX_WINDOW_BITS: 30,
-    BROTLI_DEFAULT_WINDOW: 22,
-    BROTLI_MIN_INPUT_BLOCK_BITS: 16,
-    BROTLI_MAX_INPUT_BLOCK_BITS: 24,
-    BROTLI_PARAM_MODE: 0,
-    BROTLI_PARAM_QUALITY: 1,
-    BROTLI_PARAM_LGWIN: 2,
-    BROTLI_PARAM_LGBLOCK: 3,
-    BROTLI_PARAM_DISABLE_LITERAL_CONTEXT_MODELING: 4,
-    BROTLI_PARAM_SIZE_HINT: 5,
-    BROTLI_PARAM_LARGE_WINDOW: 6,
-    BROTLI_PARAM_NPOSTFIX: 7,
-    BROTLI_PARAM_NDIRECT: 8,
-    BROTLI_DECODER_RESULT_ERROR: 0,
-    BROTLI_DECODER_RESULT_SUCCESS: 1,
-    BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT: 2,
-    BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT: 3,
-    BROTLI_DECODER_PARAM_DISABLE_RING_BUFFER_REALLOCATION: 0,
-    BROTLI_DECODER_PARAM_LARGE_WINDOW: 1,
-    BROTLI_DECODER_NO_ERROR: 0,
-    BROTLI_DECODER_SUCCESS: 1,
-    BROTLI_DECODER_NEEDS_MORE_INPUT: 2,
-    BROTLI_DECODER_NEEDS_MORE_OUTPUT: 3,
-    BROTLI_DECODER_ERROR_FORMAT_EXUBERANT_NIBBLE: -1,
-    BROTLI_DECODER_ERROR_FORMAT_RESERVED: -2,
-    BROTLI_DECODER_ERROR_FORMAT_EXUBERANT_META_NIBBLE: -3,
-    BROTLI_DECODER_ERROR_FORMAT_SIMPLE_HUFFMAN_ALPHABET: -4,
-    BROTLI_DECODER_ERROR_FORMAT_SIMPLE_HUFFMAN_SAME: -5,
-    BROTLI_DECODER_ERROR_FORMAT_CL_SPACE: -6,
-    BROTLI_DECODER_ERROR_FORMAT_HUFFMAN_SPACE: -7,
-    BROTLI_DECODER_ERROR_FORMAT_CONTEXT_MAP_REPEAT: -8,
-    BROTLI_DECODER_ERROR_FORMAT_BLOCK_LENGTH_1: -9,
-    BROTLI_DECODER_ERROR_FORMAT_BLOCK_LENGTH_2: -10,
-    BROTLI_DECODER_ERROR_FORMAT_TRANSFORM: -11,
-    BROTLI_DECODER_ERROR_FORMAT_DICTIONARY: -12,
-    BROTLI_DECODER_ERROR_FORMAT_WINDOW_BITS: -13,
-    BROTLI_DECODER_ERROR_FORMAT_PADDING_1: -14,
-    BROTLI_DECODER_ERROR_FORMAT_PADDING_2: -15,
-    BROTLI_DECODER_ERROR_FORMAT_DISTANCE: -16,
-    BROTLI_DECODER_ERROR_DICTIONARY_NOT_SET: -19,
-    BROTLI_DECODER_ERROR_INVALID_ARGUMENTS: -20,
-    BROTLI_DECODER_ERROR_ALLOC_CONTEXT_MODES: -21,
-    BROTLI_DECODER_ERROR_ALLOC_TREE_GROUPS: -22,
-    BROTLI_DECODER_ERROR_ALLOC_CONTEXT_MAP: -25,
-    BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_1: -26,
-    BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_2: -27,
-    BROTLI_DECODER_ERROR_ALLOC_BLOCK_TYPE_TREES: -30,
-    BROTLI_DECODER_ERROR_UNREACHABLE: -31,
-}, realZlibConstants));
-//# sourceMappingURL=constants.js.map
-
-/***/ }),
-
-/***/ 37119:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ZstdDecompress = exports.ZstdCompress = exports.BrotliDecompress = exports.BrotliCompress = exports.Unzip = exports.InflateRaw = exports.DeflateRaw = exports.Gunzip = exports.Gzip = exports.Inflate = exports.Deflate = exports.Zlib = exports.ZlibError = exports.constants = void 0;
-const assert_1 = __importDefault(__nccwpck_require__(42613));
-const buffer_1 = __nccwpck_require__(20181);
-const minipass_1 = __nccwpck_require__(78275);
-const realZlib = __importStar(__nccwpck_require__(43106));
-const constants_js_1 = __nccwpck_require__(5474);
-var constants_js_2 = __nccwpck_require__(5474);
-Object.defineProperty(exports, "constants", ({ enumerable: true, get: function () { return constants_js_2.constants; } }));
-const OriginalBufferConcat = buffer_1.Buffer.concat;
-const desc = Object.getOwnPropertyDescriptor(buffer_1.Buffer, 'concat');
-const noop = (args) => args;
-const passthroughBufferConcat = desc?.writable === true || desc?.set !== undefined
-    ? (makeNoOp) => {
-        buffer_1.Buffer.concat = makeNoOp ? noop : OriginalBufferConcat;
-    }
-    : (_) => { };
-const _superWrite = Symbol('_superWrite');
-class ZlibError extends Error {
-    code;
-    errno;
-    constructor(err, origin) {
-        super('zlib: ' + err.message, { cause: err });
-        this.code = err.code;
-        this.errno = err.errno;
-        /* c8 ignore next */
-        if (!this.code)
-            this.code = 'ZLIB_ERROR';
-        this.message = 'zlib: ' + err.message;
-        Error.captureStackTrace(this, origin ?? this.constructor);
-    }
-    get name() {
-        return 'ZlibError';
-    }
-}
-exports.ZlibError = ZlibError;
-// the Zlib class they all inherit from
-// This thing manages the queue of requests, and returns
-// true or false if there is anything in the queue when
-// you call the .write() method.
-const _flushFlag = Symbol('flushFlag');
-class ZlibBase extends minipass_1.Minipass {
-    #sawError = false;
-    #ended = false;
-    #flushFlag;
-    #finishFlushFlag;
-    #fullFlushFlag;
-    #handle;
-    #onError;
-    get sawError() {
-        return this.#sawError;
-    }
-    get handle() {
-        return this.#handle;
-    }
-    /* c8 ignore start */
-    get flushFlag() {
-        return this.#flushFlag;
-    }
-    /* c8 ignore stop */
-    constructor(opts, mode) {
-        if (!opts || typeof opts !== 'object')
-            throw new TypeError('invalid options for ZlibBase constructor');
-        //@ts-ignore
-        super(opts);
-        /* c8 ignore start */
-        this.#flushFlag = opts.flush ?? 0;
-        this.#finishFlushFlag = opts.finishFlush ?? 0;
-        this.#fullFlushFlag = opts.fullFlushFlag ?? 0;
-        /* c8 ignore stop */
-        //@ts-ignore
-        if (typeof realZlib[mode] !== 'function') {
-            throw new TypeError('Compression method not supported: ' + mode);
-        }
-        // this will throw if any options are invalid for the class selected
-        try {
-            // @types/node doesn't know that it exports the classes, but they're there
-            //@ts-ignore
-            this.#handle = new realZlib[mode](opts);
-        }
-        catch (er) {
-            // make sure that all errors get decorated properly
-            throw new ZlibError(er, this.constructor);
-        }
-        this.#onError = err => {
-            // no sense raising multiple errors, since we abort on the first one.
-            if (this.#sawError)
-                return;
-            this.#sawError = true;
-            // there is no way to cleanly recover.
-            // continuing only obscures problems.
-            this.close();
-            this.emit('error', err);
-        };
-        this.#handle?.on('error', er => this.#onError(new ZlibError(er)));
-        this.once('end', () => this.close);
-    }
-    close() {
-        if (this.#handle) {
-            this.#handle.close();
-            this.#handle = undefined;
-            this.emit('close');
-        }
-    }
-    reset() {
-        if (!this.#sawError) {
-            (0, assert_1.default)(this.#handle, 'zlib binding closed');
-            //@ts-ignore
-            return this.#handle.reset?.();
-        }
-    }
-    flush(flushFlag) {
-        if (this.ended)
-            return;
-        if (typeof flushFlag !== 'number')
-            flushFlag = this.#fullFlushFlag;
-        this.write(Object.assign(buffer_1.Buffer.alloc(0), { [_flushFlag]: flushFlag }));
-    }
-    end(chunk, encoding, cb) {
-        /* c8 ignore start */
-        if (typeof chunk === 'function') {
-            cb = chunk;
-            encoding = undefined;
-            chunk = undefined;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        /* c8 ignore stop */
-        if (chunk) {
-            if (encoding)
-                this.write(chunk, encoding);
-            else
-                this.write(chunk);
-        }
-        this.flush(this.#finishFlushFlag);
-        this.#ended = true;
-        return super.end(cb);
-    }
-    get ended() {
-        return this.#ended;
-    }
-    // overridden in the gzip classes to do portable writes
-    [_superWrite](data) {
-        return super.write(data);
-    }
-    write(chunk, encoding, cb) {
-        // process the chunk using the sync process
-        // then super.write() all the outputted chunks
-        if (typeof encoding === 'function')
-            (cb = encoding), (encoding = 'utf8');
-        if (typeof chunk === 'string')
-            chunk = buffer_1.Buffer.from(chunk, encoding);
-        if (this.#sawError)
-            return;
-        (0, assert_1.default)(this.#handle, 'zlib binding closed');
-        // _processChunk tries to .close() the native handle after it's done, so we
-        // intercept that by temporarily making it a no-op.
-        // diving into the node:zlib internals a bit here
-        const nativeHandle = this.#handle
-            ._handle;
-        const originalNativeClose = nativeHandle.close;
-        nativeHandle.close = () => { };
-        const originalClose = this.#handle.close;
-        this.#handle.close = () => { };
-        // It also calls `Buffer.concat()` at the end, which may be convenient
-        // for some, but which we are not interested in as it slows us down.
-        passthroughBufferConcat(true);
-        let result = undefined;
-        try {
-            const flushFlag = typeof chunk[_flushFlag] === 'number'
-                ? chunk[_flushFlag]
-                : this.#flushFlag;
-            result = this.#handle._processChunk(chunk, flushFlag);
-            // if we don't throw, reset it back how it was
-            passthroughBufferConcat(false);
-        }
-        catch (err) {
-            // or if we do, put Buffer.concat() back before we emit error
-            // Error events call into user code, which may call Buffer.concat()
-            passthroughBufferConcat(false);
-            this.#onError(new ZlibError(err, this.write));
-        }
-        finally {
-            if (this.#handle) {
-                // Core zlib resets `_handle` to null after attempting to close the
-                // native handle. Our no-op handler prevented actual closure, but we
-                // need to restore the `._handle` property.
-                ;
-                this.#handle._handle =
-                    nativeHandle;
-                nativeHandle.close = originalNativeClose;
-                this.#handle.close = originalClose;
-                // `_processChunk()` adds an 'error' listener. If we don't remove it
-                // after each call, these handlers start piling up.
-                this.#handle.removeAllListeners('error');
-                // make sure OUR error listener is still attached tho
-            }
-        }
-        if (this.#handle)
-            this.#handle.on('error', er => this.#onError(new ZlibError(er, this.write)));
-        let writeReturn;
-        if (result) {
-            if (Array.isArray(result) && result.length > 0) {
-                const r = result[0];
-                // The first buffer is always `handle._outBuffer`, which would be
-                // re-used for later invocations; so, we always have to copy that one.
-                writeReturn = this[_superWrite](buffer_1.Buffer.from(r));
-                for (let i = 1; i < result.length; i++) {
-                    writeReturn = this[_superWrite](result[i]);
-                }
-            }
-            else {
-                // either a single Buffer or an empty array
-                writeReturn = this[_superWrite](buffer_1.Buffer.from(result));
-            }
-        }
-        if (cb)
-            cb();
-        return writeReturn;
-    }
-}
-class Zlib extends ZlibBase {
-    #level;
-    #strategy;
-    constructor(opts, mode) {
-        opts = opts || {};
-        opts.flush = opts.flush || constants_js_1.constants.Z_NO_FLUSH;
-        opts.finishFlush = opts.finishFlush || constants_js_1.constants.Z_FINISH;
-        opts.fullFlushFlag = constants_js_1.constants.Z_FULL_FLUSH;
-        super(opts, mode);
-        this.#level = opts.level;
-        this.#strategy = opts.strategy;
-    }
-    params(level, strategy) {
-        if (this.sawError)
-            return;
-        if (!this.handle)
-            throw new Error('cannot switch params when binding is closed');
-        // no way to test this without also not supporting params at all
-        /* c8 ignore start */
-        if (!this.handle.params)
-            throw new Error('not supported in this implementation');
-        /* c8 ignore stop */
-        if (this.#level !== level || this.#strategy !== strategy) {
-            this.flush(constants_js_1.constants.Z_SYNC_FLUSH);
-            (0, assert_1.default)(this.handle, 'zlib binding closed');
-            // .params() calls .flush(), but the latter is always async in the
-            // core zlib. We override .flush() temporarily to intercept that and
-            // flush synchronously.
-            const origFlush = this.handle.flush;
-            this.handle.flush = (flushFlag, cb) => {
-                /* c8 ignore start */
-                if (typeof flushFlag === 'function') {
-                    cb = flushFlag;
-                    flushFlag = this.flushFlag;
-                }
-                /* c8 ignore stop */
-                this.flush(flushFlag);
-                cb?.();
-            };
-            try {
-                ;
-                this.handle.params(level, strategy);
-            }
-            finally {
-                this.handle.flush = origFlush;
-            }
-            /* c8 ignore start */
-            if (this.handle) {
-                this.#level = level;
-                this.#strategy = strategy;
-            }
-            /* c8 ignore stop */
-        }
-    }
-}
-exports.Zlib = Zlib;
-// minimal 2-byte header
-class Deflate extends Zlib {
-    constructor(opts) {
-        super(opts, 'Deflate');
-    }
-}
-exports.Deflate = Deflate;
-class Inflate extends Zlib {
-    constructor(opts) {
-        super(opts, 'Inflate');
-    }
-}
-exports.Inflate = Inflate;
-class Gzip extends Zlib {
-    #portable;
-    constructor(opts) {
-        super(opts, 'Gzip');
-        this.#portable = opts && !!opts.portable;
-    }
-    [_superWrite](data) {
-        if (!this.#portable)
-            return super[_superWrite](data);
-        // we'll always get the header emitted in one first chunk
-        // overwrite the OS indicator byte with 0xFF
-        this.#portable = false;
-        data[9] = 255;
-        return super[_superWrite](data);
-    }
-}
-exports.Gzip = Gzip;
-class Gunzip extends Zlib {
-    constructor(opts) {
-        super(opts, 'Gunzip');
-    }
-}
-exports.Gunzip = Gunzip;
-// raw - no header
-class DeflateRaw extends Zlib {
-    constructor(opts) {
-        super(opts, 'DeflateRaw');
-    }
-}
-exports.DeflateRaw = DeflateRaw;
-class InflateRaw extends Zlib {
-    constructor(opts) {
-        super(opts, 'InflateRaw');
-    }
-}
-exports.InflateRaw = InflateRaw;
-// auto-detect header.
-class Unzip extends Zlib {
-    constructor(opts) {
-        super(opts, 'Unzip');
-    }
-}
-exports.Unzip = Unzip;
-class Brotli extends ZlibBase {
-    constructor(opts, mode) {
-        opts = opts || {};
-        opts.flush = opts.flush || constants_js_1.constants.BROTLI_OPERATION_PROCESS;
-        opts.finishFlush =
-            opts.finishFlush || constants_js_1.constants.BROTLI_OPERATION_FINISH;
-        opts.fullFlushFlag = constants_js_1.constants.BROTLI_OPERATION_FLUSH;
-        super(opts, mode);
-    }
-}
-class BrotliCompress extends Brotli {
-    constructor(opts) {
-        super(opts, 'BrotliCompress');
-    }
-}
-exports.BrotliCompress = BrotliCompress;
-class BrotliDecompress extends Brotli {
-    constructor(opts) {
-        super(opts, 'BrotliDecompress');
-    }
-}
-exports.BrotliDecompress = BrotliDecompress;
-class Zstd extends ZlibBase {
-    constructor(opts, mode) {
-        opts = opts || {};
-        opts.flush = opts.flush || constants_js_1.constants.ZSTD_e_continue;
-        opts.finishFlush = opts.finishFlush || constants_js_1.constants.ZSTD_e_end;
-        opts.fullFlushFlag = constants_js_1.constants.ZSTD_e_flush;
-        super(opts, mode);
-    }
-}
-class ZstdCompress extends Zstd {
-    constructor(opts) {
-        super(opts, 'ZstdCompress');
-    }
-}
-exports.ZstdCompress = ZstdCompress;
-class ZstdDecompress extends Zstd {
-    constructor(opts) {
-        super(opts, 'ZstdDecompress');
-    }
-}
-exports.ZstdDecompress = ZstdDecompress;
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 84146:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.create = void 0;
-const fs_minipass_1 = __nccwpck_require__(69084);
-const node_path_1 = __importDefault(__nccwpck_require__(76760));
-const list_js_1 = __nccwpck_require__(24110);
-const make_command_js_1 = __nccwpck_require__(51272);
-const pack_js_1 = __nccwpck_require__(44499);
-const createFileSync = (opt, files) => {
-    const p = new pack_js_1.PackSync(opt);
-    const stream = new fs_minipass_1.WriteStreamSync(opt.file, {
-        mode: opt.mode || 0o666,
-    });
-    p.pipe(stream);
-    addFilesSync(p, files);
-};
-const createFile = (opt, files) => {
-    const p = new pack_js_1.Pack(opt);
-    const stream = new fs_minipass_1.WriteStream(opt.file, {
-        mode: opt.mode || 0o666,
-    });
-    p.pipe(stream);
-    const promise = new Promise((res, rej) => {
-        stream.on('error', rej);
-        stream.on('close', res);
-        p.on('error', rej);
-    });
-    addFilesAsync(p, files);
-    return promise;
-};
-const addFilesSync = (p, files) => {
-    files.forEach(file => {
-        if (file.charAt(0) === '@') {
-            (0, list_js_1.list)({
-                file: node_path_1.default.resolve(p.cwd, file.slice(1)),
-                sync: true,
-                noResume: true,
-                onReadEntry: entry => p.add(entry),
-            });
-        }
-        else {
-            p.add(file);
-        }
-    });
-    p.end();
-};
-const addFilesAsync = async (p, files) => {
-    for (let i = 0; i < files.length; i++) {
-        const file = String(files[i]);
-        if (file.charAt(0) === '@') {
-            await (0, list_js_1.list)({
-                file: node_path_1.default.resolve(String(p.cwd), file.slice(1)),
-                noResume: true,
-                onReadEntry: entry => {
-                    p.add(entry);
-                },
-            });
-        }
-        else {
-            p.add(file);
-        }
-    }
-    p.end();
-};
-const createSync = (opt, files) => {
-    const p = new pack_js_1.PackSync(opt);
-    addFilesSync(p, files);
-    return p;
-};
-const createAsync = (opt, files) => {
-    const p = new pack_js_1.Pack(opt);
-    addFilesAsync(p, files);
-    return p;
-};
-exports.create = (0, make_command_js_1.makeCommand)(createFileSync, createFile, createSync, createAsync, (_opt, files) => {
-    if (!files?.length) {
-        throw new TypeError('no paths specified to add to archive');
-    }
-});
-//# sourceMappingURL=create.js.map
-
-/***/ }),
-
-/***/ 18425:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.CwdError = void 0;
-class CwdError extends Error {
-    path;
-    code;
-    syscall = 'chdir';
-    constructor(path, code) {
-        super(`${code}: Cannot cd into '${path}'`);
-        this.path = path;
-        this.code = code;
-    }
-    get name() {
-        return 'CwdError';
-    }
-}
-exports.CwdError = CwdError;
-//# sourceMappingURL=cwd-error.js.map
-
-/***/ }),
-
-/***/ 77597:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.extract = void 0;
-// tar -x
-const fsm = __importStar(__nccwpck_require__(69084));
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const list_js_1 = __nccwpck_require__(24110);
-const make_command_js_1 = __nccwpck_require__(51272);
-const unpack_js_1 = __nccwpck_require__(73532);
-const extractFileSync = (opt) => {
-    const u = new unpack_js_1.UnpackSync(opt);
-    const file = opt.file;
-    const stat = node_fs_1.default.statSync(file);
-    // This trades a zero-byte read() syscall for a stat
-    // However, it will usually result in less memory allocation
-    const readSize = opt.maxReadSize || 16 * 1024 * 1024;
-    const stream = new fsm.ReadStreamSync(file, {
-        readSize: readSize,
-        size: stat.size,
-    });
-    stream.pipe(u);
-};
-const extractFile = (opt, _) => {
-    const u = new unpack_js_1.Unpack(opt);
-    const readSize = opt.maxReadSize || 16 * 1024 * 1024;
-    const file = opt.file;
-    const p = new Promise((resolve, reject) => {
-        u.on('error', reject);
-        u.on('close', resolve);
-        // This trades a zero-byte read() syscall for a stat
-        // However, it will usually result in less memory allocation
-        node_fs_1.default.stat(file, (er, stat) => {
-            if (er) {
-                reject(er);
-            }
-            else {
-                const stream = new fsm.ReadStream(file, {
-                    readSize: readSize,
-                    size: stat.size,
-                });
-                stream.on('error', reject);
-                stream.pipe(u);
-            }
-        });
-    });
-    return p;
-};
-exports.extract = (0, make_command_js_1.makeCommand)(extractFileSync, extractFile, opt => new unpack_js_1.UnpackSync(opt), opt => new unpack_js_1.Unpack(opt), (opt, files) => {
-    if (files?.length)
-        (0, list_js_1.filesFilter)(opt, files);
-});
-//# sourceMappingURL=extract.js.map
-
-/***/ }),
-
-/***/ 21781:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-// Get the appropriate flag to use for creating files
-// We use fmap on Windows platforms for files less than
-// 512kb.  This is a fairly low limit, but avoids making
-// things slower in some cases.  Since most of what this
-// library is used for is extracting tarballs of many
-// relatively small files in npm packages and the like,
-// it can be a big boost on Windows platforms.
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getWriteFlag = void 0;
-const fs_1 = __importDefault(__nccwpck_require__(79896));
-const platform = process.env.__FAKE_PLATFORM__ || process.platform;
-const isWindows = platform === 'win32';
-/* c8 ignore start */
-const { O_CREAT, O_TRUNC, O_WRONLY } = fs_1.default.constants;
-const UV_FS_O_FILEMAP = Number(process.env.__FAKE_FS_O_FILENAME__) ||
-    fs_1.default.constants.UV_FS_O_FILEMAP ||
-    0;
-/* c8 ignore stop */
-const fMapEnabled = isWindows && !!UV_FS_O_FILEMAP;
-const fMapLimit = 512 * 1024;
-const fMapFlag = UV_FS_O_FILEMAP | O_TRUNC | O_CREAT | O_WRONLY;
-exports.getWriteFlag = !fMapEnabled ?
-    () => 'w'
-    : (size) => (size < fMapLimit ? fMapFlag : 'w');
-//# sourceMappingURL=get-write-flag.js.map
-
-/***/ }),
-
-/***/ 23264:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-// parse a 512-byte header block to a data object, or vice-versa
-// encode returns `true` if a pax extended header is needed, because
-// the data could not be faithfully encoded in a simple header.
-// (Also, check header.needPax to see if it needs a pax header.)
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Header = void 0;
-const node_path_1 = __nccwpck_require__(76760);
-const large = __importStar(__nccwpck_require__(77764));
-const types = __importStar(__nccwpck_require__(89361));
-class Header {
-    cksumValid = false;
-    needPax = false;
-    nullBlock = false;
-    block;
-    path;
-    mode;
-    uid;
-    gid;
-    size;
-    cksum;
-    #type = 'Unsupported';
-    linkpath;
-    uname;
-    gname;
-    devmaj = 0;
-    devmin = 0;
-    atime;
-    ctime;
-    mtime;
-    charset;
-    comment;
-    constructor(data, off = 0, ex, gex) {
-        if (Buffer.isBuffer(data)) {
-            this.decode(data, off || 0, ex, gex);
-        }
-        else if (data) {
-            this.#slurp(data);
-        }
-    }
-    decode(buf, off, ex, gex) {
-        if (!off) {
-            off = 0;
-        }
-        if (!buf || !(buf.length >= off + 512)) {
-            throw new Error('need 512 bytes for header');
-        }
-        this.path = ex?.path ?? decString(buf, off, 100);
-        this.mode = ex?.mode ?? gex?.mode ?? decNumber(buf, off + 100, 8);
-        this.uid = ex?.uid ?? gex?.uid ?? decNumber(buf, off + 108, 8);
-        this.gid = ex?.gid ?? gex?.gid ?? decNumber(buf, off + 116, 8);
-        this.size = ex?.size ?? gex?.size ?? decNumber(buf, off + 124, 12);
-        this.mtime =
-            ex?.mtime ?? gex?.mtime ?? decDate(buf, off + 136, 12);
-        this.cksum = decNumber(buf, off + 148, 12);
-        // if we have extended or global extended headers, apply them now
-        // See https://github.com/npm/node-tar/pull/187
-        // Apply global before local, so it overrides
-        if (gex)
-            this.#slurp(gex, true);
-        if (ex)
-            this.#slurp(ex);
-        // old tar versions marked dirs as a file with a trailing /
-        const t = decString(buf, off + 156, 1);
-        if (types.isCode(t)) {
-            this.#type = t || '0';
-        }
-        if (this.#type === '0' && this.path.slice(-1) === '/') {
-            this.#type = '5';
-        }
-        // tar implementations sometimes incorrectly put the stat(dir).size
-        // as the size in the tarball, even though Directory entries are
-        // not able to have any body at all.  In the very rare chance that
-        // it actually DOES have a body, we weren't going to do anything with
-        // it anyway, and it'll just be a warning about an invalid header.
-        if (this.#type === '5') {
-            this.size = 0;
-        }
-        this.linkpath = decString(buf, off + 157, 100);
-        if (buf.subarray(off + 257, off + 265).toString() ===
-            'ustar\u000000') {
-            /* c8 ignore start */
-            this.uname =
-                ex?.uname ?? gex?.uname ?? decString(buf, off + 265, 32);
-            this.gname =
-                ex?.gname ?? gex?.gname ?? decString(buf, off + 297, 32);
-            this.devmaj =
-                ex?.devmaj ?? gex?.devmaj ?? decNumber(buf, off + 329, 8) ?? 0;
-            this.devmin =
-                ex?.devmin ?? gex?.devmin ?? decNumber(buf, off + 337, 8) ?? 0;
-            /* c8 ignore stop */
-            if (buf[off + 475] !== 0) {
-                // definitely a prefix, definitely >130 chars.
-                const prefix = decString(buf, off + 345, 155);
-                this.path = prefix + '/' + this.path;
-            }
-            else {
-                const prefix = decString(buf, off + 345, 130);
-                if (prefix) {
-                    this.path = prefix + '/' + this.path;
-                }
-                /* c8 ignore start */
-                this.atime =
-                    ex?.atime ?? gex?.atime ?? decDate(buf, off + 476, 12);
-                this.ctime =
-                    ex?.ctime ?? gex?.ctime ?? decDate(buf, off + 488, 12);
-                /* c8 ignore stop */
-            }
-        }
-        let sum = 8 * 0x20;
-        for (let i = off; i < off + 148; i++) {
-            sum += buf[i];
-        }
-        for (let i = off + 156; i < off + 512; i++) {
-            sum += buf[i];
-        }
-        this.cksumValid = sum === this.cksum;
-        if (this.cksum === undefined && sum === 8 * 0x20) {
-            this.nullBlock = true;
-        }
-    }
-    #slurp(ex, gex = false) {
-        Object.assign(this, Object.fromEntries(Object.entries(ex).filter(([k, v]) => {
-            // we slurp in everything except for the path attribute in
-            // a global extended header, because that's weird. Also, any
-            // null/undefined values are ignored.
-            return !(v === null ||
-                v === undefined ||
-                (k === 'path' && gex) ||
-                (k === 'linkpath' && gex) ||
-                k === 'global');
-        })));
-    }
-    encode(buf, off = 0) {
-        if (!buf) {
-            buf = this.block = Buffer.alloc(512);
-        }
-        if (this.#type === 'Unsupported') {
-            this.#type = '0';
-        }
-        if (!(buf.length >= off + 512)) {
-            throw new Error('need 512 bytes for header');
-        }
-        const prefixSize = this.ctime || this.atime ? 130 : 155;
-        const split = splitPrefix(this.path || '', prefixSize);
-        const path = split[0];
-        const prefix = split[1];
-        this.needPax = !!split[2];
-        this.needPax = encString(buf, off, 100, path) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 100, 8, this.mode) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 108, 8, this.uid) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 116, 8, this.gid) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 124, 12, this.size) || this.needPax;
-        this.needPax =
-            encDate(buf, off + 136, 12, this.mtime) || this.needPax;
-        buf[off + 156] = this.#type.charCodeAt(0);
-        this.needPax =
-            encString(buf, off + 157, 100, this.linkpath) || this.needPax;
-        buf.write('ustar\u000000', off + 257, 8);
-        this.needPax =
-            encString(buf, off + 265, 32, this.uname) || this.needPax;
-        this.needPax =
-            encString(buf, off + 297, 32, this.gname) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 329, 8, this.devmaj) || this.needPax;
-        this.needPax =
-            encNumber(buf, off + 337, 8, this.devmin) || this.needPax;
-        this.needPax =
-            encString(buf, off + 345, prefixSize, prefix) || this.needPax;
-        if (buf[off + 475] !== 0) {
-            this.needPax =
-                encString(buf, off + 345, 155, prefix) || this.needPax;
-        }
-        else {
-            this.needPax =
-                encString(buf, off + 345, 130, prefix) || this.needPax;
-            this.needPax =
-                encDate(buf, off + 476, 12, this.atime) || this.needPax;
-            this.needPax =
-                encDate(buf, off + 488, 12, this.ctime) || this.needPax;
-        }
-        let sum = 8 * 0x20;
-        for (let i = off; i < off + 148; i++) {
-            sum += buf[i];
-        }
-        for (let i = off + 156; i < off + 512; i++) {
-            sum += buf[i];
-        }
-        this.cksum = sum;
-        encNumber(buf, off + 148, 8, this.cksum);
-        this.cksumValid = true;
-        return this.needPax;
-    }
-    get type() {
-        return (this.#type === 'Unsupported' ?
-            this.#type
-            : types.name.get(this.#type));
-    }
-    get typeKey() {
-        return this.#type;
-    }
-    set type(type) {
-        const c = String(types.code.get(type));
-        if (types.isCode(c) || c === 'Unsupported') {
-            this.#type = c;
-        }
-        else if (types.isCode(type)) {
-            this.#type = type;
-        }
-        else {
-            throw new TypeError('invalid entry type: ' + type);
-        }
-    }
-}
-exports.Header = Header;
-const splitPrefix = (p, prefixSize) => {
-    const pathSize = 100;
-    let pp = p;
-    let prefix = '';
-    let ret = undefined;
-    const root = node_path_1.posix.parse(p).root || '.';
-    if (Buffer.byteLength(pp) < pathSize) {
-        ret = [pp, prefix, false];
-    }
-    else {
-        // first set prefix to the dir, and path to the base
-        prefix = node_path_1.posix.dirname(pp);
-        pp = node_path_1.posix.basename(pp);
-        do {
-            if (Buffer.byteLength(pp) <= pathSize &&
-                Buffer.byteLength(prefix) <= prefixSize) {
-                // both fit!
-                ret = [pp, prefix, false];
-            }
-            else if (Buffer.byteLength(pp) > pathSize &&
-                Buffer.byteLength(prefix) <= prefixSize) {
-                // prefix fits in prefix, but path doesn't fit in path
-                ret = [pp.slice(0, pathSize - 1), prefix, true];
-            }
-            else {
-                // make path take a bit from prefix
-                pp = node_path_1.posix.join(node_path_1.posix.basename(prefix), pp);
-                prefix = node_path_1.posix.dirname(prefix);
-            }
-        } while (prefix !== root && ret === undefined);
-        // at this point, found no resolution, just truncate
-        if (!ret) {
-            ret = [p.slice(0, pathSize - 1), '', true];
-        }
-    }
-    return ret;
-};
-const decString = (buf, off, size) => buf
-    .subarray(off, off + size)
-    .toString('utf8')
-    .replace(/\0.*/, '');
-const decDate = (buf, off, size) => numToDate(decNumber(buf, off, size));
-const numToDate = (num) => num === undefined ? undefined : new Date(num * 1000);
-const decNumber = (buf, off, size) => Number(buf[off]) & 0x80 ?
-    large.parse(buf.subarray(off, off + size))
-    : decSmallNumber(buf, off, size);
-const nanUndef = (value) => (isNaN(value) ? undefined : value);
-const decSmallNumber = (buf, off, size) => nanUndef(parseInt(buf
-    .subarray(off, off + size)
-    .toString('utf8')
-    .replace(/\0.*$/, '')
-    .trim(), 8));
-// the maximum encodable as a null-terminated octal, by field size
-const MAXNUM = {
-    12: 0o77777777777,
-    8: 0o7777777,
-};
-const encNumber = (buf, off, size, num) => num === undefined ? false
-    : num > MAXNUM[size] || num < 0 ?
-        (large.encode(num, buf.subarray(off, off + size)), true)
-        : (encSmallNumber(buf, off, size, num), false);
-const encSmallNumber = (buf, off, size, num) => buf.write(octalString(num, size), off, size, 'ascii');
-const octalString = (num, size) => padOctal(Math.floor(num).toString(8), size);
-const padOctal = (str, size) => (str.length === size - 1 ?
-    str
-    : new Array(size - str.length - 1).join('0') + str + ' ') + '\0';
-const encDate = (buf, off, size, date) => date === undefined ? false : (encNumber(buf, off, size, date.getTime() / 1000));
-// enough to fill the longest string we've got
-const NULLS = new Array(156).join('\0');
-// pad with nulls, return true if it's longer or non-ascii
-const encString = (buf, off, size, str) => str === undefined ? false : ((buf.write(str + NULLS, off, size, 'utf8'),
-    str.length !== Buffer.byteLength(str) || str.length > size));
-//# sourceMappingURL=header.js.map
-
-/***/ }),
-
-/***/ 8116:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.u = exports.types = exports.r = exports.t = exports.x = exports.c = void 0;
-__exportStar(__nccwpck_require__(84146), exports);
-var create_js_1 = __nccwpck_require__(84146);
-Object.defineProperty(exports, "c", ({ enumerable: true, get: function () { return create_js_1.create; } }));
-__exportStar(__nccwpck_require__(77597), exports);
-var extract_js_1 = __nccwpck_require__(77597);
-Object.defineProperty(exports, "x", ({ enumerable: true, get: function () { return extract_js_1.extract; } }));
-__exportStar(__nccwpck_require__(23264), exports);
-__exportStar(__nccwpck_require__(24110), exports);
-var list_js_1 = __nccwpck_require__(24110);
-Object.defineProperty(exports, "t", ({ enumerable: true, get: function () { return list_js_1.list; } }));
-// classes
-__exportStar(__nccwpck_require__(44499), exports);
-__exportStar(__nccwpck_require__(60535), exports);
-__exportStar(__nccwpck_require__(19509), exports);
-__exportStar(__nccwpck_require__(61991), exports);
-__exportStar(__nccwpck_require__(30476), exports);
-var replace_js_1 = __nccwpck_require__(30476);
-Object.defineProperty(exports, "r", ({ enumerable: true, get: function () { return replace_js_1.replace; } }));
-exports.types = __importStar(__nccwpck_require__(89361));
-__exportStar(__nccwpck_require__(73532), exports);
-__exportStar(__nccwpck_require__(45647), exports);
-var update_js_1 = __nccwpck_require__(45647);
-Object.defineProperty(exports, "u", ({ enumerable: true, get: function () { return update_js_1.update; } }));
-__exportStar(__nccwpck_require__(44130), exports);
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-
-/***/ 77764:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// Tar can encode large and negative numbers using a leading byte of
-// 0xff for negative, and 0x80 for positive.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.parse = exports.encode = void 0;
-const encode = (num, buf) => {
-    if (!Number.isSafeInteger(num)) {
-        // The number is so large that javascript cannot represent it with integer
-        // precision.
-        throw Error('cannot encode number outside of javascript safe integer range');
-    }
-    else if (num < 0) {
-        encodeNegative(num, buf);
-    }
-    else {
-        encodePositive(num, buf);
-    }
-    return buf;
-};
-exports.encode = encode;
-const encodePositive = (num, buf) => {
-    buf[0] = 0x80;
-    for (var i = buf.length; i > 1; i--) {
-        buf[i - 1] = num & 0xff;
-        num = Math.floor(num / 0x100);
-    }
-};
-const encodeNegative = (num, buf) => {
-    buf[0] = 0xff;
-    var flipped = false;
-    num = num * -1;
-    for (var i = buf.length; i > 1; i--) {
-        var byte = num & 0xff;
-        num = Math.floor(num / 0x100);
-        if (flipped) {
-            buf[i - 1] = onesComp(byte);
-        }
-        else if (byte === 0) {
-            buf[i - 1] = 0;
-        }
-        else {
-            flipped = true;
-            buf[i - 1] = twosComp(byte);
-        }
-    }
-};
-const parse = (buf) => {
-    const pre = buf[0];
-    const value = pre === 0x80 ? pos(buf.subarray(1, buf.length))
-        : pre === 0xff ? twos(buf)
-            : null;
-    if (value === null) {
-        throw Error('invalid base256 encoding');
-    }
-    if (!Number.isSafeInteger(value)) {
-        // The number is so large that javascript cannot represent it with integer
-        // precision.
-        throw Error('parsed number outside of javascript safe integer range');
-    }
-    return value;
-};
-exports.parse = parse;
-const twos = (buf) => {
-    var len = buf.length;
-    var sum = 0;
-    var flipped = false;
-    for (var i = len - 1; i > -1; i--) {
-        var byte = Number(buf[i]);
-        var f;
-        if (flipped) {
-            f = onesComp(byte);
-        }
-        else if (byte === 0) {
-            f = byte;
-        }
-        else {
-            flipped = true;
-            f = twosComp(byte);
-        }
-        if (f !== 0) {
-            sum -= f * Math.pow(256, len - i - 1);
-        }
-    }
-    return sum;
-};
-const pos = (buf) => {
-    var len = buf.length;
-    var sum = 0;
-    for (var i = len - 1; i > -1; i--) {
-        var byte = Number(buf[i]);
-        if (byte !== 0) {
-            sum += byte * Math.pow(256, len - i - 1);
-        }
-    }
-    return sum;
-};
-const onesComp = (byte) => (0xff ^ byte) & 0xff;
-const twosComp = (byte) => ((0xff ^ byte) + 1) & 0xff;
-//# sourceMappingURL=large-numbers.js.map
-
-/***/ }),
-
-/***/ 24110:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.list = exports.filesFilter = void 0;
-// tar -t
-const fsm = __importStar(__nccwpck_require__(69084));
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const path_1 = __nccwpck_require__(16928);
-const make_command_js_1 = __nccwpck_require__(51272);
-const parse_js_1 = __nccwpck_require__(60535);
-const strip_trailing_slashes_js_1 = __nccwpck_require__(23335);
-const onReadEntryFunction = (opt) => {
-    const onReadEntry = opt.onReadEntry;
-    opt.onReadEntry =
-        onReadEntry ?
-            e => {
-                onReadEntry(e);
-                e.resume();
-            }
-            : e => e.resume();
-};
-// construct a filter that limits the file entries listed
-// include child entries if a dir is included
-const filesFilter = (opt, files) => {
-    const map = new Map(files.map(f => [(0, strip_trailing_slashes_js_1.stripTrailingSlashes)(f), true]));
-    const filter = opt.filter;
-    const mapHas = (file, r = '') => {
-        const root = r || (0, path_1.parse)(file).root || '.';
-        let ret;
-        if (file === root)
-            ret = false;
-        else {
-            const m = map.get(file);
-            if (m !== undefined) {
-                ret = m;
-            }
-            else {
-                ret = mapHas((0, path_1.dirname)(file), root);
-            }
-        }
-        map.set(file, ret);
-        return ret;
-    };
-    opt.filter =
-        filter ?
-            (file, entry) => filter(file, entry) && mapHas((0, strip_trailing_slashes_js_1.stripTrailingSlashes)(file))
-            : file => mapHas((0, strip_trailing_slashes_js_1.stripTrailingSlashes)(file));
-};
-exports.filesFilter = filesFilter;
-const listFileSync = (opt) => {
-    const p = new parse_js_1.Parser(opt);
-    const file = opt.file;
-    let fd;
-    try {
-        fd = node_fs_1.default.openSync(file, 'r');
-        const stat = node_fs_1.default.fstatSync(fd);
-        const readSize = opt.maxReadSize || 16 * 1024 * 1024;
-        if (stat.size < readSize) {
-            const buf = Buffer.allocUnsafe(stat.size);
-            const read = node_fs_1.default.readSync(fd, buf, 0, stat.size, 0);
-            p.end(read === buf.byteLength ? buf : buf.subarray(0, read));
-        }
-        else {
-            let pos = 0;
-            const buf = Buffer.allocUnsafe(readSize);
-            while (pos < stat.size) {
-                const bytesRead = node_fs_1.default.readSync(fd, buf, 0, readSize, pos);
-                if (bytesRead === 0)
-                    break;
-                pos += bytesRead;
-                p.write(buf.subarray(0, bytesRead));
-            }
-            p.end();
-        }
-    }
-    finally {
-        if (typeof fd === 'number') {
-            try {
-                node_fs_1.default.closeSync(fd);
-                /* c8 ignore next */
-            }
-            catch (er) { }
-        }
-    }
-};
-const listFile = (opt, _files) => {
-    const parse = new parse_js_1.Parser(opt);
-    const readSize = opt.maxReadSize || 16 * 1024 * 1024;
-    const file = opt.file;
-    const p = new Promise((resolve, reject) => {
-        parse.on('error', reject);
-        parse.on('end', resolve);
-        node_fs_1.default.stat(file, (er, stat) => {
-            if (er) {
-                reject(er);
-            }
-            else {
-                const stream = new fsm.ReadStream(file, {
-                    readSize: readSize,
-                    size: stat.size,
-                });
-                stream.on('error', reject);
-                stream.pipe(parse);
-            }
-        });
-    });
-    return p;
-};
-exports.list = (0, make_command_js_1.makeCommand)(listFileSync, listFile, opt => new parse_js_1.Parser(opt), opt => new parse_js_1.Parser(opt), (opt, files) => {
-    if (files?.length)
-        (0, exports.filesFilter)(opt, files);
-    if (!opt.noResume)
-        onReadEntryFunction(opt);
-});
-//# sourceMappingURL=list.js.map
-
-/***/ }),
-
-/***/ 51272:
+/***/ 95942:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
+var d=(s,e)=>()=>(e||s((e={exports:{}}).exports,e),e.exports);var We=d(F=>{"use strict";var Ro=F&&F.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(F,"__esModule",{value:!0});F.Minipass=F.isWritable=F.isReadable=F.isStream=void 0;var Br=typeof process=="object"&&process?process:{stdout:null,stderr:null},ss=__nccwpck_require__(78474),jr=Ro(__nccwpck_require__(57075)),vo=__nccwpck_require__(46193),To=s=>!!s&&typeof s=="object"&&(s instanceof Zt||s instanceof jr.default||(0,F.isReadable)(s)||(0,F.isWritable)(s));F.isStream=To;var Do=s=>!!s&&typeof s=="object"&&s instanceof ss.EventEmitter&&typeof s.pipe=="function"&&s.pipe!==jr.default.Writable.prototype.pipe;F.isReadable=Do;var Po=s=>!!s&&typeof s=="object"&&s instanceof ss.EventEmitter&&typeof s.write=="function"&&typeof s.end=="function";F.isWritable=Po;var le=Symbol("EOF"),ue=Symbol("maybeEmitEnd"),_e=Symbol("emittedEnd"),xt=Symbol("emittingEnd"),ft=Symbol("emittedError"),jt=Symbol("closed"),zr=Symbol("read"),Ut=Symbol("flush"),kr=Symbol("flushChunk"),K=Symbol("encoding"),Ue=Symbol("decoder"),O=Symbol("flowing"),dt=Symbol("paused"),qe=Symbol("resume"),R=Symbol("buffer"),I=Symbol("pipes"),v=Symbol("bufferLength"),Xi=Symbol("bufferPush"),qt=Symbol("bufferShift"),N=Symbol("objectMode"),y=Symbol("destroyed"),Qi=Symbol("error"),Ji=Symbol("emitData"),xr=Symbol("emitEnd"),es=Symbol("emitEnd2"),J=Symbol("async"),ts=Symbol("abort"),Wt=Symbol("aborted"),mt=Symbol("signal"),Ne=Symbol("dataListeners"),k=Symbol("discarded"),pt=s=>Promise.resolve().then(s),No=s=>s(),Mo=s=>s==="end"||s==="finish"||s==="prefinish",Lo=s=>s instanceof ArrayBuffer||!!s&&typeof s=="object"&&s.constructor&&s.constructor.name==="ArrayBuffer"&&s.byteLength>=0,Ao=s=>!Buffer.isBuffer(s)&&ArrayBuffer.isView(s),Ht=class{src;dest;opts;ondrain;constructor(e,t,i){this.src=e,this.dest=t,this.opts=i,this.ondrain=()=>e[qe](),this.dest.on("drain",this.ondrain)}unpipe(){this.dest.removeListener("drain",this.ondrain)}proxyErrors(e){}end(){this.unpipe(),this.opts.end&&this.dest.end()}},is=class extends Ht{unpipe(){this.src.removeListener("error",this.proxyErrors),super.unpipe()}constructor(e,t,i){super(e,t,i),this.proxyErrors=r=>this.dest.emit("error",r),e.on("error",this.proxyErrors)}},Io=s=>!!s.objectMode,Fo=s=>!s.objectMode&&!!s.encoding&&s.encoding!=="buffer",Zt=class extends ss.EventEmitter{[O]=!1;[dt]=!1;[I]=[];[R]=[];[N];[K];[J];[Ue];[le]=!1;[_e]=!1;[xt]=!1;[jt]=!1;[ft]=null;[v]=0;[y]=!1;[mt];[Wt]=!1;[Ne]=0;[k]=!1;writable=!0;readable=!0;constructor(...e){let t=e[0]||{};if(super(),t.objectMode&&typeof t.encoding=="string")throw new TypeError("Encoding and objectMode may not be used together");Io(t)?(this[N]=!0,this[K]=null):Fo(t)?(this[K]=t.encoding,this[N]=!1):(this[N]=!1,this[K]=null),this[J]=!!t.async,this[Ue]=this[K]?new vo.StringDecoder(this[K]):null,t&&t.debugExposeBuffer===!0&&Object.defineProperty(this,"buffer",{get:()=>this[R]}),t&&t.debugExposePipes===!0&&Object.defineProperty(this,"pipes",{get:()=>this[I]});let{signal:i}=t;i&&(this[mt]=i,i.aborted?this[ts]():i.addEventListener("abort",()=>this[ts]()))}get bufferLength(){return this[v]}get encoding(){return this[K]}set encoding(e){throw new Error("Encoding must be set at instantiation time")}setEncoding(e){throw new Error("Encoding must be set at instantiation time")}get objectMode(){return this[N]}set objectMode(e){throw new Error("objectMode must be set at instantiation time")}get async(){return this[J]}set async(e){this[J]=this[J]||!!e}[ts](){this[Wt]=!0,this.emit("abort",this[mt]?.reason),this.destroy(this[mt]?.reason)}get aborted(){return this[Wt]}set aborted(e){}write(e,t,i){if(this[Wt])return!1;if(this[le])throw new Error("write after end");if(this[y])return this.emit("error",Object.assign(new Error("Cannot call write after a stream was destroyed"),{code:"ERR_STREAM_DESTROYED"})),!0;typeof t=="function"&&(i=t,t="utf8"),t||(t="utf8");let r=this[J]?pt:No;if(!this[N]&&!Buffer.isBuffer(e)){if(Ao(e))e=Buffer.from(e.buffer,e.byteOffset,e.byteLength);else if(Lo(e))e=Buffer.from(e);else if(typeof e!="string")throw new Error("Non-contiguous data written to non-objectMode stream")}return this[N]?(this[O]&&this[v]!==0&&this[Ut](!0),this[O]?this.emit("data",e):this[Xi](e),this[v]!==0&&this.emit("readable"),i&&r(i),this[O]):e.length?(typeof e=="string"&&!(t===this[K]&&!this[Ue]?.lastNeed)&&(e=Buffer.from(e,t)),Buffer.isBuffer(e)&&this[K]&&(e=this[Ue].write(e)),this[O]&&this[v]!==0&&this[Ut](!0),this[O]?this.emit("data",e):this[Xi](e),this[v]!==0&&this.emit("readable"),i&&r(i),this[O]):(this[v]!==0&&this.emit("readable"),i&&r(i),this[O])}read(e){if(this[y])return null;if(this[k]=!1,this[v]===0||e===0||e&&e>this[v])return this[ue](),null;this[N]&&(e=null),this[R].length>1&&!this[N]&&(this[R]=[this[K]?this[R].join(""):Buffer.concat(this[R],this[v])]);let t=this[zr](e||null,this[R][0]);return this[ue](),t}[zr](e,t){if(this[N])this[qt]();else{let i=t;e===i.length||e===null?this[qt]():typeof i=="string"?(this[R][0]=i.slice(e),t=i.slice(0,e),this[v]-=e):(this[R][0]=i.subarray(e),t=i.subarray(0,e),this[v]-=e)}return this.emit("data",t),!this[R].length&&!this[le]&&this.emit("drain"),t}end(e,t,i){return typeof e=="function"&&(i=e,e=void 0),typeof t=="function"&&(i=t,t="utf8"),e!==void 0&&this.write(e,t),i&&this.once("end",i),this[le]=!0,this.writable=!1,(this[O]||!this[dt])&&this[ue](),this}[qe](){this[y]||(!this[Ne]&&!this[I].length&&(this[k]=!0),this[dt]=!1,this[O]=!0,this.emit("resume"),this[R].length?this[Ut]():this[le]?this[ue]():this.emit("drain"))}resume(){return this[qe]()}pause(){this[O]=!1,this[dt]=!0,this[k]=!1}get destroyed(){return this[y]}get flowing(){return this[O]}get paused(){return this[dt]}[Xi](e){this[N]?this[v]+=1:this[v]+=e.length,this[R].push(e)}[qt](){return this[N]?this[v]-=1:this[v]-=this[R][0].length,this[R].shift()}[Ut](e=!1){do;while(this[kr](this[qt]())&&this[R].length);!e&&!this[R].length&&!this[le]&&this.emit("drain")}[kr](e){return this.emit("data",e),this[O]}pipe(e,t){if(this[y])return e;this[k]=!1;let i=this[_e];return t=t||{},e===Br.stdout||e===Br.stderr?t.end=!1:t.end=t.end!==!1,t.proxyErrors=!!t.proxyErrors,i?t.end&&e.end():(this[I].push(t.proxyErrors?new is(this,e,t):new Ht(this,e,t)),this[J]?pt(()=>this[qe]()):this[qe]()),e}unpipe(e){let t=this[I].find(i=>i.dest===e);t&&(this[I].length===1?(this[O]&&this[Ne]===0&&(this[O]=!1),this[I]=[]):this[I].splice(this[I].indexOf(t),1),t.unpipe())}addListener(e,t){return this.on(e,t)}on(e,t){let i=super.on(e,t);if(e==="data")this[k]=!1,this[Ne]++,!this[I].length&&!this[O]&&this[qe]();else if(e==="readable"&&this[v]!==0)super.emit("readable");else if(Mo(e)&&this[_e])super.emit(e),this.removeAllListeners(e);else if(e==="error"&&this[ft]){let r=t;this[J]?pt(()=>r.call(this,this[ft])):r.call(this,this[ft])}return i}removeListener(e,t){return this.off(e,t)}off(e,t){let i=super.off(e,t);return e==="data"&&(this[Ne]=this.listeners("data").length,this[Ne]===0&&!this[k]&&!this[I].length&&(this[O]=!1)),i}removeAllListeners(e){let t=super.removeAllListeners(e);return(e==="data"||e===void 0)&&(this[Ne]=0,!this[k]&&!this[I].length&&(this[O]=!1)),t}get emittedEnd(){return this[_e]}[ue](){!this[xt]&&!this[_e]&&!this[y]&&this[R].length===0&&this[le]&&(this[xt]=!0,this.emit("end"),this.emit("prefinish"),this.emit("finish"),this[jt]&&this.emit("close"),this[xt]=!1)}emit(e,...t){let i=t[0];if(e!=="error"&&e!=="close"&&e!==y&&this[y])return!1;if(e==="data")return!this[N]&&!i?!1:this[J]?(pt(()=>this[Ji](i)),!0):this[Ji](i);if(e==="end")return this[xr]();if(e==="close"){if(this[jt]=!0,!this[_e]&&!this[y])return!1;let n=super.emit("close");return this.removeAllListeners("close"),n}else if(e==="error"){this[ft]=i,super.emit(Qi,i);let n=!this[mt]||this.listeners("error").length?super.emit("error",i):!1;return this[ue](),n}else if(e==="resume"){let n=super.emit("resume");return this[ue](),n}else if(e==="finish"||e==="prefinish"){let n=super.emit(e);return this.removeAllListeners(e),n}let r=super.emit(e,...t);return this[ue](),r}[Ji](e){for(let i of this[I])i.dest.write(e)===!1&&this.pause();let t=this[k]?!1:super.emit("data",e);return this[ue](),t}[xr](){return this[_e]?!1:(this[_e]=!0,this.readable=!1,this[J]?(pt(()=>this[es]()),!0):this[es]())}[es](){if(this[Ue]){let t=this[Ue].end();if(t){for(let i of this[I])i.dest.write(t);this[k]||super.emit("data",t)}}for(let t of this[I])t.end();let e=super.emit("end");return this.removeAllListeners("end"),e}async collect(){let e=Object.assign([],{dataLength:0});this[N]||(e.dataLength=0);let t=this.promise();return this.on("data",i=>{e.push(i),this[N]||(e.dataLength+=i.length)}),await t,e}async concat(){if(this[N])throw new Error("cannot concat in objectMode");let e=await this.collect();return this[K]?e.join(""):Buffer.concat(e,e.dataLength)}async promise(){return new Promise((e,t)=>{this.on(y,()=>t(new Error("stream destroyed"))),this.on("error",i=>t(i)),this.on("end",()=>e())})}[Symbol.asyncIterator](){this[k]=!1;let e=!1,t=async()=>(this.pause(),e=!0,{value:void 0,done:!0});return{next:()=>{if(e)return t();let r=this.read();if(r!==null)return Promise.resolve({done:!1,value:r});if(this[le])return t();let n,o,a=c=>{this.off("data",h),this.off("end",l),this.off(y,u),t(),o(c)},h=c=>{this.off("error",a),this.off("end",l),this.off(y,u),this.pause(),n({value:c,done:!!this[le]})},l=()=>{this.off("error",a),this.off("data",h),this.off(y,u),t(),n({done:!0,value:void 0})},u=()=>a(new Error("stream destroyed"));return new Promise((c,E)=>{o=E,n=c,this.once(y,u),this.once("error",a),this.once("end",l),this.once("data",h)})},throw:t,return:t,[Symbol.asyncIterator](){return this},[Symbol.asyncDispose]:async()=>{}}}[Symbol.iterator](){this[k]=!1;let e=!1,t=()=>(this.pause(),this.off(Qi,t),this.off(y,t),this.off("end",t),e=!0,{done:!0,value:void 0}),i=()=>{if(e)return t();let r=this.read();return r===null?t():{done:!1,value:r}};return this.once("end",t),this.once(Qi,t),this.once(y,t),{next:i,throw:t,return:t,[Symbol.iterator](){return this},[Symbol.dispose]:()=>{}}}destroy(e){if(this[y])return e?this.emit("error",e):this.emit(y),this;this[y]=!0,this[k]=!0,this[R].length=0,this[v]=0;let t=this;return typeof t.close=="function"&&!this[jt]&&t.close(),e?this.emit("error",e):this.emit(y),this}static get isStream(){return F.isStream}};F.Minipass=Zt});var Ke=d(W=>{"use strict";var Ur=W&&W.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(W,"__esModule",{value:!0});W.WriteStreamSync=W.WriteStream=W.ReadStreamSync=W.ReadStream=void 0;var Co=Ur(__nccwpck_require__(24434)),B=Ur(__nccwpck_require__(79896)),Bo=We(),zo=B.default.writev,ye=Symbol("_autoClose"),$=Symbol("_close"),_t=Symbol("_ended"),p=Symbol("_fd"),rs=Symbol("_finished"),fe=Symbol("_flags"),ns=Symbol("_flush"),ls=Symbol("_handleChunk"),us=Symbol("_makeBuf"),yt=Symbol("_mode"),Gt=Symbol("_needDrain"),Ge=Symbol("_onerror"),Ye=Symbol("_onopen"),os=Symbol("_onread"),He=Symbol("_onwrite"),Ee=Symbol("_open"),V=Symbol("_path"),we=Symbol("_pos"),ee=Symbol("_queue"),Ze=Symbol("_read"),as=Symbol("_readSize"),ce=Symbol("_reading"),wt=Symbol("_remain"),hs=Symbol("_size"),Yt=Symbol("_write"),Me=Symbol("_writing"),Kt=Symbol("_defaultFlag"),Le=Symbol("_errored"),Vt=class extends Bo.Minipass{[Le]=!1;[p];[V];[as];[ce]=!1;[hs];[wt];[ye];constructor(e,t){if(t=t||{},super(t),this.readable=!0,this.writable=!1,typeof e!="string")throw new TypeError("path must be a string");this[Le]=!1,this[p]=typeof t.fd=="number"?t.fd:void 0,this[V]=e,this[as]=t.readSize||16*1024*1024,this[ce]=!1,this[hs]=typeof t.size=="number"?t.size:1/0,this[wt]=this[hs],this[ye]=typeof t.autoClose=="boolean"?t.autoClose:!0,typeof this[p]=="number"?this[Ze]():this[Ee]()}get fd(){return this[p]}get path(){return this[V]}write(){throw new TypeError("this is a readable stream")}end(){throw new TypeError("this is a readable stream")}[Ee](){B.default.open(this[V],"r",(e,t)=>this[Ye](e,t))}[Ye](e,t){e?this[Ge](e):(this[p]=t,this.emit("open",t),this[Ze]())}[us](){return Buffer.allocUnsafe(Math.min(this[as],this[wt]))}[Ze](){if(!this[ce]){this[ce]=!0;let e=this[us]();if(e.length===0)return process.nextTick(()=>this[os](null,0,e));B.default.read(this[p],e,0,e.length,null,(t,i,r)=>this[os](t,i,r))}}[os](e,t,i){this[ce]=!1,e?this[Ge](e):this[ls](t,i)&&this[Ze]()}[$](){if(this[ye]&&typeof this[p]=="number"){let e=this[p];this[p]=void 0,B.default.close(e,t=>t?this.emit("error",t):this.emit("close"))}}[Ge](e){this[ce]=!0,this[$](),this.emit("error",e)}[ls](e,t){let i=!1;return this[wt]-=e,e>0&&(i=super.write(e<t.length?t.subarray(0,e):t)),(e===0||this[wt]<=0)&&(i=!1,this[$](),super.end()),i}emit(e,...t){switch(e){case"prefinish":case"finish":return!1;case"drain":return typeof this[p]=="number"&&this[Ze](),!1;case"error":return this[Le]?!1:(this[Le]=!0,super.emit(e,...t));default:return super.emit(e,...t)}}};W.ReadStream=Vt;var cs=class extends Vt{[Ee](){let e=!0;try{this[Ye](null,B.default.openSync(this[V],"r")),e=!1}finally{e&&this[$]()}}[Ze](){let e=!0;try{if(!this[ce]){this[ce]=!0;do{let t=this[us](),i=t.length===0?0:B.default.readSync(this[p],t,0,t.length,null);if(!this[ls](i,t))break}while(!0);this[ce]=!1}e=!1}finally{e&&this[$]()}}[$](){if(this[ye]&&typeof this[p]=="number"){let e=this[p];this[p]=void 0,B.default.closeSync(e),this.emit("close")}}};W.ReadStreamSync=cs;var $t=class extends Co.default{readable=!1;writable=!0;[Le]=!1;[Me]=!1;[_t]=!1;[ee]=[];[Gt]=!1;[V];[yt];[ye];[p];[Kt];[fe];[rs]=!1;[we];constructor(e,t){t=t||{},super(t),this[V]=e,this[p]=typeof t.fd=="number"?t.fd:void 0,this[yt]=t.mode===void 0?438:t.mode,this[we]=typeof t.start=="number"?t.start:void 0,this[ye]=typeof t.autoClose=="boolean"?t.autoClose:!0;let i=this[we]!==void 0?"r+":"w";this[Kt]=t.flags===void 0,this[fe]=t.flags===void 0?i:t.flags,this[p]===void 0&&this[Ee]()}emit(e,...t){if(e==="error"){if(this[Le])return!1;this[Le]=!0}return super.emit(e,...t)}get fd(){return this[p]}get path(){return this[V]}[Ge](e){this[$](),this[Me]=!0,this.emit("error",e)}[Ee](){B.default.open(this[V],this[fe],this[yt],(e,t)=>this[Ye](e,t))}[Ye](e,t){this[Kt]&&this[fe]==="r+"&&e&&e.code==="ENOENT"?(this[fe]="w",this[Ee]()):e?this[Ge](e):(this[p]=t,this.emit("open",t),this[Me]||this[ns]())}end(e,t){return e&&this.write(e,t),this[_t]=!0,!this[Me]&&!this[ee].length&&typeof this[p]=="number"&&this[He](null,0),this}write(e,t){return typeof e=="string"&&(e=Buffer.from(e,t)),this[_t]?(this.emit("error",new Error("write() after end()")),!1):this[p]===void 0||this[Me]||this[ee].length?(this[ee].push(e),this[Gt]=!0,!1):(this[Me]=!0,this[Yt](e),!0)}[Yt](e){B.default.write(this[p],e,0,e.length,this[we],(t,i)=>this[He](t,i))}[He](e,t){e?this[Ge](e):(this[we]!==void 0&&typeof t=="number"&&(this[we]+=t),this[ee].length?this[ns]():(this[Me]=!1,this[_t]&&!this[rs]?(this[rs]=!0,this[$](),this.emit("finish")):this[Gt]&&(this[Gt]=!1,this.emit("drain"))))}[ns](){if(this[ee].length===0)this[_t]&&this[He](null,0);else if(this[ee].length===1)this[Yt](this[ee].pop());else{let e=this[ee];this[ee]=[],zo(this[p],e,this[we],(t,i)=>this[He](t,i))}}[$](){if(this[ye]&&typeof this[p]=="number"){let e=this[p];this[p]=void 0,B.default.close(e,t=>t?this.emit("error",t):this.emit("close"))}}};W.WriteStream=$t;var fs=class extends $t{[Ee](){let e;if(this[Kt]&&this[fe]==="r+")try{e=B.default.openSync(this[V],this[fe],this[yt])}catch(t){if(t?.code==="ENOENT")return this[fe]="w",this[Ee]();throw t}else e=B.default.openSync(this[V],this[fe],this[yt]);this[Ye](null,e)}[$](){if(this[ye]&&typeof this[p]=="number"){let e=this[p];this[p]=void 0,B.default.closeSync(e),this.emit("close")}}[Yt](e){let t=!0;try{this[He](null,B.default.writeSync(this[p],e,0,e.length,this[we])),t=!1}finally{if(t)try{this[$]()}catch{}}}};W.WriteStreamSync=fs});var Xt=d(b=>{"use strict";Object.defineProperty(b,"__esModule",{value:!0});b.dealias=b.isNoFile=b.isFile=b.isAsync=b.isSync=b.isAsyncNoFile=b.isSyncNoFile=b.isAsyncFile=b.isSyncFile=void 0;var ko=new Map([["C","cwd"],["f","file"],["z","gzip"],["P","preservePaths"],["U","unlink"],["strip-components","strip"],["stripComponents","strip"],["keep-newer","newer"],["keepNewer","newer"],["keep-newer-files","newer"],["keepNewerFiles","newer"],["k","keep"],["keep-existing","keep"],["keepExisting","keep"],["m","noMtime"],["no-mtime","noMtime"],["p","preserveOwner"],["L","follow"],["h","follow"],["onentry","onReadEntry"]]),xo=s=>!!s.sync&&!!s.file;b.isSyncFile=xo;var jo=s=>!s.sync&&!!s.file;b.isAsyncFile=jo;var Uo=s=>!!s.sync&&!s.file;b.isSyncNoFile=Uo;var qo=s=>!s.sync&&!s.file;b.isAsyncNoFile=qo;var Wo=s=>!!s.sync;b.isSync=Wo;var Ho=s=>!s.sync;b.isAsync=Ho;var Zo=s=>!!s.file;b.isFile=Zo;var Go=s=>!s.file;b.isNoFile=Go;var Yo=s=>{let e=ko.get(s);return e||s},Ko=(s={})=>{if(!s)return{};let e={};for(let[t,i]of Object.entries(s)){let r=Yo(t);e[r]=i}return e.chmod===void 0&&e.noChmod===!1&&(e.chmod=!0),delete e.noChmod,e};b.dealias=Ko});var Ve=d(Qt=>{"use strict";Object.defineProperty(Qt,"__esModule",{value:!0});Qt.makeCommand=void 0;var Et=Xt(),Vo=(s,e,t,i,r)=>Object.assign((n=[],o,a)=>{Array.isArray(n)&&(o=n,n={}),typeof o=="function"&&(a=o,o=void 0),o=o?Array.from(o):[];let h=(0,Et.dealias)(n);if(r?.(h,o),(0,Et.isSyncFile)(h)){if(typeof a=="function")throw new TypeError("callback not supported for sync tar functions");return s(h,o)}else if((0,Et.isAsyncFile)(h)){let l=e(h,o);return a?l.then(()=>a(),a):l}else if((0,Et.isSyncNoFile)(h)){if(typeof a=="function")throw new TypeError("callback not supported for sync tar functions");return t(h,o)}else if((0,Et.isAsyncNoFile)(h)){if(typeof a=="function")throw new TypeError("callback only supported with file option");return i(h,o)}throw new Error("impossible options??")},{syncFile:s,asyncFile:e,syncNoFile:t,asyncNoFile:i,validate:r});Qt.makeCommand=Vo});var ds=d($e=>{"use strict";var $o=$e&&$e.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty($e,"__esModule",{value:!0});$e.constants=void 0;var Xo=$o(__nccwpck_require__(43106)),Qo=Xo.default.constants||{ZLIB_VERNUM:4736};$e.constants=Object.freeze(Object.assign(Object.create(null),{Z_NO_FLUSH:0,Z_PARTIAL_FLUSH:1,Z_SYNC_FLUSH:2,Z_FULL_FLUSH:3,Z_FINISH:4,Z_BLOCK:5,Z_OK:0,Z_STREAM_END:1,Z_NEED_DICT:2,Z_ERRNO:-1,Z_STREAM_ERROR:-2,Z_DATA_ERROR:-3,Z_MEM_ERROR:-4,Z_BUF_ERROR:-5,Z_VERSION_ERROR:-6,Z_NO_COMPRESSION:0,Z_BEST_SPEED:1,Z_BEST_COMPRESSION:9,Z_DEFAULT_COMPRESSION:-1,Z_FILTERED:1,Z_HUFFMAN_ONLY:2,Z_RLE:3,Z_FIXED:4,Z_DEFAULT_STRATEGY:0,DEFLATE:1,INFLATE:2,GZIP:3,GUNZIP:4,DEFLATERAW:5,INFLATERAW:6,UNZIP:7,BROTLI_DECODE:8,BROTLI_ENCODE:9,Z_MIN_WINDOWBITS:8,Z_MAX_WINDOWBITS:15,Z_DEFAULT_WINDOWBITS:15,Z_MIN_CHUNK:64,Z_MAX_CHUNK:1/0,Z_DEFAULT_CHUNK:16384,Z_MIN_MEMLEVEL:1,Z_MAX_MEMLEVEL:9,Z_DEFAULT_MEMLEVEL:8,Z_MIN_LEVEL:-1,Z_MAX_LEVEL:9,Z_DEFAULT_LEVEL:-1,BROTLI_OPERATION_PROCESS:0,BROTLI_OPERATION_FLUSH:1,BROTLI_OPERATION_FINISH:2,BROTLI_OPERATION_EMIT_METADATA:3,BROTLI_MODE_GENERIC:0,BROTLI_MODE_TEXT:1,BROTLI_MODE_FONT:2,BROTLI_DEFAULT_MODE:0,BROTLI_MIN_QUALITY:0,BROTLI_MAX_QUALITY:11,BROTLI_DEFAULT_QUALITY:11,BROTLI_MIN_WINDOW_BITS:10,BROTLI_MAX_WINDOW_BITS:24,BROTLI_LARGE_MAX_WINDOW_BITS:30,BROTLI_DEFAULT_WINDOW:22,BROTLI_MIN_INPUT_BLOCK_BITS:16,BROTLI_MAX_INPUT_BLOCK_BITS:24,BROTLI_PARAM_MODE:0,BROTLI_PARAM_QUALITY:1,BROTLI_PARAM_LGWIN:2,BROTLI_PARAM_LGBLOCK:3,BROTLI_PARAM_DISABLE_LITERAL_CONTEXT_MODELING:4,BROTLI_PARAM_SIZE_HINT:5,BROTLI_PARAM_LARGE_WINDOW:6,BROTLI_PARAM_NPOSTFIX:7,BROTLI_PARAM_NDIRECT:8,BROTLI_DECODER_RESULT_ERROR:0,BROTLI_DECODER_RESULT_SUCCESS:1,BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT:2,BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT:3,BROTLI_DECODER_PARAM_DISABLE_RING_BUFFER_REALLOCATION:0,BROTLI_DECODER_PARAM_LARGE_WINDOW:1,BROTLI_DECODER_NO_ERROR:0,BROTLI_DECODER_SUCCESS:1,BROTLI_DECODER_NEEDS_MORE_INPUT:2,BROTLI_DECODER_NEEDS_MORE_OUTPUT:3,BROTLI_DECODER_ERROR_FORMAT_EXUBERANT_NIBBLE:-1,BROTLI_DECODER_ERROR_FORMAT_RESERVED:-2,BROTLI_DECODER_ERROR_FORMAT_EXUBERANT_META_NIBBLE:-3,BROTLI_DECODER_ERROR_FORMAT_SIMPLE_HUFFMAN_ALPHABET:-4,BROTLI_DECODER_ERROR_FORMAT_SIMPLE_HUFFMAN_SAME:-5,BROTLI_DECODER_ERROR_FORMAT_CL_SPACE:-6,BROTLI_DECODER_ERROR_FORMAT_HUFFMAN_SPACE:-7,BROTLI_DECODER_ERROR_FORMAT_CONTEXT_MAP_REPEAT:-8,BROTLI_DECODER_ERROR_FORMAT_BLOCK_LENGTH_1:-9,BROTLI_DECODER_ERROR_FORMAT_BLOCK_LENGTH_2:-10,BROTLI_DECODER_ERROR_FORMAT_TRANSFORM:-11,BROTLI_DECODER_ERROR_FORMAT_DICTIONARY:-12,BROTLI_DECODER_ERROR_FORMAT_WINDOW_BITS:-13,BROTLI_DECODER_ERROR_FORMAT_PADDING_1:-14,BROTLI_DECODER_ERROR_FORMAT_PADDING_2:-15,BROTLI_DECODER_ERROR_FORMAT_DISTANCE:-16,BROTLI_DECODER_ERROR_DICTIONARY_NOT_SET:-19,BROTLI_DECODER_ERROR_INVALID_ARGUMENTS:-20,BROTLI_DECODER_ERROR_ALLOC_CONTEXT_MODES:-21,BROTLI_DECODER_ERROR_ALLOC_TREE_GROUPS:-22,BROTLI_DECODER_ERROR_ALLOC_CONTEXT_MAP:-25,BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_1:-26,BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_2:-27,BROTLI_DECODER_ERROR_ALLOC_BLOCK_TYPE_TREES:-30,BROTLI_DECODER_ERROR_UNREACHABLE:-31},Qo))});var Ps=d(f=>{"use strict";var Jo=f&&f.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),ea=f&&f.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),ta=f&&f.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&Jo(t,e,i[r]);return ea(t,e),t}})(),ia=f&&f.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(f,"__esModule",{value:!0});f.ZstdDecompress=f.ZstdCompress=f.BrotliDecompress=f.BrotliCompress=f.Unzip=f.InflateRaw=f.DeflateRaw=f.Gunzip=f.Gzip=f.Inflate=f.Deflate=f.Zlib=f.ZlibError=f.constants=void 0;var _s=ia(__nccwpck_require__(42613)),Ae=__nccwpck_require__(20181),sa=We(),qr=ta(__nccwpck_require__(43106)),te=ds(),ra=ds();Object.defineProperty(f,"constants",{enumerable:!0,get:function(){return ra.constants}});var na=Ae.Buffer.concat,Wr=Object.getOwnPropertyDescriptor(Ae.Buffer,"concat"),oa=s=>s,ms=Wr?.writable===!0||Wr?.set!==void 0?s=>{Ae.Buffer.concat=s?oa:na}:s=>{},Ie=Symbol("_superWrite"),Fe=class extends Error{code;errno;constructor(e,t){super("zlib: "+e.message,{cause:e}),this.code=e.code,this.errno=e.errno,this.code||(this.code="ZLIB_ERROR"),this.message="zlib: "+e.message,Error.captureStackTrace(this,t??this.constructor)}get name(){return"ZlibError"}};f.ZlibError=Fe;var ps=Symbol("flushFlag"),bt=class extends sa.Minipass{#e=!1;#i=!1;#s;#n;#r;#t;#o;get sawError(){return this.#e}get handle(){return this.#t}get flushFlag(){return this.#s}constructor(e,t){if(!e||typeof e!="object")throw new TypeError("invalid options for ZlibBase constructor");if(super(e),this.#s=e.flush??0,this.#n=e.finishFlush??0,this.#r=e.fullFlushFlag??0,typeof qr[t]!="function")throw new TypeError("Compression method not supported: "+t);try{this.#t=new qr[t](e)}catch(i){throw new Fe(i,this.constructor)}this.#o=i=>{this.#e||(this.#e=!0,this.close(),this.emit("error",i))},this.#t?.on("error",i=>this.#o(new Fe(i))),this.once("end",()=>this.close)}close(){this.#t&&(this.#t.close(),this.#t=void 0,this.emit("close"))}reset(){if(!this.#e)return(0,_s.default)(this.#t,"zlib binding closed"),this.#t.reset?.()}flush(e){this.ended||(typeof e!="number"&&(e=this.#r),this.write(Object.assign(Ae.Buffer.alloc(0),{[ps]:e})))}end(e,t,i){return typeof e=="function"&&(i=e,t=void 0,e=void 0),typeof t=="function"&&(i=t,t=void 0),e&&(t?this.write(e,t):this.write(e)),this.flush(this.#n),this.#i=!0,super.end(i)}get ended(){return this.#i}[Ie](e){return super.write(e)}write(e,t,i){if(typeof t=="function"&&(i=t,t="utf8"),typeof e=="string"&&(e=Ae.Buffer.from(e,t)),this.#e)return;(0,_s.default)(this.#t,"zlib binding closed");let r=this.#t._handle,n=r.close;r.close=()=>{};let o=this.#t.close;this.#t.close=()=>{},ms(!0);let a;try{let l=typeof e[ps]=="number"?e[ps]:this.#s;a=this.#t._processChunk(e,l),ms(!1)}catch(l){ms(!1),this.#o(new Fe(l,this.write))}finally{this.#t&&(this.#t._handle=r,r.close=n,this.#t.close=o,this.#t.removeAllListeners("error"))}this.#t&&this.#t.on("error",l=>this.#o(new Fe(l,this.write)));let h;if(a)if(Array.isArray(a)&&a.length>0){let l=a[0];h=this[Ie](Ae.Buffer.from(l));for(let u=1;u<a.length;u++)h=this[Ie](a[u])}else h=this[Ie](Ae.Buffer.from(a));return i&&i(),h}},ie=class extends bt{#e;#i;constructor(e,t){e=e||{},e.flush=e.flush||te.constants.Z_NO_FLUSH,e.finishFlush=e.finishFlush||te.constants.Z_FINISH,e.fullFlushFlag=te.constants.Z_FULL_FLUSH,super(e,t),this.#e=e.level,this.#i=e.strategy}params(e,t){if(!this.sawError){if(!this.handle)throw new Error("cannot switch params when binding is closed");if(!this.handle.params)throw new Error("not supported in this implementation");if(this.#e!==e||this.#i!==t){this.flush(te.constants.Z_SYNC_FLUSH),(0,_s.default)(this.handle,"zlib binding closed");let i=this.handle.flush;this.handle.flush=(r,n)=>{typeof r=="function"&&(n=r,r=this.flushFlag),this.flush(r),n?.()};try{this.handle.params(e,t)}finally{this.handle.flush=i}this.handle&&(this.#e=e,this.#i=t)}}}};f.Zlib=ie;var ws=class extends ie{constructor(e){super(e,"Deflate")}};f.Deflate=ws;var ys=class extends ie{constructor(e){super(e,"Inflate")}};f.Inflate=ys;var Es=class extends ie{#e;constructor(e){super(e,"Gzip"),this.#e=e&&!!e.portable}[Ie](e){return this.#e?(this.#e=!1,e[9]=255,super[Ie](e)):super[Ie](e)}};f.Gzip=Es;var bs=class extends ie{constructor(e){super(e,"Gunzip")}};f.Gunzip=bs;var Ss=class extends ie{constructor(e){super(e,"DeflateRaw")}};f.DeflateRaw=Ss;var gs=class extends ie{constructor(e){super(e,"InflateRaw")}};f.InflateRaw=gs;var Os=class extends ie{constructor(e){super(e,"Unzip")}};f.Unzip=Os;var Jt=class extends bt{constructor(e,t){e=e||{},e.flush=e.flush||te.constants.BROTLI_OPERATION_PROCESS,e.finishFlush=e.finishFlush||te.constants.BROTLI_OPERATION_FINISH,e.fullFlushFlag=te.constants.BROTLI_OPERATION_FLUSH,super(e,t)}},Rs=class extends Jt{constructor(e){super(e,"BrotliCompress")}};f.BrotliCompress=Rs;var vs=class extends Jt{constructor(e){super(e,"BrotliDecompress")}};f.BrotliDecompress=vs;var ei=class extends bt{constructor(e,t){e=e||{},e.flush=e.flush||te.constants.ZSTD_e_continue,e.finishFlush=e.finishFlush||te.constants.ZSTD_e_end,e.fullFlushFlag=te.constants.ZSTD_e_flush,super(e,t)}},Ts=class extends ei{constructor(e){super(e,"ZstdCompress")}};f.ZstdCompress=Ts;var Ds=class extends ei{constructor(e){super(e,"ZstdDecompress")}};f.ZstdDecompress=Ds});var Gr=d(Xe=>{"use strict";Object.defineProperty(Xe,"__esModule",{value:!0});Xe.parse=Xe.encode=void 0;var aa=(s,e)=>{if(Number.isSafeInteger(s))s<0?la(s,e):ha(s,e);else throw Error("cannot encode number outside of javascript safe integer range");return e};Xe.encode=aa;var ha=(s,e)=>{e[0]=128;for(var t=e.length;t>1;t--)e[t-1]=s&255,s=Math.floor(s/256)},la=(s,e)=>{e[0]=255;var t=!1;s=s*-1;for(var i=e.length;i>1;i--){var r=s&255;s=Math.floor(s/256),t?e[i-1]=Hr(r):r===0?e[i-1]=0:(t=!0,e[i-1]=Zr(r))}},ua=s=>{let e=s[0],t=e===128?fa(s.subarray(1,s.length)):e===255?ca(s):null;if(t===null)throw Error("invalid base256 encoding");if(!Number.isSafeInteger(t))throw Error("parsed number outside of javascript safe integer range");return t};Xe.parse=ua;var ca=s=>{for(var e=s.length,t=0,i=!1,r=e-1;r>-1;r--){var n=Number(s[r]),o;i?o=Hr(n):n===0?o=n:(i=!0,o=Zr(n)),o!==0&&(t-=o*Math.pow(256,e-r-1))}return t},fa=s=>{for(var e=s.length,t=0,i=e-1;i>-1;i--){var r=Number(s[i]);r!==0&&(t+=r*Math.pow(256,e-i-1))}return t},Hr=s=>(255^s)&255,Zr=s=>(255^s)+1&255});var Ns=d(x=>{"use strict";Object.defineProperty(x,"__esModule",{value:!0});x.code=x.name=x.isName=x.isCode=void 0;var da=s=>x.name.has(s);x.isCode=da;var ma=s=>x.code.has(s);x.isName=ma;x.name=new Map([["0","File"],["","OldFile"],["1","Link"],["2","SymbolicLink"],["3","CharacterDevice"],["4","BlockDevice"],["5","Directory"],["6","FIFO"],["7","ContiguousFile"],["g","GlobalExtendedHeader"],["x","ExtendedHeader"],["A","SolarisACL"],["D","GNUDumpDir"],["I","Inode"],["K","NextFileHasLongLinkpath"],["L","NextFileHasLongPath"],["M","ContinuationFile"],["N","OldGnuLongPath"],["S","SparseFile"],["V","TapeVolumeHeader"],["X","OldExtendedHeader"]]);x.code=new Map(Array.from(x.name).map(s=>[s[1],s[0]]))});var Je=d(se=>{"use strict";var pa=se&&se.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),_a=se&&se.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),Yr=se&&se.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&pa(t,e,i[r]);return _a(t,e),t}})();Object.defineProperty(se,"__esModule",{value:!0});se.Header=void 0;var Qe=__nccwpck_require__(76760),Kr=Yr(Gr()),St=Yr(Ns()),As=class{cksumValid=!1;needPax=!1;nullBlock=!1;block;path;mode;uid;gid;size;cksum;#e="Unsupported";linkpath;uname;gname;devmaj=0;devmin=0;atime;ctime;mtime;charset;comment;constructor(e,t=0,i,r){Buffer.isBuffer(e)?this.decode(e,t||0,i,r):e&&this.#i(e)}decode(e,t,i,r){if(t||(t=0),!e||!(e.length>=t+512))throw new Error("need 512 bytes for header");this.path=i?.path??Ce(e,t,100),this.mode=i?.mode??r?.mode??be(e,t+100,8),this.uid=i?.uid??r?.uid??be(e,t+108,8),this.gid=i?.gid??r?.gid??be(e,t+116,8),this.size=i?.size??r?.size??be(e,t+124,12),this.mtime=i?.mtime??r?.mtime??Ms(e,t+136,12),this.cksum=be(e,t+148,12),r&&this.#i(r,!0),i&&this.#i(i);let n=Ce(e,t+156,1);if(St.isCode(n)&&(this.#e=n||"0"),this.#e==="0"&&this.path.slice(-1)==="/"&&(this.#e="5"),this.#e==="5"&&(this.size=0),this.linkpath=Ce(e,t+157,100),e.subarray(t+257,t+265).toString()==="ustar\x0000")if(this.uname=i?.uname??r?.uname??Ce(e,t+265,32),this.gname=i?.gname??r?.gname??Ce(e,t+297,32),this.devmaj=i?.devmaj??r?.devmaj??be(e,t+329,8)??0,this.devmin=i?.devmin??r?.devmin??be(e,t+337,8)??0,e[t+475]!==0){let a=Ce(e,t+345,155);this.path=a+"/"+this.path}else{let a=Ce(e,t+345,130);a&&(this.path=a+"/"+this.path),this.atime=i?.atime??r?.atime??Ms(e,t+476,12),this.ctime=i?.ctime??r?.ctime??Ms(e,t+488,12)}let o=256;for(let a=t;a<t+148;a++)o+=e[a];for(let a=t+156;a<t+512;a++)o+=e[a];this.cksumValid=o===this.cksum,this.cksum===void 0&&o===256&&(this.nullBlock=!0)}#i(e,t=!1){Object.assign(this,Object.fromEntries(Object.entries(e).filter(([i,r])=>!(r==null||i==="path"&&t||i==="linkpath"&&t||i==="global"))))}encode(e,t=0){if(e||(e=this.block=Buffer.alloc(512)),this.#e==="Unsupported"&&(this.#e="0"),!(e.length>=t+512))throw new Error("need 512 bytes for header");let i=this.ctime||this.atime?130:155,r=wa(this.path||"",i),n=r[0],o=r[1];this.needPax=!!r[2],this.needPax=Be(e,t,100,n)||this.needPax,this.needPax=Se(e,t+100,8,this.mode)||this.needPax,this.needPax=Se(e,t+108,8,this.uid)||this.needPax,this.needPax=Se(e,t+116,8,this.gid)||this.needPax,this.needPax=Se(e,t+124,12,this.size)||this.needPax,this.needPax=Ls(e,t+136,12,this.mtime)||this.needPax,e[t+156]=Number(this.#e.codePointAt(0)),this.needPax=Be(e,t+157,100,this.linkpath)||this.needPax,e.write("ustar\x0000",t+257,8),this.needPax=Be(e,t+265,32,this.uname)||this.needPax,this.needPax=Be(e,t+297,32,this.gname)||this.needPax,this.needPax=Se(e,t+329,8,this.devmaj)||this.needPax,this.needPax=Se(e,t+337,8,this.devmin)||this.needPax,this.needPax=Be(e,t+345,i,o)||this.needPax,e[t+475]!==0?this.needPax=Be(e,t+345,155,o)||this.needPax:(this.needPax=Be(e,t+345,130,o)||this.needPax,this.needPax=Ls(e,t+476,12,this.atime)||this.needPax,this.needPax=Ls(e,t+488,12,this.ctime)||this.needPax);let a=256;for(let h=t;h<t+148;h++)a+=e[h];for(let h=t+156;h<t+512;h++)a+=e[h];return this.cksum=a,Se(e,t+148,8,this.cksum),this.cksumValid=!0,this.needPax}get type(){return this.#e==="Unsupported"?this.#e:St.name.get(this.#e)}get typeKey(){return this.#e}set type(e){let t=String(St.code.get(e));if(St.isCode(t)||t==="Unsupported")this.#e=t;else if(St.isCode(e))this.#e=e;else throw new TypeError("invalid entry type: "+e)}};se.Header=As;var wa=(s,e)=>{let i=s,r="",n,o=Qe.posix.parse(s).root||".";if(Buffer.byteLength(i)<100)n=[i,r,!1];else{r=Qe.posix.dirname(i),i=Qe.posix.basename(i);do Buffer.byteLength(i)<=100&&Buffer.byteLength(r)<=e?n=[i,r,!1]:Buffer.byteLength(i)>100&&Buffer.byteLength(r)<=e?n=[i.slice(0,99),r,!0]:(i=Qe.posix.join(Qe.posix.basename(r),i),r=Qe.posix.dirname(r));while(r!==o&&n===void 0);n||(n=[s.slice(0,99),"",!0])}return n},Ce=(s,e,t)=>s.subarray(e,e+t).toString("utf8").replace(/\0.*/,""),Ms=(s,e,t)=>ya(be(s,e,t)),ya=s=>s===void 0?void 0:new Date(s*1e3),be=(s,e,t)=>Number(s[e])&128?Kr.parse(s.subarray(e,e+t)):ba(s,e,t),Ea=s=>isNaN(s)?void 0:s,ba=(s,e,t)=>Ea(parseInt(s.subarray(e,e+t).toString("utf8").replace(/\0.*$/,"").trim(),8)),Sa={12:8589934591,8:2097151},Se=(s,e,t,i)=>i===void 0?!1:i>Sa[t]||i<0?(Kr.encode(i,s.subarray(e,e+t)),!0):(ga(s,e,t,i),!1),ga=(s,e,t,i)=>s.write(Oa(i,t),e,t,"ascii"),Oa=(s,e)=>Ra(Math.floor(s).toString(8),e),Ra=(s,e)=>(s.length===e-1?s:new Array(e-s.length-1).join("0")+s+" ")+"\0",Ls=(s,e,t,i)=>i===void 0?!1:Se(s,e,t,i.getTime()/1e3),va=new Array(156).join("\0"),Be=(s,e,t,i)=>i===void 0?!1:(s.write(i+va,e,t,"utf8"),i.length!==Buffer.byteLength(i)||i.length>t)});var ii=d(ti=>{"use strict";Object.defineProperty(ti,"__esModule",{value:!0});ti.Pax=void 0;var Ta=__nccwpck_require__(76760),Da=Je(),Is=class s{atime;mtime;ctime;charset;comment;gid;uid;gname;uname;linkpath;dev;ino;nlink;path;size;mode;global;constructor(e,t=!1){this.atime=e.atime,this.charset=e.charset,this.comment=e.comment,this.ctime=e.ctime,this.dev=e.dev,this.gid=e.gid,this.global=t,this.gname=e.gname,this.ino=e.ino,this.linkpath=e.linkpath,this.mtime=e.mtime,this.nlink=e.nlink,this.path=e.path,this.size=e.size,this.uid=e.uid,this.uname=e.uname}encode(){let e=this.encodeBody();if(e==="")return Buffer.allocUnsafe(0);let t=Buffer.byteLength(e),i=512*Math.ceil(1+t/512),r=Buffer.allocUnsafe(i);for(let n=0;n<512;n++)r[n]=0;new Da.Header({path:("PaxHeader/"+(0,Ta.basename)(this.path??"")).slice(0,99),mode:this.mode||420,uid:this.uid,gid:this.gid,size:t,mtime:this.mtime,type:this.global?"GlobalExtendedHeader":"ExtendedHeader",linkpath:"",uname:this.uname||"",gname:this.gname||"",devmaj:0,devmin:0,atime:this.atime,ctime:this.ctime}).encode(r),r.write(e,512,t,"utf8");for(let n=t+512;n<r.length;n++)r[n]=0;return r}encodeBody(){return this.encodeField("path")+this.encodeField("ctime")+this.encodeField("atime")+this.encodeField("dev")+this.encodeField("ino")+this.encodeField("nlink")+this.encodeField("charset")+this.encodeField("comment")+this.encodeField("gid")+this.encodeField("gname")+this.encodeField("linkpath")+this.encodeField("mtime")+this.encodeField("size")+this.encodeField("uid")+this.encodeField("uname")}encodeField(e){if(this[e]===void 0)return"";let t=this[e],i=t instanceof Date?t.getTime()/1e3:t,r=" "+(e==="dev"||e==="ino"||e==="nlink"?"SCHILY.":"")+e+"="+i+`
+`,n=Buffer.byteLength(r),o=Math.floor(Math.log(n)/Math.log(10))+1;return n+o>=Math.pow(10,o)&&(o+=1),o+n+r}static parse(e,t,i=!1){return new s(Pa(Na(e),t),i)}};ti.Pax=Is;var Pa=(s,e)=>e?Object.assign({},e,s):s,Na=s=>s.replace(/\n$/,"").split(`
+`).reduce(Ma,Object.create(null)),Ma=(s,e)=>{let t=parseInt(e,10);if(t!==Buffer.byteLength(e)+1)return s;e=e.slice((t+" ").length);let i=e.split("="),r=i.shift();if(!r)return s;let n=r.replace(/^SCHILY\.(dev|ino|nlink)/,"$1"),o=i.join("=");return s[n]=/^([A-Z]+\.)?([mac]|birth|creation)time$/.test(n)?new Date(Number(o)*1e3):/^[0-9]+$/.test(o)?+o:o,s}});var et=d(si=>{"use strict";Object.defineProperty(si,"__esModule",{value:!0});si.normalizeWindowsPath=void 0;var La=process.env.TESTING_TAR_FAKE_PLATFORM||process.platform;si.normalizeWindowsPath=La!=="win32"?s=>s:s=>s&&s.replaceAll(/\\/g,"/")});var oi=d(ni=>{"use strict";Object.defineProperty(ni,"__esModule",{value:!0});ni.ReadEntry=void 0;var Aa=We(),ri=et(),Fs=class extends Aa.Minipass{extended;globalExtended;header;startBlockSize;blockRemain;remain;type;meta=!1;ignore=!1;path;mode;uid;gid;uname;gname;size=0;mtime;atime;ctime;linkpath;dev;ino;nlink;invalid=!1;absolute;unsupported=!1;constructor(e,t,i){switch(super({}),this.pause(),this.extended=t,this.globalExtended=i,this.header=e,this.remain=e.size??0,this.startBlockSize=512*Math.ceil(this.remain/512),this.blockRemain=this.startBlockSize,this.type=e.type,this.type){case"File":case"OldFile":case"Link":case"SymbolicLink":case"CharacterDevice":case"BlockDevice":case"Directory":case"FIFO":case"ContiguousFile":case"GNUDumpDir":break;case"NextFileHasLongLinkpath":case"NextFileHasLongPath":case"OldGnuLongPath":case"GlobalExtendedHeader":case"ExtendedHeader":case"OldExtendedHeader":this.meta=!0;break;default:this.ignore=!0}if(!e.path)throw new Error("no path provided for tar.ReadEntry");this.path=(0,ri.normalizeWindowsPath)(e.path),this.mode=e.mode,this.mode&&(this.mode=this.mode&4095),this.uid=e.uid,this.gid=e.gid,this.uname=e.uname,this.gname=e.gname,this.size=this.remain,this.mtime=e.mtime,this.atime=e.atime,this.ctime=e.ctime,this.linkpath=e.linkpath?(0,ri.normalizeWindowsPath)(e.linkpath):void 0,this.uname=e.uname,this.gname=e.gname,t&&this.#e(t),i&&this.#e(i,!0)}write(e){let t=e.length;if(t>this.blockRemain)throw new Error("writing more to entry than is appropriate");let i=this.remain,r=this.blockRemain;return this.remain=Math.max(0,i-t),this.blockRemain=Math.max(0,r-t),this.ignore?!0:i>=t?super.write(e):super.write(e.subarray(0,i))}#e(e,t=!1){e.path&&(e.path=(0,ri.normalizeWindowsPath)(e.path)),e.linkpath&&(e.linkpath=(0,ri.normalizeWindowsPath)(e.linkpath)),Object.assign(this,Object.fromEntries(Object.entries(e).filter(([i,r])=>!(r==null||i==="path"&&t))))}};ni.ReadEntry=Fs});var hi=d(ai=>{"use strict";Object.defineProperty(ai,"__esModule",{value:!0});ai.warnMethod=void 0;var Ia=(s,e,t,i={})=>{s.file&&(i.file=s.file),s.cwd&&(i.cwd=s.cwd),i.code=t instanceof Error&&t.code||e,i.tarCode=e,!s.strict&&i.recoverable!==!1?(t instanceof Error&&(i=Object.assign(t,i),t=t.message),s.emit("warn",e,t,i)):t instanceof Error?s.emit("error",Object.assign(t,i)):s.emit("error",Object.assign(new Error(`${e}: ${t}`),i))};ai.warnMethod=Ia});var _i=d(pi=>{"use strict";Object.defineProperty(pi,"__esModule",{value:!0});pi.Parser=void 0;var Fa=__nccwpck_require__(24434),Cs=Ps(),Vr=Je(),$r=ii(),Ca=oi(),Ba=hi(),za=1024*1024,js=Buffer.from([31,139]),Us=Buffer.from([40,181,47,253]),ka=Math.max(js.length,Us.length),H=Symbol("state"),ze=Symbol("writeEntry"),de=Symbol("readEntry"),Bs=Symbol("nextEntry"),Xr=Symbol("processEntry"),re=Symbol("extendedHeader"),gt=Symbol("globalExtendedHeader"),ge=Symbol("meta"),Qr=Symbol("emitMeta"),_=Symbol("buffer"),me=Symbol("queue"),Oe=Symbol("ended"),zs=Symbol("emittedEnd"),ke=Symbol("emit"),S=Symbol("unzip"),li=Symbol("consumeChunk"),ui=Symbol("consumeChunkSub"),ks=Symbol("consumeBody"),Jr=Symbol("consumeMeta"),en=Symbol("consumeHeader"),Ot=Symbol("consuming"),xs=Symbol("bufferConcat"),ci=Symbol("maybeEnd"),tt=Symbol("writing"),Re=Symbol("aborted"),fi=Symbol("onDone"),xe=Symbol("sawValidEntry"),di=Symbol("sawNullBlock"),mi=Symbol("sawEOF"),tn=Symbol("closeStream"),xa=()=>!0,qs=class extends Fa.EventEmitter{file;strict;maxMetaEntrySize;filter;brotli;zstd;writable=!0;readable=!1;[me]=[];[_];[de];[ze];[H]="begin";[ge]="";[re];[gt];[Oe]=!1;[S];[Re]=!1;[xe];[di]=!1;[mi]=!1;[tt]=!1;[Ot]=!1;[zs]=!1;constructor(e={}){super(),this.file=e.file||"",this.on(fi,()=>{(this[H]==="begin"||this[xe]===!1)&&this.warn("TAR_BAD_ARCHIVE","Unrecognized archive format")}),e.ondone?this.on(fi,e.ondone):this.on(fi,()=>{this.emit("prefinish"),this.emit("finish"),this.emit("end")}),this.strict=!!e.strict,this.maxMetaEntrySize=e.maxMetaEntrySize||za,this.filter=typeof e.filter=="function"?e.filter:xa;let t=e.file&&(e.file.endsWith(".tar.br")||e.file.endsWith(".tbr"));this.brotli=!(e.gzip||e.zstd)&&e.brotli!==void 0?e.brotli:t?void 0:!1;let i=e.file&&(e.file.endsWith(".tar.zst")||e.file.endsWith(".tzst"));this.zstd=!(e.gzip||e.brotli)&&e.zstd!==void 0?e.zstd:i?!0:void 0,this.on("end",()=>this[tn]()),typeof e.onwarn=="function"&&this.on("warn",e.onwarn),typeof e.onReadEntry=="function"&&this.on("entry",e.onReadEntry)}warn(e,t,i={}){(0,Ba.warnMethod)(this,e,t,i)}[en](e,t){this[xe]===void 0&&(this[xe]=!1);let i;try{i=new Vr.Header(e,t,this[re],this[gt])}catch(r){return this.warn("TAR_ENTRY_INVALID",r)}if(i.nullBlock)this[di]?(this[mi]=!0,this[H]==="begin"&&(this[H]="header"),this[ke]("eof")):(this[di]=!0,this[ke]("nullBlock"));else if(this[di]=!1,!i.cksumValid)this.warn("TAR_ENTRY_INVALID","checksum failure",{header:i});else if(!i.path)this.warn("TAR_ENTRY_INVALID","path is required",{header:i});else{let r=i.type;if(/^(Symbolic)?Link$/.test(r)&&!i.linkpath)this.warn("TAR_ENTRY_INVALID","linkpath required",{header:i});else if(!/^(Symbolic)?Link$/.test(r)&&!/^(Global)?ExtendedHeader$/.test(r)&&i.linkpath)this.warn("TAR_ENTRY_INVALID","linkpath forbidden",{header:i});else{let n=this[ze]=new Ca.ReadEntry(i,this[re],this[gt]);if(!this[xe])if(n.remain){let o=()=>{n.invalid||(this[xe]=!0)};n.on("end",o)}else this[xe]=!0;n.meta?n.size>this.maxMetaEntrySize?(n.ignore=!0,this[ke]("ignoredEntry",n),this[H]="ignore",n.resume()):n.size>0&&(this[ge]="",n.on("data",o=>this[ge]+=o),this[H]="meta"):(this[re]=void 0,n.ignore=n.ignore||!this.filter(n.path,n),n.ignore?(this[ke]("ignoredEntry",n),this[H]=n.remain?"ignore":"header",n.resume()):(n.remain?this[H]="body":(this[H]="header",n.end()),this[de]?this[me].push(n):(this[me].push(n),this[Bs]())))}}}[tn](){queueMicrotask(()=>this.emit("close"))}[Xr](e){let t=!0;if(!e)this[de]=void 0,t=!1;else if(Array.isArray(e)){let[i,...r]=e;this.emit(i,...r)}else this[de]=e,this.emit("entry",e),e.emittedEnd||(e.on("end",()=>this[Bs]()),t=!1);return t}[Bs](){do;while(this[Xr](this[me].shift()));if(this[me].length===0){let e=this[de];!e||e.flowing||e.size===e.remain?this[tt]||this.emit("drain"):e.once("drain",()=>this.emit("drain"))}}[ks](e,t){let i=this[ze];if(!i)throw new Error("attempt to consume body without entry??");let r=i.blockRemain??0,n=r>=e.length&&t===0?e:e.subarray(t,t+r);return i.write(n),i.blockRemain||(this[H]="header",this[ze]=void 0,i.end()),n.length}[Jr](e,t){let i=this[ze],r=this[ks](e,t);return!this[ze]&&i&&this[Qr](i),r}[ke](e,t,i){this[me].length===0&&!this[de]?this.emit(e,t,i):this[me].push([e,t,i])}[Qr](e){switch(this[ke]("meta",this[ge]),e.type){case"ExtendedHeader":case"OldExtendedHeader":this[re]=$r.Pax.parse(this[ge],this[re],!1);break;case"GlobalExtendedHeader":this[gt]=$r.Pax.parse(this[ge],this[gt],!0);break;case"NextFileHasLongPath":case"OldGnuLongPath":{let t=this[re]??Object.create(null);this[re]=t,t.path=this[ge].replace(/\0.*/,"");break}case"NextFileHasLongLinkpath":{let t=this[re]||Object.create(null);this[re]=t,t.linkpath=this[ge].replace(/\0.*/,"");break}default:throw new Error("unknown meta: "+e.type)}}abort(e){this[Re]=!0,this.emit("abort",e),this.warn("TAR_ABORT",e,{recoverable:!1})}write(e,t,i){if(typeof t=="function"&&(i=t,t=void 0),typeof e=="string"&&(e=Buffer.from(e,typeof t=="string"?t:"utf8")),this[Re])return i?.(),!1;if((this[S]===void 0||this.brotli===void 0&&this[S]===!1)&&e){if(this[_]&&(e=Buffer.concat([this[_],e]),this[_]=void 0),e.length<ka)return this[_]=e,i?.(),!0;for(let h=0;this[S]===void 0&&h<js.length;h++)e[h]!==js[h]&&(this[S]=!1);let o=!1;if(this[S]===!1&&this.zstd!==!1){o=!0;for(let h=0;h<Us.length;h++)if(e[h]!==Us[h]){o=!1;break}}let a=this.brotli===void 0&&!o;if(this[S]===!1&&a)if(e.length<512)if(this[Oe])this.brotli=!0;else return this[_]=e,i?.(),!0;else try{new Vr.Header(e.subarray(0,512)),this.brotli=!1}catch{this.brotli=!0}if(this[S]===void 0||this[S]===!1&&(this.brotli||o)){let h=this[Oe];this[Oe]=!1,this[S]=this[S]===void 0?new Cs.Unzip({}):o?new Cs.ZstdDecompress({}):new Cs.BrotliDecompress({}),this[S].on("data",u=>this[li](u)),this[S].on("error",u=>this.abort(u)),this[S].on("end",()=>{this[Oe]=!0,this[li]()}),this[tt]=!0;let l=!!this[S][h?"end":"write"](e);return this[tt]=!1,i?.(),l}}this[tt]=!0,this[S]?this[S].write(e):this[li](e),this[tt]=!1;let n=this[me].length>0?!1:this[de]?this[de].flowing:!0;return!n&&this[me].length===0&&this[de]?.once("drain",()=>this.emit("drain")),i?.(),n}[xs](e){e&&!this[Re]&&(this[_]=this[_]?Buffer.concat([this[_],e]):e)}[ci](){if(this[Oe]&&!this[zs]&&!this[Re]&&!this[Ot]){this[zs]=!0;let e=this[ze];if(e&&e.blockRemain){let t=this[_]?this[_].length:0;this.warn("TAR_BAD_ARCHIVE",`Truncated input (needed ${e.blockRemain} more bytes, only ${t} available)`,{entry:e}),this[_]&&e.write(this[_]),e.end()}this[ke](fi)}}[li](e){if(this[Ot]&&e)this[xs](e);else if(!e&&!this[_])this[ci]();else if(e){if(this[Ot]=!0,this[_]){this[xs](e);let t=this[_];this[_]=void 0,this[ui](t)}else this[ui](e);for(;this[_]&&this[_]?.length>=512&&!this[Re]&&!this[mi];){let t=this[_];this[_]=void 0,this[ui](t)}this[Ot]=!1}(!this[_]||this[Oe])&&this[ci]()}[ui](e){let t=0,i=e.length;for(;t+512<=i&&!this[Re]&&!this[mi];)switch(this[H]){case"begin":case"header":this[en](e,t),t+=512;break;case"ignore":case"body":t+=this[ks](e,t);break;case"meta":t+=this[Jr](e,t);break;default:throw new Error("invalid state: "+this[H])}t<i&&(this[_]=this[_]?Buffer.concat([e.subarray(t),this[_]]):e.subarray(t))}end(e,t,i){return typeof e=="function"&&(i=e,t=void 0,e=void 0),typeof t=="function"&&(i=t,t=void 0),typeof e=="string"&&(e=Buffer.from(e,t)),i&&this.once("finish",i),this[Re]||(this[S]?(e&&this[S].write(e),this[S].end()):(this[Oe]=!0,(this.brotli===void 0||this.zstd===void 0)&&(e=e||Buffer.alloc(0)),e&&this.write(e),this[ci]())),this}};pi.Parser=qs});var yi=d(wi=>{"use strict";Object.defineProperty(wi,"__esModule",{value:!0});wi.stripTrailingSlashes=void 0;var ja=s=>{let e=s.length-1,t=-1;for(;e>-1&&s.charAt(e)==="/";)t=e,e--;return t===-1?s:s.slice(0,t)};wi.stripTrailingSlashes=ja});var st=d(C=>{"use strict";var Ua=C&&C.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),qa=C&&C.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),Wa=C&&C.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&Ua(t,e,i[r]);return qa(t,e),t}})(),Ha=C&&C.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(C,"__esModule",{value:!0});C.list=C.filesFilter=void 0;var Za=Wa(Ke()),it=Ha(__nccwpck_require__(73024)),sn=__nccwpck_require__(16928),Ga=Ve(),Ei=_i(),Ws=yi(),Ya=s=>{let e=s.onReadEntry;s.onReadEntry=e?t=>{e(t),t.resume()}:t=>t.resume()},Ka=(s,e)=>{let t=new Map(e.map(n=>[(0,Ws.stripTrailingSlashes)(n),!0])),i=s.filter,r=(n,o="")=>{let a=o||(0,sn.parse)(n).root||".",h;if(n===a)h=!1;else{let l=t.get(n);h=l!==void 0?l:r((0,sn.dirname)(n),a)}return t.set(n,h),h};s.filter=i?(n,o)=>i(n,o)&&r((0,Ws.stripTrailingSlashes)(n)):n=>r((0,Ws.stripTrailingSlashes)(n))};C.filesFilter=Ka;var Va=s=>{let e=new Ei.Parser(s),t=s.file,i;try{i=it.default.openSync(t,"r");let r=it.default.fstatSync(i),n=s.maxReadSize||16*1024*1024;if(r.size<n){let o=Buffer.allocUnsafe(r.size),a=it.default.readSync(i,o,0,r.size,0);e.end(a===o.byteLength?o:o.subarray(0,a))}else{let o=0,a=Buffer.allocUnsafe(n);for(;o<r.size;){let h=it.default.readSync(i,a,0,n,o);if(h===0)break;o+=h,e.write(a.subarray(0,h))}e.end()}}finally{if(typeof i=="number")try{it.default.closeSync(i)}catch{}}},$a=(s,e)=>{let t=new Ei.Parser(s),i=s.maxReadSize||16*1024*1024,r=s.file;return new Promise((o,a)=>{t.on("error",a),t.on("end",o),it.default.stat(r,(h,l)=>{if(h)a(h);else{let u=new Za.ReadStream(r,{readSize:i,size:l.size});u.on("error",a),u.pipe(t)}})})};C.list=(0,Ga.makeCommand)(Va,$a,s=>new Ei.Parser(s),s=>new Ei.Parser(s),(s,e)=>{e?.length&&(0,C.filesFilter)(s,e),s.noResume||Ya(s)})});var rn=d(bi=>{"use strict";Object.defineProperty(bi,"__esModule",{value:!0});bi.modeFix=void 0;var Xa=(s,e,t)=>(s&=4095,t&&(s=(s|384)&-19),e&&(s&256&&(s|=64),s&32&&(s|=8),s&4&&(s|=1)),s);bi.modeFix=Xa});var Hs=d(Si=>{"use strict";Object.defineProperty(Si,"__esModule",{value:!0});Si.stripAbsolutePath=void 0;var Qa=__nccwpck_require__(76760),{isAbsolute:Ja,parse:nn}=Qa.win32,eh=s=>{let e="",t=nn(s);for(;Ja(s)||t.root;){let i=s.charAt(0)==="/"&&s.slice(0,4)!=="//?/"?"/":t.root;s=s.slice(i.length),e+=i,t=nn(s)}return[e,s]};Si.stripAbsolutePath=eh});var Gs=d(rt=>{"use strict";Object.defineProperty(rt,"__esModule",{value:!0});rt.decode=rt.encode=void 0;var gi=["|","<",">","?",":"],Zs=gi.map(s=>String.fromCodePoint(61440+Number(s.codePointAt(0)))),th=new Map(gi.map((s,e)=>[s,Zs[e]])),ih=new Map(Zs.map((s,e)=>[s,gi[e]])),sh=s=>gi.reduce((e,t)=>e.split(t).join(th.get(t)),s);rt.encode=sh;var rh=s=>Zs.reduce((e,t)=>e.split(t).join(ih.get(t)),s);rt.decode=rh});var sr=d(M=>{"use strict";var nh=M&&M.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),oh=M&&M.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),ah=M&&M.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&nh(t,e,i[r]);return oh(t,e),t}})(),cn=M&&M.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(M,"__esModule",{value:!0});M.WriteEntryTar=M.WriteEntrySync=M.WriteEntry=void 0;var oe=cn(__nccwpck_require__(79896)),fn=We(),on=cn(__nccwpck_require__(16928)),dn=Je(),mn=rn(),ne=et(),pn=Xt(),_n=ii(),wn=Hs(),hh=yi(),yn=hi(),lh=ah(Gs()),En=(s,e)=>e?(s=(0,ne.normalizeWindowsPath)(s).replace(/^\.(\/|$)/,""),(0,hh.stripTrailingSlashes)(e)+"/"+s):(0,ne.normalizeWindowsPath)(s),uh=16*1024*1024,an=Symbol("process"),hn=Symbol("file"),ln=Symbol("directory"),Ks=Symbol("symlink"),un=Symbol("hardlink"),Rt=Symbol("header"),Oi=Symbol("read"),Vs=Symbol("lstat"),Ri=Symbol("onlstat"),$s=Symbol("onread"),Xs=Symbol("onreadlink"),Qs=Symbol("openfile"),Js=Symbol("onopenfile"),ve=Symbol("close"),vi=Symbol("mode"),er=Symbol("awaitDrain"),Ys=Symbol("ondrain"),ae=Symbol("prefix"),Ti=class extends fn.Minipass{path;portable;myuid=process.getuid&&process.getuid()||0;myuser=process.env.USER||"";maxReadSize;linkCache;statCache;preservePaths;cwd;strict;mtime;noPax;noMtime;prefix;fd;blockLen=0;blockRemain=0;buf;pos=0;remain=0;length=0;offset=0;win32;absolute;header;type;linkpath;stat;onWriteEntry;#e=!1;constructor(e,t={}){let i=(0,pn.dealias)(t);super(),this.path=(0,ne.normalizeWindowsPath)(e),this.portable=!!i.portable,this.maxReadSize=i.maxReadSize||uh,this.linkCache=i.linkCache||new Map,this.statCache=i.statCache||new Map,this.preservePaths=!!i.preservePaths,this.cwd=(0,ne.normalizeWindowsPath)(i.cwd||process.cwd()),this.strict=!!i.strict,this.noPax=!!i.noPax,this.noMtime=!!i.noMtime,this.mtime=i.mtime,this.prefix=i.prefix?(0,ne.normalizeWindowsPath)(i.prefix):void 0,this.onWriteEntry=i.onWriteEntry,typeof i.onwarn=="function"&&this.on("warn",i.onwarn);let r=!1;if(!this.preservePaths){let[o,a]=(0,wn.stripAbsolutePath)(this.path);o&&typeof a=="string"&&(this.path=a,r=o)}this.win32=!!i.win32||process.platform==="win32",this.win32&&(this.path=lh.decode(this.path.replaceAll(/\\/g,"/")),e=e.replaceAll(/\\/g,"/")),this.absolute=(0,ne.normalizeWindowsPath)(i.absolute||on.default.resolve(this.cwd,e)),this.path===""&&(this.path="./"),r&&this.warn("TAR_ENTRY_INFO",`stripping ${r} from absolute path`,{entry:this,path:r+this.path});let n=this.statCache.get(this.absolute);n?this[Ri](n):this[Vs]()}warn(e,t,i={}){return(0,yn.warnMethod)(this,e,t,i)}emit(e,...t){return e==="error"&&(this.#e=!0),super.emit(e,...t)}[Vs](){oe.default.lstat(this.absolute,(e,t)=>{if(e)return this.emit("error",e);this[Ri](t)})}[Ri](e){this.statCache.set(this.absolute,e),this.stat=e,e.isFile()||(e.size=0),this.type=ch(e),this.emit("stat",e),this[an]()}[an](){switch(this.type){case"File":return this[hn]();case"Directory":return this[ln]();case"SymbolicLink":return this[Ks]();default:return this.end()}}[vi](e){return(0,mn.modeFix)(e,this.type==="Directory",this.portable)}[ae](e){return En(e,this.prefix)}[Rt](){if(!this.stat)throw new Error("cannot write header before stat");this.type==="Directory"&&this.portable&&(this.noMtime=!0),this.onWriteEntry?.(this),this.header=new dn.Header({path:this[ae](this.path),linkpath:this.type==="Link"&&this.linkpath!==void 0?this[ae](this.linkpath):this.linkpath,mode:this[vi](this.stat.mode),uid:this.portable?void 0:this.stat.uid,gid:this.portable?void 0:this.stat.gid,size:this.stat.size,mtime:this.noMtime?void 0:this.mtime||this.stat.mtime,type:this.type==="Unsupported"?void 0:this.type,uname:this.portable?void 0:this.stat.uid===this.myuid?this.myuser:"",atime:this.portable?void 0:this.stat.atime,ctime:this.portable?void 0:this.stat.ctime}),this.header.encode()&&!this.noPax&&super.write(new _n.Pax({atime:this.portable?void 0:this.header.atime,ctime:this.portable?void 0:this.header.ctime,gid:this.portable?void 0:this.header.gid,mtime:this.noMtime?void 0:this.mtime||this.header.mtime,path:this[ae](this.path),linkpath:this.type==="Link"&&this.linkpath!==void 0?this[ae](this.linkpath):this.linkpath,size:this.header.size,uid:this.portable?void 0:this.header.uid,uname:this.portable?void 0:this.header.uname,dev:this.portable?void 0:this.stat.dev,ino:this.portable?void 0:this.stat.ino,nlink:this.portable?void 0:this.stat.nlink}).encode());let e=this.header?.block;if(!e)throw new Error("failed to encode header");super.write(e)}[ln](){if(!this.stat)throw new Error("cannot create directory entry without stat");this.path.slice(-1)!=="/"&&(this.path+="/"),this.stat.size=0,this[Rt](),this.end()}[Ks](){oe.default.readlink(this.absolute,(e,t)=>{if(e)return this.emit("error",e);this[Xs](t)})}[Xs](e){this.linkpath=(0,ne.normalizeWindowsPath)(e),this[Rt](),this.end()}[un](e){if(!this.stat)throw new Error("cannot create link entry without stat");this.type="Link",this.linkpath=(0,ne.normalizeWindowsPath)(on.default.relative(this.cwd,e)),this.stat.size=0,this[Rt](),this.end()}[hn](){if(!this.stat)throw new Error("cannot create file entry without stat");if(this.stat.nlink>1){let e=`${this.stat.dev}:${this.stat.ino}`,t=this.linkCache.get(e);if(t?.indexOf(this.cwd)===0)return this[un](t);this.linkCache.set(e,this.absolute)}if(this[Rt](),this.stat.size===0)return this.end();this[Qs]()}[Qs](){oe.default.open(this.absolute,"r",(e,t)=>{if(e)return this.emit("error",e);this[Js](t)})}[Js](e){if(this.fd=e,this.#e)return this[ve]();if(!this.stat)throw new Error("should stat before calling onopenfile");this.blockLen=512*Math.ceil(this.stat.size/512),this.blockRemain=this.blockLen;let t=Math.min(this.blockLen,this.maxReadSize);this.buf=Buffer.allocUnsafe(t),this.offset=0,this.pos=0,this.remain=this.stat.size,this.length=this.buf.length,this[Oi]()}[Oi](){let{fd:e,buf:t,offset:i,length:r,pos:n}=this;if(e===void 0||t===void 0)throw new Error("cannot read file without first opening");oe.default.read(e,t,i,r,n,(o,a)=>{if(o)return this[ve](()=>this.emit("error",o));this[$s](a)})}[ve](e=()=>{}){this.fd!==void 0&&oe.default.close(this.fd,e)}[$s](e){if(e<=0&&this.remain>0){let r=Object.assign(new Error("encountered unexpected EOF"),{path:this.absolute,syscall:"read",code:"EOF"});return this[ve](()=>this.emit("error",r))}if(e>this.remain){let r=Object.assign(new Error("did not encounter expected EOF"),{path:this.absolute,syscall:"read",code:"EOF"});return this[ve](()=>this.emit("error",r))}if(!this.buf)throw new Error("should have created buffer prior to reading");if(e===this.remain)for(let r=e;r<this.length&&e<this.blockRemain;r++)this.buf[r+this.offset]=0,e++,this.remain++;let t=this.offset===0&&e===this.buf.length?this.buf:this.buf.subarray(this.offset,this.offset+e);this.write(t)?this[Ys]():this[er](()=>this[Ys]())}[er](e){this.once("drain",e)}write(e,t,i){if(typeof t=="function"&&(i=t,t=void 0),typeof e=="string"&&(e=Buffer.from(e,typeof t=="string"?t:"utf8")),this.blockRemain<e.length){let r=Object.assign(new Error("writing more data than expected"),{path:this.absolute});return this.emit("error",r)}return this.remain-=e.length,this.blockRemain-=e.length,this.pos+=e.length,this.offset+=e.length,super.write(e,null,i)}[Ys](){if(!this.remain)return this.blockRemain&&super.write(Buffer.alloc(this.blockRemain)),this[ve](e=>e?this.emit("error",e):this.end());if(!this.buf)throw new Error("buffer lost somehow in ONDRAIN");this.offset>=this.length&&(this.buf=Buffer.allocUnsafe(Math.min(this.blockRemain,this.buf.length)),this.offset=0),this.length=this.buf.length-this.offset,this[Oi]()}};M.WriteEntry=Ti;var tr=class extends Ti{sync=!0;[Vs](){this[Ri](oe.default.lstatSync(this.absolute))}[Ks](){this[Xs](oe.default.readlinkSync(this.absolute))}[Qs](){this[Js](oe.default.openSync(this.absolute,"r"))}[Oi](){let e=!0;try{let{fd:t,buf:i,offset:r,length:n,pos:o}=this;if(t===void 0||i===void 0)throw new Error("fd and buf must be set in READ method");let a=oe.default.readSync(t,i,r,n,o);this[$s](a),e=!1}finally{if(e)try{this[ve](()=>{})}catch{}}}[er](e){e()}[ve](e=()=>{}){this.fd!==void 0&&oe.default.closeSync(this.fd),e()}};M.WriteEntrySync=tr;var ir=class extends fn.Minipass{blockLen=0;blockRemain=0;buf=0;pos=0;remain=0;length=0;preservePaths;portable;strict;noPax;noMtime;readEntry;type;prefix;path;mode;uid;gid;uname;gname;header;mtime;atime;ctime;linkpath;size;onWriteEntry;warn(e,t,i={}){return(0,yn.warnMethod)(this,e,t,i)}constructor(e,t={}){let i=(0,pn.dealias)(t);super(),this.preservePaths=!!i.preservePaths,this.portable=!!i.portable,this.strict=!!i.strict,this.noPax=!!i.noPax,this.noMtime=!!i.noMtime,this.onWriteEntry=i.onWriteEntry,this.readEntry=e;let{type:r}=e;if(r==="Unsupported")throw new Error("writing entry that should be ignored");this.type=r,this.type==="Directory"&&this.portable&&(this.noMtime=!0),this.prefix=i.prefix,this.path=(0,ne.normalizeWindowsPath)(e.path),this.mode=e.mode!==void 0?this[vi](e.mode):void 0,this.uid=this.portable?void 0:e.uid,this.gid=this.portable?void 0:e.gid,this.uname=this.portable?void 0:e.uname,this.gname=this.portable?void 0:e.gname,this.size=e.size,this.mtime=this.noMtime?void 0:i.mtime||e.mtime,this.atime=this.portable?void 0:e.atime,this.ctime=this.portable?void 0:e.ctime,this.linkpath=e.linkpath!==void 0?(0,ne.normalizeWindowsPath)(e.linkpath):void 0,typeof i.onwarn=="function"&&this.on("warn",i.onwarn);let n=!1;if(!this.preservePaths){let[a,h]=(0,wn.stripAbsolutePath)(this.path);a&&typeof h=="string"&&(this.path=h,n=a)}this.remain=e.size,this.blockRemain=e.startBlockSize,this.onWriteEntry?.(this),this.header=new dn.Header({path:this[ae](this.path),linkpath:this.type==="Link"&&this.linkpath!==void 0?this[ae](this.linkpath):this.linkpath,mode:this.mode,uid:this.portable?void 0:this.uid,gid:this.portable?void 0:this.gid,size:this.size,mtime:this.noMtime?void 0:this.mtime,type:this.type,uname:this.portable?void 0:this.uname,atime:this.portable?void 0:this.atime,ctime:this.portable?void 0:this.ctime}),n&&this.warn("TAR_ENTRY_INFO",`stripping ${n} from absolute path`,{entry:this,path:n+this.path}),this.header.encode()&&!this.noPax&&super.write(new _n.Pax({atime:this.portable?void 0:this.atime,ctime:this.portable?void 0:this.ctime,gid:this.portable?void 0:this.gid,mtime:this.noMtime?void 0:this.mtime,path:this[ae](this.path),linkpath:this.type==="Link"&&this.linkpath!==void 0?this[ae](this.linkpath):this.linkpath,size:this.size,uid:this.portable?void 0:this.uid,uname:this.portable?void 0:this.uname,dev:this.portable?void 0:this.readEntry.dev,ino:this.portable?void 0:this.readEntry.ino,nlink:this.portable?void 0:this.readEntry.nlink}).encode());let o=this.header?.block;if(!o)throw new Error("failed to encode header");super.write(o),e.pipe(this)}[ae](e){return En(e,this.prefix)}[vi](e){return(0,mn.modeFix)(e,this.type==="Directory",this.portable)}write(e,t,i){typeof t=="function"&&(i=t,t=void 0),typeof e=="string"&&(e=Buffer.from(e,typeof t=="string"?t:"utf8"));let r=e.length;if(r>this.blockRemain)throw new Error("writing more to entry than is appropriate");return this.blockRemain-=r,super.write(e,i)}end(e,t,i){return this.blockRemain&&super.write(Buffer.alloc(this.blockRemain)),typeof e=="function"&&(i=e,t=void 0,e=void 0),typeof t=="function"&&(i=t,t=void 0),typeof e=="string"&&(e=Buffer.from(e,t??"utf8")),i&&this.once("finish",i),e?super.end(e,i):super.end(i),this}};M.WriteEntryTar=ir;var ch=s=>s.isFile()?"File":s.isDirectory()?"Directory":s.isSymbolicLink()?"SymbolicLink":"Unsupported"});var bn=d(ot=>{"use strict";Object.defineProperty(ot,"__esModule",{value:!0});ot.Node=ot.Yallist=void 0;var rr=class s{tail;head;length=0;static create(e=[]){return new s(e)}constructor(e=[]){for(let t of e)this.push(t)}*[Symbol.iterator](){for(let e=this.head;e;e=e.next)yield e.value}removeNode(e){if(e.list!==this)throw new Error("removing node which does not belong to this list");let t=e.next,i=e.prev;return t&&(t.prev=i),i&&(i.next=t),e===this.head&&(this.head=t),e===this.tail&&(this.tail=i),this.length--,e.next=void 0,e.prev=void 0,e.list=void 0,t}unshiftNode(e){if(e===this.head)return;e.list&&e.list.removeNode(e);let t=this.head;e.list=this,e.next=t,t&&(t.prev=e),this.head=e,this.tail||(this.tail=e),this.length++}pushNode(e){if(e===this.tail)return;e.list&&e.list.removeNode(e);let t=this.tail;e.list=this,e.prev=t,t&&(t.next=e),this.tail=e,this.head||(this.head=e),this.length++}push(...e){for(let t=0,i=e.length;t<i;t++)dh(this,e[t]);return this.length}unshift(...e){for(var t=0,i=e.length;t<i;t++)mh(this,e[t]);return this.length}pop(){if(!this.tail)return;let e=this.tail.value,t=this.tail;return this.tail=this.tail.prev,this.tail?this.tail.next=void 0:this.head=void 0,t.list=void 0,this.length--,e}shift(){if(!this.head)return;let e=this.head.value,t=this.head;return this.head=this.head.next,this.head?this.head.prev=void 0:this.tail=void 0,t.list=void 0,this.length--,e}forEach(e,t){t=t||this;for(let i=this.head,r=0;i;r++)e.call(t,i.value,r,this),i=i.next}forEachReverse(e,t){t=t||this;for(let i=this.tail,r=this.length-1;i;r--)e.call(t,i.value,r,this),i=i.prev}get(e){let t=0,i=this.head;for(;i&&t<e;t++)i=i.next;if(t===e&&i)return i.value}getReverse(e){let t=0,i=this.tail;for(;i&&t<e;t++)i=i.prev;if(t===e&&i)return i.value}map(e,t){t=t||this;let i=new s;for(let r=this.head;r;)i.push(e.call(t,r.value,this)),r=r.next;return i}mapReverse(e,t){t=t||this;var i=new s;for(let r=this.tail;r;)i.push(e.call(t,r.value,this)),r=r.prev;return i}reduce(e,t){let i,r=this.head;if(arguments.length>1)i=t;else if(this.head)r=this.head.next,i=this.head.value;else throw new TypeError("Reduce of empty list with no initial value");for(var n=0;r;n++)i=e(i,r.value,n),r=r.next;return i}reduceReverse(e,t){let i,r=this.tail;if(arguments.length>1)i=t;else if(this.tail)r=this.tail.prev,i=this.tail.value;else throw new TypeError("Reduce of empty list with no initial value");for(let n=this.length-1;r;n--)i=e(i,r.value,n),r=r.prev;return i}toArray(){let e=new Array(this.length);for(let t=0,i=this.head;i;t++)e[t]=i.value,i=i.next;return e}toArrayReverse(){let e=new Array(this.length);for(let t=0,i=this.tail;i;t++)e[t]=i.value,i=i.prev;return e}slice(e=0,t=this.length){t<0&&(t+=this.length),e<0&&(e+=this.length);let i=new s;if(t<e||t<0)return i;e<0&&(e=0),t>this.length&&(t=this.length);let r=this.head,n=0;for(n=0;r&&n<e;n++)r=r.next;for(;r&&n<t;n++,r=r.next)i.push(r.value);return i}sliceReverse(e=0,t=this.length){t<0&&(t+=this.length),e<0&&(e+=this.length);let i=new s;if(t<e||t<0)return i;e<0&&(e=0),t>this.length&&(t=this.length);let r=this.length,n=this.tail;for(;n&&r>t;r--)n=n.prev;for(;n&&r>e;r--,n=n.prev)i.push(n.value);return i}splice(e,t=0,...i){e>this.length&&(e=this.length-1),e<0&&(e=this.length+e);let r=this.head;for(let o=0;r&&o<e;o++)r=r.next;let n=[];for(let o=0;r&&o<t;o++)n.push(r.value),r=this.removeNode(r);r?r!==this.tail&&(r=r.prev):r=this.tail;for(let o of i)r=fh(this,r,o);return n}reverse(){let e=this.head,t=this.tail;for(let i=e;i;i=i.prev){let r=i.prev;i.prev=i.next,i.next=r}return this.head=t,this.tail=e,this}};ot.Yallist=rr;function fh(s,e,t){let i=e,r=e?e.next:s.head,n=new nt(t,i,r,s);return n.next===void 0&&(s.tail=n),n.prev===void 0&&(s.head=n),s.length++,n}function dh(s,e){s.tail=new nt(e,s.tail,void 0,s),s.head||(s.head=s.tail),s.length++}function mh(s,e){s.head=new nt(e,void 0,s.head,s),s.tail||(s.tail=s.head),s.length++}var nt=class{list;next;prev;value;constructor(e,t,i,r){this.list=r,this.value=e,t?(t.next=this,this.prev=t):this.prev=void 0,i?(i.prev=this,this.next=i):this.next=void 0}};ot.Node=nt});var Ci=d(L=>{"use strict";var ph=L&&L.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),_h=L&&L.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),wh=L&&L.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&ph(t,e,i[r]);return _h(t,e),t}})(),vn=L&&L.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(L,"__esModule",{value:!0});L.PackSync=L.Pack=L.PackJob=void 0;var Ii=vn(__nccwpck_require__(79896)),ur=sr(),Pt=class{path;absolute;entry;stat;readdir;pending=!1;pendingLink=!1;ignore=!1;piped=!1;constructor(e,t){this.path=e||"./",this.absolute=t}};L.PackJob=Pt;var yh=We(),nr=wh(Ps()),Eh=bn(),bh=oi(),Sh=hi(),Sn=Buffer.alloc(1024),Pi=Symbol("onStat"),vt=Symbol("ended"),X=Symbol("queue"),Tt=Symbol("queue"),Te=Symbol("current"),je=Symbol("process"),Dt=Symbol("processing"),Di=Symbol("processJob"),Q=Symbol("jobs"),or=Symbol("jobDone"),Ni=Symbol("addFSEntry"),gn=Symbol("addTarEntry"),cr=Symbol("stat"),fr=Symbol("readdir"),Mi=Symbol("onreaddir"),Li=Symbol("pipe"),On=Symbol("entry"),ar=Symbol("entryOpt"),Ai=Symbol("writeEntryClass"),Tn=Symbol("write"),hr=Symbol("ondrain"),Rn=vn(__nccwpck_require__(16928)),lr=et(),Fi=class extends yh.Minipass{sync=!1;opt;cwd;maxReadSize;preservePaths;strict;noPax;prefix;linkCache;statCache;file;portable;zip;readdirCache;noDirRecurse;follow;noMtime;mtime;filter;jobs;[Ai];onWriteEntry;[X];[Tt]=new Map;[Q]=0;[Dt]=!1;[vt]=!1;constructor(e={}){if(super(),this.opt=e,this.file=e.file||"",this.cwd=e.cwd||process.cwd(),this.maxReadSize=e.maxReadSize,this.preservePaths=!!e.preservePaths,this.strict=!!e.strict,this.noPax=!!e.noPax,this.prefix=(0,lr.normalizeWindowsPath)(e.prefix||""),this.linkCache=e.linkCache||new Map,this.statCache=e.statCache||new Map,this.readdirCache=e.readdirCache||new Map,this.onWriteEntry=e.onWriteEntry,this[Ai]=ur.WriteEntry,typeof e.onwarn=="function"&&this.on("warn",e.onwarn),this.portable=!!e.portable,e.gzip||e.brotli||e.zstd){if((e.gzip?1:0)+(e.brotli?1:0)+(e.zstd?1:0)>1)throw new TypeError("gzip, brotli, zstd are mutually exclusive");if(e.gzip&&(typeof e.gzip!="object"&&(e.gzip={}),this.portable&&(e.gzip.portable=!0),this.zip=new nr.Gzip(e.gzip)),e.brotli&&(typeof e.brotli!="object"&&(e.brotli={}),this.zip=new nr.BrotliCompress(e.brotli)),e.zstd&&(typeof e.zstd!="object"&&(e.zstd={}),this.zip=new nr.ZstdCompress(e.zstd)),!this.zip)throw new Error("impossible");let t=this.zip;t.on("data",i=>super.write(i)),t.on("end",()=>super.end()),t.on("drain",()=>this[hr]()),this.on("resume",()=>t.resume())}else this.on("drain",this[hr]);this.noDirRecurse=!!e.noDirRecurse,this.follow=!!e.follow,this.noMtime=!!e.noMtime,e.mtime&&(this.mtime=e.mtime),this.filter=typeof e.filter=="function"?e.filter:()=>!0,this[X]=new Eh.Yallist,this[Q]=0,this.jobs=Number(e.jobs)||4,this[Dt]=!1,this[vt]=!1}[Tn](e){return super.write(e)}add(e){return this.write(e),this}end(e,t,i){return typeof e=="function"&&(i=e,e=void 0),typeof t=="function"&&(i=t,t=void 0),e&&this.add(e),this[vt]=!0,this[je](),i&&i(),this}write(e){if(this[vt])throw new Error("write after end");return e instanceof bh.ReadEntry?this[gn](e):this[Ni](e),this.flowing}[gn](e){let t=(0,lr.normalizeWindowsPath)(Rn.default.resolve(this.cwd,e.path));if(!this.filter(e.path,e))e.resume();else{let i=new Pt(e.path,t);i.entry=new ur.WriteEntryTar(e,this[ar](i)),i.entry.on("end",()=>this[or](i)),this[Q]+=1,this[X].push(i)}this[je]()}[Ni](e){let t=(0,lr.normalizeWindowsPath)(Rn.default.resolve(this.cwd,e));this[X].push(new Pt(e,t)),this[je]()}[cr](e){e.pending=!0,this[Q]+=1;let t=this.follow?"stat":"lstat";Ii.default[t](e.absolute,(i,r)=>{e.pending=!1,this[Q]-=1,i?this.emit("error",i):this[Pi](e,r)})}[Pi](e,t){if(this.statCache.set(e.absolute,t),e.stat=t,!this.filter(e.path,t))e.ignore=!0;else if(t.isFile()&&t.nlink>1&&!this.linkCache.get(`${t.dev}:${t.ino}`)&&!this.sync)if(e===this[Te])this[Di](e);else{let i=`${t.dev}:${t.ino}`,r=this[Tt].get(i);r?r.push(e):this[Tt].set(i,[e]),e.pendingLink=!0,e.pending=!0}this[je]()}[fr](e){e.pending=!0,this[Q]+=1,Ii.default.readdir(e.absolute,(t,i)=>{if(e.pending=!1,this[Q]-=1,t)return this.emit("error",t);this[Mi](e,i)})}[Mi](e,t){this.readdirCache.set(e.absolute,t),e.readdir=t,this[je]()}[je](){if(!this[Dt]){this[Dt]=!0;for(let e=this[X].head;e&&this[Q]<this.jobs;e=e.next)if(this[Di](e.value),e.value.ignore){let t=e.next;this[X].removeNode(e),e.next=t}this[Dt]=!1,this[vt]&&this[X].length===0&&this[Q]===0&&(this.zip?this.zip.end(Sn):(super.write(Sn),super.end()))}}get[Te](){return this[X]&&this[X].head&&this[X].head.value}[or](e){this[X].shift(),this[Q]-=1;let{stat:t}=e;if(t&&t.isFile()&&t.nlink>1){let i=`${t.dev}:${t.ino}`,r=this[Tt].get(i);if(r){this[Tt].delete(i);for(let n of r)n.pending=!1,this[Di](n)}}this[je]()}[Di](e){if(e.pending&&e.pendingLink&&e===this[Te]&&(e.pending=!1,e.pendingLink=!1),!e.pending){if(e.entry){e===this[Te]&&!e.piped&&this[Li](e);return}if(!e.stat){let t=this.statCache.get(e.absolute);t?this[Pi](e,t):this[cr](e)}if(e.stat&&!e.ignore){if(!this.noDirRecurse&&e.stat.isDirectory()&&!e.readdir){let t=this.readdirCache.get(e.absolute);if(t?this[Mi](e,t):this[fr](e),!e.readdir)return}if(e.entry=this[On](e),!e.entry){e.ignore=!0;return}e===this[Te]&&!e.piped&&this[Li](e)}}}[ar](e){return{onwarn:(t,i,r)=>this.warn(t,i,r),noPax:this.noPax,cwd:this.cwd,absolute:e.absolute,preservePaths:this.preservePaths,maxReadSize:this.maxReadSize,strict:this.strict,portable:this.portable,linkCache:this.linkCache,statCache:this.statCache,noMtime:this.noMtime,mtime:this.mtime,prefix:this.prefix,onWriteEntry:this.onWriteEntry}}[On](e){this[Q]+=1;try{return new this[Ai](e.path,this[ar](e)).on("end",()=>this[or](e)).on("error",i=>this.emit("error",i))}catch(t){this.emit("error",t)}}[hr](){this[Te]&&this[Te].entry&&this[Te].entry.resume()}[Li](e){e.piped=!0,e.readdir&&e.readdir.forEach(r=>{let n=e.path,o=n==="./"?"":n.replace(/\/*$/,"/");this[Ni](o+r)});let t=e.entry,i=this.zip;if(!t)throw new Error("cannot pipe without source");i?t.on("data",r=>{i.write(r)||t.pause()}):t.on("data",r=>{super.write(r)||t.pause()})}pause(){return this.zip&&this.zip.pause(),super.pause()}warn(e,t,i={}){(0,Sh.warnMethod)(this,e,t,i)}};L.Pack=Fi;var dr=class extends Fi{sync=!0;constructor(e){super(e),this[Ai]=ur.WriteEntrySync}pause(){}resume(){}[cr](e){let t=this.follow?"statSync":"lstatSync";this[Pi](e,Ii.default[t](e.absolute))}[fr](e){this[Mi](e,Ii.default.readdirSync(e.absolute))}[Li](e){let t=e.entry,i=this.zip;if(e.readdir&&e.readdir.forEach(r=>{let n=e.path,o=n==="./"?"":n.replace(/\/*$/,"/");this[Ni](o+r)}),!t)throw new Error("Cannot pipe without source");i?t.on("data",r=>{i.write(r)}):t.on("data",r=>{super[Tn](r)})}};L.PackSync=dr});var mr=d(at=>{"use strict";var gh=at&&at.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(at,"__esModule",{value:!0});at.create=void 0;var Dn=Ke(),Pn=gh(__nccwpck_require__(76760)),Nn=st(),Oh=Ve(),Bi=Ci(),Rh=(s,e)=>{let t=new Bi.PackSync(s),i=new Dn.WriteStreamSync(s.file,{mode:s.mode||438});t.pipe(i),Mn(t,e)},vh=(s,e)=>{let t=new Bi.Pack(s),i=new Dn.WriteStream(s.file,{mode:s.mode||438});t.pipe(i);let r=new Promise((n,o)=>{i.on("error",o),i.on("close",n),t.on("error",o)});return Ln(t,e).catch(n=>t.emit("error",n)),r},Mn=(s,e)=>{e.forEach(t=>{t.charAt(0)==="@"?(0,Nn.list)({file:Pn.default.resolve(s.cwd,t.slice(1)),sync:!0,noResume:!0,onReadEntry:i=>s.add(i)}):s.add(t)}),s.end()},Ln=async(s,e)=>{for(let t of e)t.charAt(0)==="@"?await(0,Nn.list)({file:Pn.default.resolve(String(s.cwd),t.slice(1)),noResume:!0,onReadEntry:i=>{s.add(i)}}):s.add(t);s.end()},Th=(s,e)=>{let t=new Bi.PackSync(s);return Mn(t,e),t},Dh=(s,e)=>{let t=new Bi.Pack(s);return Ln(t,e).catch(i=>t.emit("error",i)),t};at.create=(0,Oh.makeCommand)(Rh,vh,Th,Dh,(s,e)=>{if(!e?.length)throw new TypeError("no paths specified to add to archive")})});var jn=d(ht=>{"use strict";var Ph=ht&&ht.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(ht,"__esModule",{value:!0});ht.getWriteFlag=void 0;var Fn=Ph(__nccwpck_require__(79896)),Nh=process.env.__FAKE_PLATFORM__||process.platform,Cn=Nh==="win32",{O_CREAT:Bn,O_NOFOLLOW:An,O_TRUNC:zn,O_WRONLY:kn}=Fn.default.constants,xn=Number(process.env.__FAKE_FS_O_FILENAME__)||Fn.default.constants.UV_FS_O_FILEMAP||0,Mh=Cn&&!!xn,Lh=512*1024,Ah=xn|zn|Bn|kn,In=!Cn&&typeof An=="number"?An|zn|Bn|kn:null;ht.getWriteFlag=In!==null?()=>In:Mh?s=>s<Lh?Ah:"w":()=>"w"});var qn=d(he=>{"use strict";var Un=he&&he.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(he,"__esModule",{value:!0});he.chownrSync=he.chownr=void 0;var ki=Un(__nccwpck_require__(73024)),Nt=Un(__nccwpck_require__(76760)),pr=(s,e,t)=>{try{return ki.default.lchownSync(s,e,t)}catch(i){if(i?.code!=="ENOENT")throw i}},zi=(s,e,t,i)=>{ki.default.lchown(s,e,t,r=>{i(r&&r?.code!=="ENOENT"?r:null)})},Ih=(s,e,t,i,r)=>{if(e.isDirectory())(0,he.chownr)(Nt.default.resolve(s,e.name),t,i,n=>{if(n)return r(n);let o=Nt.default.resolve(s,e.name);zi(o,t,i,r)});else{let n=Nt.default.resolve(s,e.name);zi(n,t,i,r)}},Fh=(s,e,t,i)=>{ki.default.readdir(s,{withFileTypes:!0},(r,n)=>{if(r){if(r.code==="ENOENT")return i();if(r.code!=="ENOTDIR"&&r.code!=="ENOTSUP")return i(r)}if(r||!n.length)return zi(s,e,t,i);let o=n.length,a=null,h=l=>{if(!a){if(l)return i(a=l);if(--o===0)return zi(s,e,t,i)}};for(let l of n)Ih(s,l,e,t,h)})};he.chownr=Fh;var Ch=(s,e,t,i)=>{e.isDirectory()&&(0,he.chownrSync)(Nt.default.resolve(s,e.name),t,i),pr(Nt.default.resolve(s,e.name),t,i)},Bh=(s,e,t)=>{let i;try{i=ki.default.readdirSync(s,{withFileTypes:!0})}catch(r){let n=r;if(n?.code==="ENOENT")return;if(n?.code==="ENOTDIR"||n?.code==="ENOTSUP")return pr(s,e,t);throw n}for(let r of i)Ch(s,r,e,t);return pr(s,e,t)};he.chownrSync=Bh});var Wn=d(xi=>{"use strict";Object.defineProperty(xi,"__esModule",{value:!0});xi.CwdError=void 0;var _r=class extends Error{path;code;syscall="chdir";constructor(e,t){super(`${t}: Cannot cd into '${e}'`),this.path=e,this.code=t}get name(){return"CwdError"}};xi.CwdError=_r});var yr=d(ji=>{"use strict";Object.defineProperty(ji,"__esModule",{value:!0});ji.SymlinkError=void 0;var wr=class extends Error{path;symlink;syscall="symlink";code="TAR_SYMLINK_ERROR";constructor(e,t){super("TAR_SYMLINK_ERROR: Cannot extract through symbolic link"),this.symlink=e,this.path=t}get name(){return"SymlinkError"}};ji.SymlinkError=wr});var Kn=d(De=>{"use strict";var br=De&&De.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(De,"__esModule",{value:!0});De.mkdirSync=De.mkdir=void 0;var Hn=qn(),j=br(__nccwpck_require__(73024)),zh=br(__nccwpck_require__(51455)),Ui=br(__nccwpck_require__(76760)),Zn=Wn(),pe=et(),Gn=yr(),kh=(s,e)=>{j.default.stat(s,(t,i)=>{(t||!i.isDirectory())&&(t=new Zn.CwdError(s,t?.code||"ENOTDIR")),e(t)})},xh=(s,e,t)=>{s=(0,pe.normalizeWindowsPath)(s);let i=e.umask??18,r=e.mode|448,n=(r&i)!==0,o=e.uid,a=e.gid,h=typeof o=="number"&&typeof a=="number"&&(o!==e.processUid||a!==e.processGid),l=e.preserve,u=e.unlink,c=(0,pe.normalizeWindowsPath)(e.cwd),E=(w,P)=>{w?t(w):P&&h?(0,Hn.chownr)(P,o,a,kt=>E(kt)):n?j.default.chmod(s,r,t):t()};if(s===c)return kh(s,E);if(l)return zh.default.mkdir(s,{mode:r,recursive:!0}).then(w=>E(null,w??void 0),E);let A=(0,pe.normalizeWindowsPath)(Ui.default.relative(c,s)).split("/");Er(c,A,r,u,c,void 0,E)};De.mkdir=xh;var Er=(s,e,t,i,r,n,o)=>{if(e.length===0)return o(null,n);let a=e.shift(),h=(0,pe.normalizeWindowsPath)(Ui.default.resolve(s+"/"+a));j.default.mkdir(h,t,Yn(h,e,t,i,r,n,o))},Yn=(s,e,t,i,r,n,o)=>a=>{a?j.default.lstat(s,(h,l)=>{if(h)h.path=h.path&&(0,pe.normalizeWindowsPath)(h.path),o(h);else if(l.isDirectory())Er(s,e,t,i,r,n,o);else if(i)j.default.unlink(s,u=>{if(u)return o(u);j.default.mkdir(s,t,Yn(s,e,t,i,r,n,o))});else{if(l.isSymbolicLink())return o(new Gn.SymlinkError(s,s+"/"+e.join("/")));o(a)}}):(n=n||s,Er(s,e,t,i,r,n,o))},jh=s=>{let e=!1,t;try{e=j.default.statSync(s).isDirectory()}catch(i){t=i?.code}finally{if(!e)throw new Zn.CwdError(s,t??"ENOTDIR")}},Uh=(s,e)=>{s=(0,pe.normalizeWindowsPath)(s);let t=e.umask??18,i=e.mode|448,r=(i&t)!==0,n=e.uid,o=e.gid,a=typeof n=="number"&&typeof o=="number"&&(n!==e.processUid||o!==e.processGid),h=e.preserve,l=e.unlink,u=(0,pe.normalizeWindowsPath)(e.cwd),c=w=>{w&&a&&(0,Hn.chownrSync)(w,n,o),r&&j.default.chmodSync(s,i)};if(s===u)return jh(u),c();if(h)return c(j.default.mkdirSync(s,{mode:i,recursive:!0})??void 0);let D=(0,pe.normalizeWindowsPath)(Ui.default.relative(u,s)).split("/"),A;for(let w=D.shift(),P=u;w&&(P+="/"+w);w=D.shift()){P=(0,pe.normalizeWindowsPath)(Ui.default.resolve(P));try{j.default.mkdirSync(P,i),A=A||P}catch{let kt=j.default.lstatSync(P);if(kt.isDirectory())continue;if(l){j.default.unlinkSync(P),j.default.mkdirSync(P,i),A=A||P;continue}else if(kt.isSymbolicLink())return new Gn.SymlinkError(P,P+"/"+D.join("/"))}}return c(A)};De.mkdirSync=Uh});var $n=d(qi=>{"use strict";Object.defineProperty(qi,"__esModule",{value:!0});qi.normalizeUnicode=void 0;var Sr=Object.create(null),Vn=1e4,lt=new Set,qh=s=>{lt.has(s)?lt.delete(s):Sr[s]=s.normalize("NFD").toLocaleLowerCase("en").toLocaleUpperCase("en"),lt.add(s);let e=Sr[s],t=lt.size-Vn;if(t>Vn/10){for(let i of lt)if(lt.delete(i),delete Sr[i],--t<=0)break}return e};qi.normalizeUnicode=qh});var Qn=d(Wi=>{"use strict";Object.defineProperty(Wi,"__esModule",{value:!0});Wi.PathReservations=void 0;var Xn=__nccwpck_require__(76760),Wh=$n(),Hh=yi(),Zh=process.env.TESTING_TAR_FAKE_PLATFORM||process.platform,Gh=Zh==="win32",Yh=s=>s.split("/").slice(0,-1).reduce((t,i)=>{let r=t.at(-1);return r!==void 0&&(i=(0,Xn.join)(r,i)),t.push(i||"/"),t},[]),gr=class{#e=new Map;#i=new Map;#s=new Set;reserve(e,t){e=Gh?["win32 parallelization disabled"]:e.map(r=>(0,Hh.stripTrailingSlashes)((0,Xn.join)((0,Wh.normalizeUnicode)(r))));let i=new Set(e.map(r=>Yh(r)).reduce((r,n)=>r.concat(n)));this.#i.set(t,{dirs:i,paths:e});for(let r of e){let n=this.#e.get(r);n?n.push(t):this.#e.set(r,[t])}for(let r of i){let n=this.#e.get(r);if(!n)this.#e.set(r,[new Set([t])]);else{let o=n.at(-1);o instanceof Set?o.add(t):n.push(new Set([t]))}}return this.#r(t)}#n(e){let t=this.#i.get(e);if(!t)throw new Error("function does not have any path reservations");return{paths:t.paths.map(i=>this.#e.get(i)),dirs:[...t.dirs].map(i=>this.#e.get(i))}}check(e){let{paths:t,dirs:i}=this.#n(e);return t.every(r=>r&&r[0]===e)&&i.every(r=>r&&r[0]instanceof Set&&r[0].has(e))}#r(e){return this.#s.has(e)||!this.check(e)?!1:(this.#s.add(e),e(()=>this.#t(e)),!0)}#t(e){if(!this.#s.has(e))return!1;let t=this.#i.get(e);if(!t)throw new Error("invalid reservation");let{paths:i,dirs:r}=t,n=new Set;for(let o of i){let a=this.#e.get(o);if(!a||a?.[0]!==e)continue;let h=a[1];if(!h){this.#e.delete(o);continue}if(a.shift(),typeof h=="function")n.add(h);else for(let l of h)n.add(l)}for(let o of r){let a=this.#e.get(o),h=a?.[0];if(!(!a||!(h instanceof Set)))if(h.size===1&&a.length===1){this.#e.delete(o);continue}else if(h.size===1){a.shift();let l=a[0];typeof l=="function"&&n.add(l)}else h.delete(e)}return this.#s.delete(e),n.forEach(o=>this.#r(o)),!0}};Wi.PathReservations=gr});var Jn=d(Hi=>{"use strict";Object.defineProperty(Hi,"__esModule",{value:!0});Hi.umask=void 0;var Kh=()=>process.umask();Hi.umask=Kh});var Ir=d(z=>{"use strict";var Vh=z&&z.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),$h=z&&z.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),lo=z&&z.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&Vh(t,e,i[r]);return $h(t,e),t}})(),Ar=z&&z.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(z,"__esModule",{value:!0});z.UnpackSync=z.Unpack=void 0;var Xh=lo(Ke()),Qh=Ar(__nccwpck_require__(34589)),uo=__nccwpck_require__(77598),m=Ar(__nccwpck_require__(73024)),g=Ar(__nccwpck_require__(76760)),co=jn(),fo=Kn(),U=et(),Jh=_i(),el=Hs(),eo=lo(Gs()),tl=Qn(),mo=yr(),il=Jn(),to=Symbol("onEntry"),Tr=Symbol("checkFs"),io=Symbol("checkFs2"),Dr=Symbol("isReusable"),Z=Symbol("makeFs"),Pr=Symbol("file"),Nr=Symbol("directory"),Gi=Symbol("link"),so=Symbol("symlink"),ro=Symbol("hardlink"),Lt=Symbol("ensureNoSymlink"),no=Symbol("unsupported"),oo=Symbol("checkPath"),Or=Symbol("stripAbsolutePath"),Pe=Symbol("mkdir"),T=Symbol("onError"),Zi=Symbol("pending"),ao=Symbol("pend"),ut=Symbol("unpend"),Rr=Symbol("ended"),vr=Symbol("maybeClose"),Mr=Symbol("skip"),At=Symbol("doChown"),It=Symbol("uid"),Ft=Symbol("gid"),Ct=Symbol("checkedCwd"),sl=process.env.TESTING_TAR_FAKE_PLATFORM||process.platform,Bt=sl==="win32",rl=1024,nl=(s,e)=>{if(!Bt)return m.default.unlink(s,e);let t=s+".DELETE."+(0,uo.randomBytes)(16).toString("hex");m.default.rename(s,t,i=>{if(i)return e(i);m.default.unlink(t,e)})},ol=s=>{if(!Bt)return m.default.unlinkSync(s);let e=s+".DELETE."+(0,uo.randomBytes)(16).toString("hex");m.default.renameSync(s,e),m.default.unlinkSync(e)},ho=(s,e,t)=>s!==void 0&&s===s>>>0?s:e!==void 0&&e===e>>>0?e:t,Yi=class extends Jh.Parser{[Rr]=!1;[Ct]=!1;[Zi]=0;reservations=new tl.PathReservations;transform;writable=!0;readable=!1;uid;gid;setOwner;preserveOwner;processGid;processUid;maxDepth;forceChown;win32;newer;keep;noMtime;preservePaths;unlink;cwd;strip;processUmask;umask;dmode;fmode;chmod;constructor(e={}){if(e.ondone=()=>{this[Rr]=!0,this[vr]()},super(e),this.transform=e.transform,this.chmod=!!e.chmod,typeof e.uid=="number"||typeof e.gid=="number"){if(typeof e.uid!="number"||typeof e.gid!="number")throw new TypeError("cannot set owner without number uid and gid");if(e.preserveOwner)throw new TypeError("cannot preserve owner in archive and also set owner explicitly");this.uid=e.uid,this.gid=e.gid,this.setOwner=!0}else this.uid=void 0,this.gid=void 0,this.setOwner=!1;this.preserveOwner=e.preserveOwner===void 0&&typeof e.uid!="number"?!!(process.getuid&&process.getuid()===0):!!e.preserveOwner,this.processUid=(this.preserveOwner||this.setOwner)&&process.getuid?process.getuid():void 0,this.processGid=(this.preserveOwner||this.setOwner)&&process.getgid?process.getgid():void 0,this.maxDepth=typeof e.maxDepth=="number"?e.maxDepth:rl,this.forceChown=e.forceChown===!0,this.win32=!!e.win32||Bt,this.newer=!!e.newer,this.keep=!!e.keep,this.noMtime=!!e.noMtime,this.preservePaths=!!e.preservePaths,this.unlink=!!e.unlink,this.cwd=(0,U.normalizeWindowsPath)(g.default.resolve(e.cwd||process.cwd())),this.strip=Number(e.strip)||0,this.processUmask=this.chmod?typeof e.processUmask=="number"?e.processUmask:(0,il.umask)():0,this.umask=typeof e.umask=="number"?e.umask:this.processUmask,this.dmode=e.dmode||511&~this.umask,this.fmode=e.fmode||438&~this.umask,this.on("entry",t=>this[to](t))}warn(e,t,i={}){return(e==="TAR_BAD_ARCHIVE"||e==="TAR_ABORT")&&(i.recoverable=!1),super.warn(e,t,i)}[vr](){this[Rr]&&this[Zi]===0&&(this.emit("prefinish"),this.emit("finish"),this.emit("end"))}[Or](e,t){let i=e[t],{type:r}=e;if(!i||this.preservePaths)return!0;let[n,o]=(0,el.stripAbsolutePath)(i),a=o.replaceAll(/\\/g,"/").split("/");if(a.includes("..")||Bt&&/^[a-z]:\.\.$/i.test(a[0]??"")){if(t==="path"||r==="Link")return this.warn("TAR_ENTRY_ERROR",`${t} contains '..'`,{entry:e,[t]:i}),!1;let h=g.default.posix.dirname(e.path),l=g.default.posix.normalize(g.default.posix.join(h,a.join("/")));if(l.startsWith("../")||l==="..")return this.warn("TAR_ENTRY_ERROR",`${t} escapes extraction directory`,{entry:e,[t]:i}),!1}return n&&(e[t]=String(o),this.warn("TAR_ENTRY_INFO",`stripping ${n} from absolute ${t}`,{entry:e,[t]:i})),!0}[oo](e){let t=(0,U.normalizeWindowsPath)(e.path),i=t.split("/");if(this.strip){if(i.length<this.strip)return!1;if(e.type==="Link"){let r=(0,U.normalizeWindowsPath)(String(e.linkpath)).split("/");if(r.length>=this.strip)e.linkpath=r.slice(this.strip).join("/");else return!1}i.splice(0,this.strip),e.path=i.join("/")}if(isFinite(this.maxDepth)&&i.length>this.maxDepth)return this.warn("TAR_ENTRY_ERROR","path excessively deep",{entry:e,path:t,depth:i.length,maxDepth:this.maxDepth}),!1;if(!this[Or](e,"path")||!this[Or](e,"linkpath"))return!1;if(e.absolute=g.default.isAbsolute(e.path)?(0,U.normalizeWindowsPath)(g.default.resolve(e.path)):(0,U.normalizeWindowsPath)(g.default.resolve(this.cwd,e.path)),!this.preservePaths&&typeof e.absolute=="string"&&e.absolute.indexOf(this.cwd+"/")!==0&&e.absolute!==this.cwd)return this.warn("TAR_ENTRY_ERROR","path escaped extraction target",{entry:e,path:(0,U.normalizeWindowsPath)(e.path),resolvedPath:e.absolute,cwd:this.cwd}),!1;if(e.absolute===this.cwd&&e.type!=="Directory"&&e.type!=="GNUDumpDir")return!1;if(this.win32){let{root:r}=g.default.win32.parse(String(e.absolute));e.absolute=r+eo.encode(String(e.absolute).slice(r.length));let{root:n}=g.default.win32.parse(e.path);e.path=n+eo.encode(e.path.slice(n.length))}return!0}[to](e){if(!this[oo](e))return e.resume();switch(Qh.default.equal(typeof e.absolute,"string"),e.type){case"Directory":case"GNUDumpDir":e.mode&&(e.mode=e.mode|448);case"File":case"OldFile":case"ContiguousFile":case"Link":case"SymbolicLink":return this[Tr](e);default:return this[no](e)}}[T](e,t){e.name==="CwdError"?this.emit("error",e):(this.warn("TAR_ENTRY_ERROR",e,{entry:t}),this[ut](),t.resume())}[Pe](e,t,i){(0,fo.mkdir)((0,U.normalizeWindowsPath)(e),{uid:this.uid,gid:this.gid,processUid:this.processUid,processGid:this.processGid,umask:this.processUmask,preserve:this.preservePaths,unlink:this.unlink,cwd:this.cwd,mode:t},i)}[At](e){return this.forceChown||this.preserveOwner&&(typeof e.uid=="number"&&e.uid!==this.processUid||typeof e.gid=="number"&&e.gid!==this.processGid)||typeof this.uid=="number"&&this.uid!==this.processUid||typeof this.gid=="number"&&this.gid!==this.processGid}[It](e){return ho(this.uid,e.uid,this.processUid)}[Ft](e){return ho(this.gid,e.gid,this.processGid)}[Pr](e,t){let i=typeof e.mode=="number"?e.mode&4095:this.fmode,r=new Xh.WriteStream(String(e.absolute),{flags:(0,co.getWriteFlag)(e.size),mode:i,autoClose:!1});r.on("error",h=>{r.fd&&m.default.close(r.fd,()=>{}),r.write=()=>!0,this[T](h,e),t()});let n=1,o=h=>{if(h){r.fd&&m.default.close(r.fd,()=>{}),this[T](h,e),t();return}--n===0&&r.fd!==void 0&&m.default.close(r.fd,l=>{l?this[T](l,e):this[ut](),t()})};r.on("finish",()=>{let h=String(e.absolute),l=r.fd;if(typeof l=="number"&&e.mtime&&!this.noMtime){n++;let u=e.atime||new Date,c=e.mtime;m.default.futimes(l,u,c,E=>E?m.default.utimes(h,u,c,D=>o(D&&E)):o())}if(typeof l=="number"&&this[At](e)){n++;let u=this[It](e),c=this[Ft](e);typeof u=="number"&&typeof c=="number"&&m.default.fchown(l,u,c,E=>E?m.default.chown(h,u,c,D=>o(D&&E)):o())}o()});let a=this.transform&&this.transform(e)||e;a!==e&&(a.on("error",h=>{this[T](h,e),t()}),e.pipe(a)),a.pipe(r)}[Nr](e,t){let i=typeof e.mode=="number"?e.mode&4095:this.dmode;this[Pe](String(e.absolute),i,r=>{if(r){this[T](r,e),t();return}let n=1,o=()=>{--n===0&&(t(),this[ut](),e.resume())};e.mtime&&!this.noMtime&&(n++,m.default.utimes(String(e.absolute),e.atime||new Date,e.mtime,o)),this[At](e)&&(n++,m.default.chown(String(e.absolute),Number(this[It](e)),Number(this[Ft](e)),o)),o()})}[no](e){e.unsupported=!0,this.warn("TAR_ENTRY_UNSUPPORTED",`unsupported entry type: ${e.type}`,{entry:e}),e.resume()}[so](e,t){let i=(0,U.normalizeWindowsPath)(g.default.relative(this.cwd,g.default.resolve(g.default.dirname(String(e.absolute)),String(e.linkpath)))).split("/");this[Lt](e,this.cwd,i,()=>this[Gi](e,String(e.linkpath),"symlink",t),r=>{this[T](r,e),t()})}[ro](e,t){let i=(0,U.normalizeWindowsPath)(g.default.resolve(this.cwd,String(e.linkpath))),r=(0,U.normalizeWindowsPath)(String(e.linkpath)).split("/");this[Lt](e,this.cwd,r,()=>this[Gi](e,i,"link",t),n=>{this[T](n,e),t()})}[Lt](e,t,i,r,n){let o=i.shift();if(this.preservePaths||o===void 0)return r();let a=g.default.resolve(t,o);m.default.lstat(a,(h,l)=>{if(h)return r();if(l?.isSymbolicLink())return n(new mo.SymlinkError(a,g.default.resolve(a,i.join("/"))));this[Lt](e,a,i,r,n)})}[ao](){this[Zi]++}[ut](){this[Zi]--,this[vr]()}[Mr](e){this[ut](),e.resume()}[Dr](e,t){return e.type==="File"&&!this.unlink&&t.isFile()&&t.nlink<=1&&!Bt}[Tr](e){this[ao]();let t=[e.path];e.linkpath&&t.push(e.linkpath),this.reservations.reserve(t,i=>this[io](e,i))}[io](e,t){let i=a=>{t(a)},r=()=>{this[Pe](this.cwd,this.dmode,a=>{if(a){this[T](a,e),i();return}this[Ct]=!0,n()})},n=()=>{if(e.absolute!==this.cwd){let a=(0,U.normalizeWindowsPath)(g.default.dirname(String(e.absolute)));if(a!==this.cwd)return this[Pe](a,this.dmode,h=>{if(h){this[T](h,e),i();return}o()})}o()},o=()=>{m.default.lstat(String(e.absolute),(a,h)=>{if(h&&(this.keep||this.newer&&h.mtime>(e.mtime??h.mtime))){this[Mr](e),i();return}if(a||this[Dr](e,h))return this[Z](null,e,i);if(h.isDirectory()){if(e.type==="Directory"){let l=this.chmod&&e.mode&&(h.mode&4095)!==e.mode,u=c=>this[Z](c??null,e,i);return l?m.default.chmod(String(e.absolute),Number(e.mode),u):u()}if(e.absolute!==this.cwd)return m.default.rmdir(String(e.absolute),l=>this[Z](l??null,e,i))}if(e.absolute===this.cwd)return this[Z](null,e,i);nl(String(e.absolute),l=>this[Z](l??null,e,i))})};this[Ct]?n():r()}[Z](e,t,i){if(e){this[T](e,t),i();return}switch(t.type){case"File":case"OldFile":case"ContiguousFile":return this[Pr](t,i);case"Link":return this[ro](t,i);case"SymbolicLink":return this[so](t,i);case"Directory":case"GNUDumpDir":return this[Nr](t,i)}}[Gi](e,t,i,r){m.default[i](t,String(e.absolute),n=>{n?this[T](n,e):(this[ut](),e.resume()),r()})}};z.Unpack=Yi;var Mt=s=>{try{return[null,s()]}catch(e){return[e,null]}},Lr=class extends Yi{sync=!0;[Z](e,t){return super[Z](e,t,()=>{})}[Tr](e){if(!this[Ct]){let n=this[Pe](this.cwd,this.dmode);if(n)return this[T](n,e);this[Ct]=!0}if(e.absolute!==this.cwd){let n=(0,U.normalizeWindowsPath)(g.default.dirname(String(e.absolute)));if(n!==this.cwd){let o=this[Pe](n,this.dmode);if(o)return this[T](o,e)}}let[t,i]=Mt(()=>m.default.lstatSync(String(e.absolute)));if(i&&(this.keep||this.newer&&i.mtime>(e.mtime??i.mtime)))return this[Mr](e);if(t||this[Dr](e,i))return this[Z](null,e);if(i.isDirectory()){if(e.type==="Directory"){let o=this.chmod&&e.mode&&(i.mode&4095)!==e.mode,[a]=o?Mt(()=>{m.default.chmodSync(String(e.absolute),Number(e.mode))}):[];return this[Z](a,e)}let[n]=Mt(()=>m.default.rmdirSync(String(e.absolute)));this[Z](n,e)}let[r]=e.absolute===this.cwd?[]:Mt(()=>ol(String(e.absolute)));this[Z](r,e)}[Pr](e,t){let i=typeof e.mode=="number"?e.mode&4095:this.fmode,r=a=>{let h;try{m.default.closeSync(n)}catch(l){h=l}(a||h)&&this[T](a||h,e),t()},n;try{n=m.default.openSync(String(e.absolute),(0,co.getWriteFlag)(e.size),i)}catch(a){return r(a)}let o=this.transform&&this.transform(e)||e;o!==e&&(o.on("error",a=>this[T](a,e)),e.pipe(o)),o.on("data",a=>{try{m.default.writeSync(n,a,0,a.length)}catch(h){r(h)}}),o.on("end",()=>{let a=null;if(e.mtime&&!this.noMtime){let h=e.atime||new Date,l=e.mtime;try{m.default.futimesSync(n,h,l)}catch(u){try{m.default.utimesSync(String(e.absolute),h,l)}catch{a=u}}}if(this[At](e)){let h=this[It](e),l=this[Ft](e);try{m.default.fchownSync(n,Number(h),Number(l))}catch(u){try{m.default.chownSync(String(e.absolute),Number(h),Number(l))}catch{a=a||u}}}r(a)})}[Nr](e,t){let i=typeof e.mode=="number"?e.mode&4095:this.dmode,r=this[Pe](String(e.absolute),i);if(r){this[T](r,e),t();return}if(e.mtime&&!this.noMtime)try{m.default.utimesSync(String(e.absolute),e.atime||new Date,e.mtime)}catch{}if(this[At](e))try{m.default.chownSync(String(e.absolute),Number(this[It](e)),Number(this[Ft](e)))}catch{}t(),e.resume()}[Pe](e,t){try{return(0,fo.mkdirSync)((0,U.normalizeWindowsPath)(e),{uid:this.uid,gid:this.gid,processUid:this.processUid,processGid:this.processGid,umask:this.processUmask,preserve:this.preservePaths,unlink:this.unlink,cwd:this.cwd,mode:t})}catch(i){return i}}[Lt](e,t,i,r,n){if(this.preservePaths||i.length===0)return r();let o=t;for(let a of i){o=g.default.resolve(o,a);let[h,l]=Mt(()=>m.default.lstatSync(o));if(h)return r();if(l.isSymbolicLink())return n(new mo.SymlinkError(o,g.default.resolve(t,i.join("/"))))}r()}[Gi](e,t,i,r){let n=`${i}Sync`;try{m.default[n](t,String(e.absolute)),r(),e.resume()}catch(o){return this[T](o,e)}}};z.UnpackSync=Lr});var Fr=d(G=>{"use strict";var al=G&&G.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),hl=G&&G.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),ll=G&&G.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&al(t,e,i[r]);return hl(t,e),t}})(),ul=G&&G.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(G,"__esModule",{value:!0});G.extract=void 0;var po=ll(Ke()),_o=ul(__nccwpck_require__(73024)),cl=st(),fl=Ve(),Ki=Ir(),dl=s=>{let e=new Ki.UnpackSync(s),t=s.file,i=_o.default.statSync(t),r=s.maxReadSize||16*1024*1024;new po.ReadStreamSync(t,{readSize:r,size:i.size}).pipe(e)},ml=(s,e)=>{let t=new Ki.Unpack(s),i=s.maxReadSize||16*1024*1024,r=s.file;return new Promise((o,a)=>{t.on("error",a),t.on("close",o),_o.default.stat(r,(h,l)=>{if(h)a(h);else{let u=new po.ReadStream(r,{readSize:i,size:l.size});u.on("error",a),u.pipe(t)}})})};G.extract=(0,fl.makeCommand)(dl,ml,s=>new Ki.UnpackSync(s),s=>new Ki.Unpack(s),(s,e)=>{e?.length&&(0,cl.filesFilter)(s,e)})});var Vi=d(ct=>{"use strict";var wo=ct&&ct.__importDefault||function(s){return s&&s.__esModule?s:{default:s}};Object.defineProperty(ct,"__esModule",{value:!0});ct.replace=void 0;var yo=Ke(),q=wo(__nccwpck_require__(73024)),Eo=wo(__nccwpck_require__(76760)),bo=Je(),So=st(),pl=Ve(),_l=Xt(),go=Ci(),wl=(s,e)=>{let t=new go.PackSync(s),i=!0,r,n;try{try{r=q.default.openSync(s.file,"r+")}catch(h){if(h?.code==="ENOENT")r=q.default.openSync(s.file,"w+");else throw h}let o=q.default.fstatSync(r),a=Buffer.alloc(512);e:for(n=0;n<o.size;n+=512){for(let u=0,c=0;u<512;u+=c){if(c=q.default.readSync(r,a,u,a.length-u,n+u),n===0&&a[0]===31&&a[1]===139)throw new Error("cannot append to compressed archives");if(!c)break e}let h=new bo.Header(a);if(!h.cksumValid)break;let l=512*Math.ceil((h.size||0)/512);if(n+l+512>o.size)break;n+=l,s.mtimeCache&&h.mtime&&s.mtimeCache.set(String(h.path),h.mtime)}i=!1,yl(s,t,n,r,e)}finally{if(i)try{q.default.closeSync(r)}catch{}}},yl=(s,e,t,i,r)=>{let n=new yo.WriteStreamSync(s.file,{fd:i,start:t});e.pipe(n),bl(e,r)},El=(s,e)=>{e=Array.from(e);let t=new go.Pack(s),i=(n,o,a)=>{let h=(D,A)=>{D?q.default.close(n,w=>a(D)):a(null,A)},l=0;if(o===0)return h(null,0);let u=0,c=Buffer.alloc(512),E=(D,A)=>{if(D||A===void 0)return h(D);if(u+=A,u<512&&A)return q.default.read(n,c,u,c.length-u,l+u,E);if(l===0&&c[0]===31&&c[1]===139)return h(new Error("cannot append to compressed archives"));if(u<512)return h(null,l);let w=new bo.Header(c);if(!w.cksumValid)return h(null,l);let P=512*Math.ceil((w.size??0)/512);if(l+P+512>o||(l+=P+512,l>=o))return h(null,l);s.mtimeCache&&w.mtime&&s.mtimeCache.set(String(w.path),w.mtime),u=0,q.default.read(n,c,0,512,l,E)};q.default.read(n,c,0,512,l,E)};return new Promise((n,o)=>{t.on("error",o);let a="r+",h=(l,u)=>{if(l&&l.code==="ENOENT"&&a==="r+")return a="w+",q.default.open(s.file,a,h);if(l||!u)return o(l);q.default.fstat(u,(c,E)=>{if(c)return q.default.close(u,()=>o(c));i(u,E.size,(D,A)=>{if(D)return o(D);let w=new yo.WriteStream(s.file,{fd:u,start:A});t.pipe(w),w.on("error",o),w.on("close",n),Sl(t,e)})})};q.default.open(s.file,a,h)})},bl=(s,e)=>{e.forEach(t=>{t.charAt(0)==="@"?(0,So.list)({file:Eo.default.resolve(s.cwd,t.slice(1)),sync:!0,noResume:!0,onReadEntry:i=>s.add(i)}):s.add(t)}),s.end()},Sl=async(s,e)=>{for(let t of e)t.charAt(0)==="@"?await(0,So.list)({file:Eo.default.resolve(String(s.cwd),t.slice(1)),noResume:!0,onReadEntry:i=>s.add(i)}):s.add(t);s.end()};ct.replace=(0,pl.makeCommand)(wl,El,()=>{throw new TypeError("file is required")},()=>{throw new TypeError("file is required")},(s,e)=>{if(!(0,_l.isFile)(s))throw new TypeError("file is required");if(s.gzip||s.brotli||s.zstd||s.file.endsWith(".br")||s.file.endsWith(".tbr"))throw new TypeError("cannot append to compressed archives");if(!e?.length)throw new TypeError("no paths specified to add/replace")})});var Cr=d($i=>{"use strict";Object.defineProperty($i,"__esModule",{value:!0});$i.update=void 0;var gl=Ve(),zt=Vi();$i.update=(0,gl.makeCommand)(zt.replace.syncFile,zt.replace.asyncFile,zt.replace.syncNoFile,zt.replace.asyncNoFile,(s,e=[])=>{zt.replace.validate?.(s,e),Ol(s)});var Ol=s=>{let e=s.filter;s.mtimeCache||(s.mtimeCache=new Map),s.filter=e?(t,i)=>e(t,i)&&!((s.mtimeCache?.get(t)??i.mtime??0)>(i.mtime??0)):(t,i)=>!((s.mtimeCache?.get(t)??i.mtime??0)>(i.mtime??0))}});var Oo=exports&&exports.__createBinding||(Object.create?(function(s,e,t,i){i===void 0&&(i=t);var r=Object.getOwnPropertyDescriptor(e,t);(!r||("get"in r?!e.__esModule:r.writable||r.configurable))&&(r={enumerable:!0,get:function(){return e[t]}}),Object.defineProperty(s,i,r)}):(function(s,e,t,i){i===void 0&&(i=t),s[i]=e[t]})),Rl=exports&&exports.__setModuleDefault||(Object.create?(function(s,e){Object.defineProperty(s,"default",{enumerable:!0,value:e})}):function(s,e){s.default=e}),Y=exports&&exports.__exportStar||function(s,e){for(var t in s)t!=="default"&&!Object.prototype.hasOwnProperty.call(e,t)&&Oo(e,s,t)},vl=exports&&exports.__importStar||(function(){var s=function(e){return s=Object.getOwnPropertyNames||function(t){var i=[];for(var r in t)Object.prototype.hasOwnProperty.call(t,r)&&(i[i.length]=r);return i},s(e)};return function(e){if(e&&e.__esModule)return e;var t={};if(e!=null)for(var i=s(e),r=0;r<i.length;r++)i[r]!=="default"&&Oo(t,e,i[r]);return Rl(t,e),t}})();Object.defineProperty(exports, "__esModule", ({value:!0}));exports.u=exports.types=exports.r=exports.t=exports.x=exports.c=void 0;Y(mr(),exports);var Tl=mr();Object.defineProperty(exports, "c", ({enumerable:!0,get:function(){return Tl.create}}));Y(Fr(),exports);var Dl=Fr();Object.defineProperty(exports, "x", ({enumerable:!0,get:function(){return Dl.extract}}));Y(Je(),exports);Y(st(),exports);var Pl=st();Object.defineProperty(exports, "t", ({enumerable:!0,get:function(){return Pl.list}}));Y(Ci(),exports);Y(_i(),exports);Y(ii(),exports);Y(oi(),exports);Y(Vi(),exports);var Nl=Vi();Object.defineProperty(exports, "r", ({enumerable:!0,get:function(){return Nl.replace}}));exports.types=vl(Ns());Y(Ir(),exports);Y(Cr(),exports);var Ml=Cr();Object.defineProperty(exports, "u", ({enumerable:!0,get:function(){return Ml.update}}));Y(sr(),exports);
+//# sourceMappingURL=index.min.js.map
 
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.makeCommand = void 0;
-const options_js_1 = __nccwpck_require__(94602);
-const makeCommand = (syncFile, asyncFile, syncNoFile, asyncNoFile, validate) => {
-    return Object.assign((opt_ = [], entries, cb) => {
-        if (Array.isArray(opt_)) {
-            entries = opt_;
-            opt_ = {};
-        }
-        if (typeof entries === 'function') {
-            cb = entries;
-            entries = undefined;
-        }
-        if (!entries) {
-            entries = [];
-        }
-        else {
-            entries = Array.from(entries);
-        }
-        const opt = (0, options_js_1.dealias)(opt_);
-        validate?.(opt, entries);
-        if ((0, options_js_1.isSyncFile)(opt)) {
-            if (typeof cb === 'function') {
-                throw new TypeError('callback not supported for sync tar functions');
-            }
-            return syncFile(opt, entries);
-        }
-        else if ((0, options_js_1.isAsyncFile)(opt)) {
-            const p = asyncFile(opt, entries);
-            // weirdness to make TS happy
-            const c = cb ? cb : undefined;
-            return c ? p.then(() => c(), c) : p;
-        }
-        else if ((0, options_js_1.isSyncNoFile)(opt)) {
-            if (typeof cb === 'function') {
-                throw new TypeError('callback not supported for sync tar functions');
-            }
-            return syncNoFile(opt, entries);
-        }
-        else if ((0, options_js_1.isAsyncNoFile)(opt)) {
-            if (typeof cb === 'function') {
-                throw new TypeError('callback only supported with file option');
-            }
-            return asyncNoFile(opt, entries);
-            /* c8 ignore start */
-        }
-        else {
-            throw new Error('impossible options??');
-        }
-        /* c8 ignore stop */
-    }, {
-        syncFile,
-        asyncFile,
-        syncNoFile,
-        asyncNoFile,
-        validate,
-    });
-};
-exports.makeCommand = makeCommand;
-//# sourceMappingURL=make-command.js.map
-
-/***/ }),
-
-/***/ 15867:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.mkdirSync = exports.mkdir = void 0;
-const chownr_1 = __nccwpck_require__(39052);
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const promises_1 = __importDefault(__nccwpck_require__(51455));
-const node_path_1 = __importDefault(__nccwpck_require__(76760));
-const cwd_error_js_1 = __nccwpck_require__(18425);
-const normalize_windows_path_js_1 = __nccwpck_require__(7867);
-const symlink_error_js_1 = __nccwpck_require__(64028);
-const checkCwd = (dir, cb) => {
-    node_fs_1.default.stat(dir, (er, st) => {
-        if (er || !st.isDirectory()) {
-            er = new cwd_error_js_1.CwdError(dir, er?.code || 'ENOTDIR');
-        }
-        cb(er);
-    });
-};
-/**
- * Wrapper around fs/promises.mkdir for tar's needs.
- *
- * The main purpose is to avoid creating directories if we know that
- * they already exist (and track which ones exist for this purpose),
- * and prevent entries from being extracted into symlinked folders,
- * if `preservePaths` is not set.
- */
-const mkdir = (dir, opt, cb) => {
-    dir = (0, normalize_windows_path_js_1.normalizeWindowsPath)(dir);
-    // if there's any overlap between mask and mode,
-    // then we'll need an explicit chmod
-    /* c8 ignore next */
-    const umask = opt.umask ?? 0o22;
-    const mode = opt.mode | 0o0700;
-    const needChmod = (mode & umask) !== 0;
-    const uid = opt.uid;
-    const gid = opt.gid;
-    const doChown = typeof uid === 'number' &&
-        typeof gid === 'number' &&
-        (uid !== opt.processUid || gid !== opt.processGid);
-    const preserve = opt.preserve;
-    const unlink = opt.unlink;
-    const cwd = (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.cwd);
-    const done = (er, created) => {
-        if (er) {
-            cb(er);
-        }
-        else {
-            if (created && doChown) {
-                (0, chownr_1.chownr)(created, uid, gid, er => done(er));
-            }
-            else if (needChmod) {
-                node_fs_1.default.chmod(dir, mode, cb);
-            }
-            else {
-                cb();
-            }
-        }
-    };
-    if (dir === cwd) {
-        return checkCwd(dir, done);
-    }
-    if (preserve) {
-        return promises_1.default.mkdir(dir, { mode, recursive: true }).then(made => done(null, made ?? undefined), // oh, ts
-        done);
-    }
-    const sub = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.relative(cwd, dir));
-    const parts = sub.split('/');
-    mkdir_(cwd, parts, mode, unlink, cwd, undefined, done);
-};
-exports.mkdir = mkdir;
-const mkdir_ = (base, parts, mode, unlink, cwd, created, cb) => {
-    if (!parts.length) {
-        return cb(null, created);
-    }
-    const p = parts.shift();
-    const part = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(base + '/' + p));
-    node_fs_1.default.mkdir(part, mode, onmkdir(part, parts, mode, unlink, cwd, created, cb));
-};
-const onmkdir = (part, parts, mode, unlink, cwd, created, cb) => (er) => {
-    if (er) {
-        node_fs_1.default.lstat(part, (statEr, st) => {
-            if (statEr) {
-                statEr.path =
-                    statEr.path && (0, normalize_windows_path_js_1.normalizeWindowsPath)(statEr.path);
-                cb(statEr);
-            }
-            else if (st.isDirectory()) {
-                mkdir_(part, parts, mode, unlink, cwd, created, cb);
-            }
-            else if (unlink) {
-                node_fs_1.default.unlink(part, er => {
-                    if (er) {
-                        return cb(er);
-                    }
-                    node_fs_1.default.mkdir(part, mode, onmkdir(part, parts, mode, unlink, cwd, created, cb));
-                });
-            }
-            else if (st.isSymbolicLink()) {
-                return cb(new symlink_error_js_1.SymlinkError(part, part + '/' + parts.join('/')));
-            }
-            else {
-                cb(er);
-            }
-        });
-    }
-    else {
-        created = created || part;
-        mkdir_(part, parts, mode, unlink, cwd, created, cb);
-    }
-};
-const checkCwdSync = (dir) => {
-    let ok = false;
-    let code = undefined;
-    try {
-        ok = node_fs_1.default.statSync(dir).isDirectory();
-    }
-    catch (er) {
-        code = er?.code;
-    }
-    finally {
-        if (!ok) {
-            throw new cwd_error_js_1.CwdError(dir, code ?? 'ENOTDIR');
-        }
-    }
-};
-const mkdirSync = (dir, opt) => {
-    dir = (0, normalize_windows_path_js_1.normalizeWindowsPath)(dir);
-    // if there's any overlap between mask and mode,
-    // then we'll need an explicit chmod
-    /* c8 ignore next */
-    const umask = opt.umask ?? 0o22;
-    const mode = opt.mode | 0o700;
-    const needChmod = (mode & umask) !== 0;
-    const uid = opt.uid;
-    const gid = opt.gid;
-    const doChown = typeof uid === 'number' &&
-        typeof gid === 'number' &&
-        (uid !== opt.processUid || gid !== opt.processGid);
-    const preserve = opt.preserve;
-    const unlink = opt.unlink;
-    const cwd = (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.cwd);
-    const done = (created) => {
-        if (created && doChown) {
-            (0, chownr_1.chownrSync)(created, uid, gid);
-        }
-        if (needChmod) {
-            node_fs_1.default.chmodSync(dir, mode);
-        }
-    };
-    if (dir === cwd) {
-        checkCwdSync(cwd);
-        return done();
-    }
-    if (preserve) {
-        return done(node_fs_1.default.mkdirSync(dir, { mode, recursive: true }) ?? undefined);
-    }
-    const sub = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.relative(cwd, dir));
-    const parts = sub.split('/');
-    let created = undefined;
-    for (let p = parts.shift(), part = cwd; p && (part += '/' + p); p = parts.shift()) {
-        part = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(part));
-        try {
-            node_fs_1.default.mkdirSync(part, mode);
-            created = created || part;
-        }
-        catch (er) {
-            const st = node_fs_1.default.lstatSync(part);
-            if (st.isDirectory()) {
-                continue;
-            }
-            else if (unlink) {
-                node_fs_1.default.unlinkSync(part);
-                node_fs_1.default.mkdirSync(part, mode);
-                created = created || part;
-                continue;
-            }
-            else if (st.isSymbolicLink()) {
-                return new symlink_error_js_1.SymlinkError(part, part + '/' + parts.join('/'));
-            }
-        }
-    }
-    return done(created);
-};
-exports.mkdirSync = mkdirSync;
-//# sourceMappingURL=mkdir.js.map
-
-/***/ }),
-
-/***/ 98723:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.modeFix = void 0;
-const modeFix = (mode, isDir, portable) => {
-    mode &= 0o7777;
-    // in portable mode, use the minimum reasonable umask
-    // if this system creates files with 0o664 by default
-    // (as some linux distros do), then we'll write the
-    // archive with 0o644 instead.  Also, don't ever create
-    // a file that is not readable/writable by the owner.
-    if (portable) {
-        mode = (mode | 0o600) & ~0o22;
-    }
-    // if dirs are readable, then they should be listable
-    if (isDir) {
-        if (mode & 0o400) {
-            mode |= 0o100;
-        }
-        if (mode & 0o40) {
-            mode |= 0o10;
-        }
-        if (mode & 0o4) {
-            mode |= 0o1;
-        }
-    }
-    return mode;
-};
-exports.modeFix = modeFix;
-//# sourceMappingURL=mode-fix.js.map
-
-/***/ }),
-
-/***/ 44629:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.normalizeUnicode = void 0;
-// warning: extremely hot code path.
-// This has been meticulously optimized for use
-// within npm install on large package trees.
-// Do not edit without careful benchmarking.
-const normalizeCache = Object.create(null);
-// Limit the size of this. Very low-sophistication LRU cache
-const MAX = 10000;
-const cache = new Set();
-const normalizeUnicode = (s) => {
-    if (!cache.has(s)) {
-        // shake out identical accents and ligatures
-        normalizeCache[s] = s
-            .normalize('NFD')
-            .toLocaleLowerCase('en')
-            .toLocaleUpperCase('en');
-    }
-    else {
-        cache.delete(s);
-    }
-    cache.add(s);
-    const ret = normalizeCache[s];
-    let i = cache.size - MAX;
-    // only prune when we're 10% over the max
-    if (i > MAX / 10) {
-        for (const s of cache) {
-            cache.delete(s);
-            delete normalizeCache[s];
-            if (--i <= 0)
-                break;
-        }
-    }
-    return ret;
-};
-exports.normalizeUnicode = normalizeUnicode;
-//# sourceMappingURL=normalize-unicode.js.map
-
-/***/ }),
-
-/***/ 7867:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// on windows, either \ or / are valid directory separators.
-// on unix, \ is a valid character in filenames.
-// so, on windows, and only on windows, we replace all \ chars with /,
-// so that we can use / as our one and only directory separator char.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.normalizeWindowsPath = void 0;
-const platform = process.env.TESTING_TAR_FAKE_PLATFORM || process.platform;
-exports.normalizeWindowsPath = platform !== 'win32' ?
-    (p) => p
-    : (p) => p && p.replace(/\\/g, '/');
-//# sourceMappingURL=normalize-windows-path.js.map
-
-/***/ }),
-
-/***/ 94602:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// turn tar(1) style args like `C` into the more verbose things like `cwd`
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.dealias = exports.isNoFile = exports.isFile = exports.isAsync = exports.isSync = exports.isAsyncNoFile = exports.isSyncNoFile = exports.isAsyncFile = exports.isSyncFile = void 0;
-const argmap = new Map([
-    ['C', 'cwd'],
-    ['f', 'file'],
-    ['z', 'gzip'],
-    ['P', 'preservePaths'],
-    ['U', 'unlink'],
-    ['strip-components', 'strip'],
-    ['stripComponents', 'strip'],
-    ['keep-newer', 'newer'],
-    ['keepNewer', 'newer'],
-    ['keep-newer-files', 'newer'],
-    ['keepNewerFiles', 'newer'],
-    ['k', 'keep'],
-    ['keep-existing', 'keep'],
-    ['keepExisting', 'keep'],
-    ['m', 'noMtime'],
-    ['no-mtime', 'noMtime'],
-    ['p', 'preserveOwner'],
-    ['L', 'follow'],
-    ['h', 'follow'],
-    ['onentry', 'onReadEntry'],
-]);
-const isSyncFile = (o) => !!o.sync && !!o.file;
-exports.isSyncFile = isSyncFile;
-const isAsyncFile = (o) => !o.sync && !!o.file;
-exports.isAsyncFile = isAsyncFile;
-const isSyncNoFile = (o) => !!o.sync && !o.file;
-exports.isSyncNoFile = isSyncNoFile;
-const isAsyncNoFile = (o) => !o.sync && !o.file;
-exports.isAsyncNoFile = isAsyncNoFile;
-const isSync = (o) => !!o.sync;
-exports.isSync = isSync;
-const isAsync = (o) => !o.sync;
-exports.isAsync = isAsync;
-const isFile = (o) => !!o.file;
-exports.isFile = isFile;
-const isNoFile = (o) => !o.file;
-exports.isNoFile = isNoFile;
-const dealiasKey = (k) => {
-    const d = argmap.get(k);
-    if (d)
-        return d;
-    return k;
-};
-const dealias = (opt = {}) => {
-    if (!opt)
-        return {};
-    const result = {};
-    for (const [key, v] of Object.entries(opt)) {
-        // TS doesn't know that aliases are going to always be the same type
-        const k = dealiasKey(key);
-        result[k] = v;
-    }
-    // affordance for deprecated noChmod -> chmod
-    if (result.chmod === undefined && result.noChmod === false) {
-        result.chmod = true;
-    }
-    delete result.noChmod;
-    return result;
-};
-exports.dealias = dealias;
-//# sourceMappingURL=options.js.map
-
-/***/ }),
-
-/***/ 44499:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-// A readable tar stream creator
-// Technically, this is a transform stream that you write paths into,
-// and tar format comes out of.
-// The `add()` method is like `write()` but returns this,
-// and end() return `this` as well, so you can
-// do `new Pack(opt).add('files').add('dir').end().pipe(output)
-// You could also do something like:
-// streamOfPaths().pipe(new Pack()).pipe(new fs.WriteStream('out.tar'))
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.PackSync = exports.Pack = exports.PackJob = void 0;
-const fs_1 = __importDefault(__nccwpck_require__(79896));
-const write_entry_js_1 = __nccwpck_require__(44130);
-class PackJob {
-    path;
-    absolute;
-    entry;
-    stat;
-    readdir;
-    pending = false;
-    ignore = false;
-    piped = false;
-    constructor(path, absolute) {
-        this.path = path || './';
-        this.absolute = absolute;
-    }
-}
-exports.PackJob = PackJob;
-const minipass_1 = __nccwpck_require__(78275);
-const zlib = __importStar(__nccwpck_require__(37119));
-const yallist_1 = __nccwpck_require__(66762);
-const read_entry_js_1 = __nccwpck_require__(61991);
-const warn_method_js_1 = __nccwpck_require__(31154);
-const EOF = Buffer.alloc(1024);
-const ONSTAT = Symbol('onStat');
-const ENDED = Symbol('ended');
-const QUEUE = Symbol('queue');
-const CURRENT = Symbol('current');
-const PROCESS = Symbol('process');
-const PROCESSING = Symbol('processing');
-const PROCESSJOB = Symbol('processJob');
-const JOBS = Symbol('jobs');
-const JOBDONE = Symbol('jobDone');
-const ADDFSENTRY = Symbol('addFSEntry');
-const ADDTARENTRY = Symbol('addTarEntry');
-const STAT = Symbol('stat');
-const READDIR = Symbol('readdir');
-const ONREADDIR = Symbol('onreaddir');
-const PIPE = Symbol('pipe');
-const ENTRY = Symbol('entry');
-const ENTRYOPT = Symbol('entryOpt');
-const WRITEENTRYCLASS = Symbol('writeEntryClass');
-const WRITE = Symbol('write');
-const ONDRAIN = Symbol('ondrain');
-const path_1 = __importDefault(__nccwpck_require__(16928));
-const normalize_windows_path_js_1 = __nccwpck_require__(7867);
-class Pack extends minipass_1.Minipass {
-    sync = false;
-    opt;
-    cwd;
-    maxReadSize;
-    preservePaths;
-    strict;
-    noPax;
-    prefix;
-    linkCache;
-    statCache;
-    file;
-    portable;
-    zip;
-    readdirCache;
-    noDirRecurse;
-    follow;
-    noMtime;
-    mtime;
-    filter;
-    jobs;
-    [WRITEENTRYCLASS];
-    onWriteEntry;
-    // Note: we actually DO need a linked list here, because we
-    // shift() to update the head of the list where we start, but still
-    // while that happens, need to know what the next item in the queue
-    // will be. Since we do multiple jobs in parallel, it's not as simple
-    // as just an Array.shift(), since that would lose the information about
-    // the next job in the list. We could add a .next field on the PackJob
-    // class, but then we'd have to be tracking the tail of the queue the
-    // whole time, and Yallist just does that for us anyway.
-    [QUEUE];
-    [JOBS] = 0;
-    [PROCESSING] = false;
-    [ENDED] = false;
-    constructor(opt = {}) {
-        //@ts-ignore
-        super();
-        this.opt = opt;
-        this.file = opt.file || '';
-        this.cwd = opt.cwd || process.cwd();
-        this.maxReadSize = opt.maxReadSize;
-        this.preservePaths = !!opt.preservePaths;
-        this.strict = !!opt.strict;
-        this.noPax = !!opt.noPax;
-        this.prefix = (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.prefix || '');
-        this.linkCache = opt.linkCache || new Map();
-        this.statCache = opt.statCache || new Map();
-        this.readdirCache = opt.readdirCache || new Map();
-        this.onWriteEntry = opt.onWriteEntry;
-        this[WRITEENTRYCLASS] = write_entry_js_1.WriteEntry;
-        if (typeof opt.onwarn === 'function') {
-            this.on('warn', opt.onwarn);
-        }
-        this.portable = !!opt.portable;
-        if (opt.gzip || opt.brotli || opt.zstd) {
-            if ((opt.gzip ? 1 : 0) +
-                (opt.brotli ? 1 : 0) +
-                (opt.zstd ? 1 : 0) >
-                1) {
-                throw new TypeError('gzip, brotli, zstd are mutually exclusive');
-            }
-            if (opt.gzip) {
-                if (typeof opt.gzip !== 'object') {
-                    opt.gzip = {};
-                }
-                if (this.portable) {
-                    opt.gzip.portable = true;
-                }
-                this.zip = new zlib.Gzip(opt.gzip);
-            }
-            if (opt.brotli) {
-                if (typeof opt.brotli !== 'object') {
-                    opt.brotli = {};
-                }
-                this.zip = new zlib.BrotliCompress(opt.brotli);
-            }
-            if (opt.zstd) {
-                if (typeof opt.zstd !== 'object') {
-                    opt.zstd = {};
-                }
-                this.zip = new zlib.ZstdCompress(opt.zstd);
-            }
-            /* c8 ignore next */
-            if (!this.zip)
-                throw new Error('impossible');
-            const zip = this.zip;
-            zip.on('data', chunk => super.write(chunk));
-            zip.on('end', () => super.end());
-            zip.on('drain', () => this[ONDRAIN]());
-            this.on('resume', () => zip.resume());
-        }
-        else {
-            this.on('drain', this[ONDRAIN]);
-        }
-        this.noDirRecurse = !!opt.noDirRecurse;
-        this.follow = !!opt.follow;
-        this.noMtime = !!opt.noMtime;
-        if (opt.mtime)
-            this.mtime = opt.mtime;
-        this.filter =
-            typeof opt.filter === 'function' ? opt.filter : () => true;
-        this[QUEUE] = new yallist_1.Yallist();
-        this[JOBS] = 0;
-        this.jobs = Number(opt.jobs) || 4;
-        this[PROCESSING] = false;
-        this[ENDED] = false;
-    }
-    [WRITE](chunk) {
-        return super.write(chunk);
-    }
-    add(path) {
-        this.write(path);
-        return this;
-    }
-    end(path, encoding, cb) {
-        /* c8 ignore start */
-        if (typeof path === 'function') {
-            cb = path;
-            path = undefined;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        /* c8 ignore stop */
-        if (path) {
-            this.add(path);
-        }
-        this[ENDED] = true;
-        this[PROCESS]();
-        /* c8 ignore next */
-        if (cb)
-            cb();
-        return this;
-    }
-    write(path) {
-        if (this[ENDED]) {
-            throw new Error('write after end');
-        }
-        if (path instanceof read_entry_js_1.ReadEntry) {
-            this[ADDTARENTRY](path);
-        }
-        else {
-            this[ADDFSENTRY](path);
-        }
-        return this.flowing;
-    }
-    [ADDTARENTRY](p) {
-        const absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(path_1.default.resolve(this.cwd, p.path));
-        // in this case, we don't have to wait for the stat
-        if (!this.filter(p.path, p)) {
-            p.resume();
-        }
-        else {
-            const job = new PackJob(p.path, absolute);
-            job.entry = new write_entry_js_1.WriteEntryTar(p, this[ENTRYOPT](job));
-            job.entry.on('end', () => this[JOBDONE](job));
-            this[JOBS] += 1;
-            this[QUEUE].push(job);
-        }
-        this[PROCESS]();
-    }
-    [ADDFSENTRY](p) {
-        const absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(path_1.default.resolve(this.cwd, p));
-        this[QUEUE].push(new PackJob(p, absolute));
-        this[PROCESS]();
-    }
-    [STAT](job) {
-        job.pending = true;
-        this[JOBS] += 1;
-        const stat = this.follow ? 'stat' : 'lstat';
-        fs_1.default[stat](job.absolute, (er, stat) => {
-            job.pending = false;
-            this[JOBS] -= 1;
-            if (er) {
-                this.emit('error', er);
-            }
-            else {
-                this[ONSTAT](job, stat);
-            }
-        });
-    }
-    [ONSTAT](job, stat) {
-        this.statCache.set(job.absolute, stat);
-        job.stat = stat;
-        // now we have the stat, we can filter it.
-        if (!this.filter(job.path, stat)) {
-            job.ignore = true;
-        }
-        else if (stat.isFile() &&
-            stat.nlink > 1 &&
-            job === this[CURRENT] &&
-            !this.linkCache.get(`${stat.dev}:${stat.ino}`) &&
-            !this.sync) {
-            // if it's not filtered, and it's a new File entry,
-            // jump the queue in case any pending Link entries are about
-            // to try to link to it. This prevents a hardlink from coming ahead
-            // of its target in the archive.
-            this[PROCESSJOB](job);
-        }
-        this[PROCESS]();
-    }
-    [READDIR](job) {
-        job.pending = true;
-        this[JOBS] += 1;
-        fs_1.default.readdir(job.absolute, (er, entries) => {
-            job.pending = false;
-            this[JOBS] -= 1;
-            if (er) {
-                return this.emit('error', er);
-            }
-            this[ONREADDIR](job, entries);
-        });
-    }
-    [ONREADDIR](job, entries) {
-        this.readdirCache.set(job.absolute, entries);
-        job.readdir = entries;
-        this[PROCESS]();
-    }
-    [PROCESS]() {
-        if (this[PROCESSING]) {
-            return;
-        }
-        this[PROCESSING] = true;
-        for (let w = this[QUEUE].head; !!w && this[JOBS] < this.jobs; w = w.next) {
-            this[PROCESSJOB](w.value);
-            if (w.value.ignore) {
-                const p = w.next;
-                this[QUEUE].removeNode(w);
-                w.next = p;
-            }
-        }
-        this[PROCESSING] = false;
-        if (this[ENDED] && !this[QUEUE].length && this[JOBS] === 0) {
-            if (this.zip) {
-                this.zip.end(EOF);
-            }
-            else {
-                super.write(EOF);
-                super.end();
-            }
-        }
-    }
-    get [CURRENT]() {
-        return this[QUEUE] && this[QUEUE].head && this[QUEUE].head.value;
-    }
-    [JOBDONE](_job) {
-        this[QUEUE].shift();
-        this[JOBS] -= 1;
-        this[PROCESS]();
-    }
-    [PROCESSJOB](job) {
-        if (job.pending) {
-            return;
-        }
-        if (job.entry) {
-            if (job === this[CURRENT] && !job.piped) {
-                this[PIPE](job);
-            }
-            return;
-        }
-        if (!job.stat) {
-            const sc = this.statCache.get(job.absolute);
-            if (sc) {
-                this[ONSTAT](job, sc);
-            }
-            else {
-                this[STAT](job);
-            }
-        }
-        if (!job.stat) {
-            return;
-        }
-        // filtered out!
-        if (job.ignore) {
-            return;
-        }
-        if (!this.noDirRecurse &&
-            job.stat.isDirectory() &&
-            !job.readdir) {
-            const rc = this.readdirCache.get(job.absolute);
-            if (rc) {
-                this[ONREADDIR](job, rc);
-            }
-            else {
-                this[READDIR](job);
-            }
-            if (!job.readdir) {
-                return;
-            }
-        }
-        // we know it doesn't have an entry, because that got checked above
-        job.entry = this[ENTRY](job);
-        if (!job.entry) {
-            job.ignore = true;
-            return;
-        }
-        if (job === this[CURRENT] && !job.piped) {
-            this[PIPE](job);
-        }
-    }
-    [ENTRYOPT](job) {
-        return {
-            onwarn: (code, msg, data) => this.warn(code, msg, data),
-            noPax: this.noPax,
-            cwd: this.cwd,
-            absolute: job.absolute,
-            preservePaths: this.preservePaths,
-            maxReadSize: this.maxReadSize,
-            strict: this.strict,
-            portable: this.portable,
-            linkCache: this.linkCache,
-            statCache: this.statCache,
-            noMtime: this.noMtime,
-            mtime: this.mtime,
-            prefix: this.prefix,
-            onWriteEntry: this.onWriteEntry,
-        };
-    }
-    [ENTRY](job) {
-        this[JOBS] += 1;
-        try {
-            const e = new this[WRITEENTRYCLASS](job.path, this[ENTRYOPT](job));
-            return e
-                .on('end', () => this[JOBDONE](job))
-                .on('error', er => this.emit('error', er));
-        }
-        catch (er) {
-            this.emit('error', er);
-        }
-    }
-    [ONDRAIN]() {
-        if (this[CURRENT] && this[CURRENT].entry) {
-            this[CURRENT].entry.resume();
-        }
-    }
-    // like .pipe() but using super, because our write() is special
-    [PIPE](job) {
-        job.piped = true;
-        if (job.readdir) {
-            job.readdir.forEach(entry => {
-                const p = job.path;
-                const base = p === './' ? '' : p.replace(/\/*$/, '/');
-                this[ADDFSENTRY](base + entry);
-            });
-        }
-        const source = job.entry;
-        const zip = this.zip;
-        /* c8 ignore start */
-        if (!source)
-            throw new Error('cannot pipe without source');
-        /* c8 ignore stop */
-        if (zip) {
-            source.on('data', chunk => {
-                if (!zip.write(chunk)) {
-                    source.pause();
-                }
-            });
-        }
-        else {
-            source.on('data', chunk => {
-                if (!super.write(chunk)) {
-                    source.pause();
-                }
-            });
-        }
-    }
-    pause() {
-        if (this.zip) {
-            this.zip.pause();
-        }
-        return super.pause();
-    }
-    warn(code, message, data = {}) {
-        (0, warn_method_js_1.warnMethod)(this, code, message, data);
-    }
-}
-exports.Pack = Pack;
-class PackSync extends Pack {
-    sync = true;
-    constructor(opt) {
-        super(opt);
-        this[WRITEENTRYCLASS] = write_entry_js_1.WriteEntrySync;
-    }
-    // pause/resume are no-ops in sync streams.
-    pause() { }
-    resume() { }
-    [STAT](job) {
-        const stat = this.follow ? 'statSync' : 'lstatSync';
-        this[ONSTAT](job, fs_1.default[stat](job.absolute));
-    }
-    [READDIR](job) {
-        this[ONREADDIR](job, fs_1.default.readdirSync(job.absolute));
-    }
-    // gotta get it all in this tick
-    [PIPE](job) {
-        const source = job.entry;
-        const zip = this.zip;
-        if (job.readdir) {
-            job.readdir.forEach(entry => {
-                const p = job.path;
-                const base = p === './' ? '' : p.replace(/\/*$/, '/');
-                this[ADDFSENTRY](base + entry);
-            });
-        }
-        /* c8 ignore start */
-        if (!source)
-            throw new Error('Cannot pipe without source');
-        /* c8 ignore stop */
-        if (zip) {
-            source.on('data', chunk => {
-                zip.write(chunk);
-            });
-        }
-        else {
-            source.on('data', chunk => {
-                super[WRITE](chunk);
-            });
-        }
-    }
-}
-exports.PackSync = PackSync;
-//# sourceMappingURL=pack.js.map
-
-/***/ }),
-
-/***/ 60535:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-// this[BUFFER] is the remainder of a chunk if we're waiting for
-// the full 512 bytes of a header to come in.  We will Buffer.concat()
-// it to the next write(), which is a mem copy, but a small one.
-//
-// this[QUEUE] is a list of entries that haven't been emitted
-// yet this can only get filled up if the user keeps write()ing after
-// a write() returns false, or does a write() with more than one entry
-//
-// We don't buffer chunks, we always parse them and either create an
-// entry, or push it into the active entry.  The ReadEntry class knows
-// to throw data away if .ignore=true
-//
-// Shift entry off the buffer when it emits 'end', and emit 'entry' for
-// the next one in the list.
-//
-// At any time, we're pushing body chunks into the entry at WRITEENTRY,
-// and waiting for 'end' on the entry at READENTRY
-//
-// ignored entries get .resume() called on them straight away
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Parser = void 0;
-const events_1 = __nccwpck_require__(24434);
-const minizlib_1 = __nccwpck_require__(37119);
-const header_js_1 = __nccwpck_require__(23264);
-const pax_js_1 = __nccwpck_require__(19509);
-const read_entry_js_1 = __nccwpck_require__(61991);
-const warn_method_js_1 = __nccwpck_require__(31154);
-const maxMetaEntrySize = 1024 * 1024;
-const gzipHeader = Buffer.from([0x1f, 0x8b]);
-const zstdHeader = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
-const ZIP_HEADER_LEN = Math.max(gzipHeader.length, zstdHeader.length);
-const STATE = Symbol('state');
-const WRITEENTRY = Symbol('writeEntry');
-const READENTRY = Symbol('readEntry');
-const NEXTENTRY = Symbol('nextEntry');
-const PROCESSENTRY = Symbol('processEntry');
-const EX = Symbol('extendedHeader');
-const GEX = Symbol('globalExtendedHeader');
-const META = Symbol('meta');
-const EMITMETA = Symbol('emitMeta');
-const BUFFER = Symbol('buffer');
-const QUEUE = Symbol('queue');
-const ENDED = Symbol('ended');
-const EMITTEDEND = Symbol('emittedEnd');
-const EMIT = Symbol('emit');
-const UNZIP = Symbol('unzip');
-const CONSUMECHUNK = Symbol('consumeChunk');
-const CONSUMECHUNKSUB = Symbol('consumeChunkSub');
-const CONSUMEBODY = Symbol('consumeBody');
-const CONSUMEMETA = Symbol('consumeMeta');
-const CONSUMEHEADER = Symbol('consumeHeader');
-const CONSUMING = Symbol('consuming');
-const BUFFERCONCAT = Symbol('bufferConcat');
-const MAYBEEND = Symbol('maybeEnd');
-const WRITING = Symbol('writing');
-const ABORTED = Symbol('aborted');
-const DONE = Symbol('onDone');
-const SAW_VALID_ENTRY = Symbol('sawValidEntry');
-const SAW_NULL_BLOCK = Symbol('sawNullBlock');
-const SAW_EOF = Symbol('sawEOF');
-const CLOSESTREAM = Symbol('closeStream');
-const noop = () => true;
-class Parser extends events_1.EventEmitter {
-    file;
-    strict;
-    maxMetaEntrySize;
-    filter;
-    brotli;
-    zstd;
-    writable = true;
-    readable = false;
-    [QUEUE] = [];
-    [BUFFER];
-    [READENTRY];
-    [WRITEENTRY];
-    [STATE] = 'begin';
-    [META] = '';
-    [EX];
-    [GEX];
-    [ENDED] = false;
-    [UNZIP];
-    [ABORTED] = false;
-    [SAW_VALID_ENTRY];
-    [SAW_NULL_BLOCK] = false;
-    [SAW_EOF] = false;
-    [WRITING] = false;
-    [CONSUMING] = false;
-    [EMITTEDEND] = false;
-    constructor(opt = {}) {
-        super();
-        this.file = opt.file || '';
-        // these BADARCHIVE errors can't be detected early. listen on DONE.
-        this.on(DONE, () => {
-            if (this[STATE] === 'begin' ||
-                this[SAW_VALID_ENTRY] === false) {
-                // either less than 1 block of data, or all entries were invalid.
-                // Either way, probably not even a tarball.
-                this.warn('TAR_BAD_ARCHIVE', 'Unrecognized archive format');
-            }
-        });
-        if (opt.ondone) {
-            this.on(DONE, opt.ondone);
-        }
-        else {
-            this.on(DONE, () => {
-                this.emit('prefinish');
-                this.emit('finish');
-                this.emit('end');
-            });
-        }
-        this.strict = !!opt.strict;
-        this.maxMetaEntrySize = opt.maxMetaEntrySize || maxMetaEntrySize;
-        this.filter = typeof opt.filter === 'function' ? opt.filter : noop;
-        // Unlike gzip, brotli doesn't have any magic bytes to identify it
-        // Users need to explicitly tell us they're extracting a brotli file
-        // Or we infer from the file extension
-        const isTBR = opt.file &&
-            (opt.file.endsWith('.tar.br') || opt.file.endsWith('.tbr'));
-        // if it's a tbr file it MIGHT be brotli, but we don't know until
-        // we look at it and verify it's not a valid tar file.
-        this.brotli =
-            !(opt.gzip || opt.zstd) && opt.brotli !== undefined ? opt.brotli
-                : isTBR ? undefined
-                    : false;
-        // zstd has magic bytes to identify it, but we also support explicit options
-        // and file extension detection
-        const isTZST = opt.file &&
-            (opt.file.endsWith('.tar.zst') || opt.file.endsWith('.tzst'));
-        this.zstd =
-            !(opt.gzip || opt.brotli) && opt.zstd !== undefined ? opt.zstd
-                : isTZST ? true
-                    : undefined;
-        // have to set this so that streams are ok piping into it
-        this.on('end', () => this[CLOSESTREAM]());
-        if (typeof opt.onwarn === 'function') {
-            this.on('warn', opt.onwarn);
-        }
-        if (typeof opt.onReadEntry === 'function') {
-            this.on('entry', opt.onReadEntry);
-        }
-    }
-    warn(code, message, data = {}) {
-        (0, warn_method_js_1.warnMethod)(this, code, message, data);
-    }
-    [CONSUMEHEADER](chunk, position) {
-        if (this[SAW_VALID_ENTRY] === undefined) {
-            this[SAW_VALID_ENTRY] = false;
-        }
-        let header;
-        try {
-            header = new header_js_1.Header(chunk, position, this[EX], this[GEX]);
-        }
-        catch (er) {
-            return this.warn('TAR_ENTRY_INVALID', er);
-        }
-        if (header.nullBlock) {
-            if (this[SAW_NULL_BLOCK]) {
-                this[SAW_EOF] = true;
-                // ending an archive with no entries.  pointless, but legal.
-                if (this[STATE] === 'begin') {
-                    this[STATE] = 'header';
-                }
-                this[EMIT]('eof');
-            }
-            else {
-                this[SAW_NULL_BLOCK] = true;
-                this[EMIT]('nullBlock');
-            }
-        }
-        else {
-            this[SAW_NULL_BLOCK] = false;
-            if (!header.cksumValid) {
-                this.warn('TAR_ENTRY_INVALID', 'checksum failure', { header });
-            }
-            else if (!header.path) {
-                this.warn('TAR_ENTRY_INVALID', 'path is required', { header });
-            }
-            else {
-                const type = header.type;
-                if (/^(Symbolic)?Link$/.test(type) && !header.linkpath) {
-                    this.warn('TAR_ENTRY_INVALID', 'linkpath required', {
-                        header,
-                    });
-                }
-                else if (!/^(Symbolic)?Link$/.test(type) &&
-                    !/^(Global)?ExtendedHeader$/.test(type) &&
-                    header.linkpath) {
-                    this.warn('TAR_ENTRY_INVALID', 'linkpath forbidden', {
-                        header,
-                    });
-                }
-                else {
-                    const entry = (this[WRITEENTRY] = new read_entry_js_1.ReadEntry(header, this[EX], this[GEX]));
-                    // we do this for meta & ignored entries as well, because they
-                    // are still valid tar, or else we wouldn't know to ignore them
-                    if (!this[SAW_VALID_ENTRY]) {
-                        if (entry.remain) {
-                            // this might be the one!
-                            const onend = () => {
-                                if (!entry.invalid) {
-                                    this[SAW_VALID_ENTRY] = true;
-                                }
-                            };
-                            entry.on('end', onend);
-                        }
-                        else {
-                            this[SAW_VALID_ENTRY] = true;
-                        }
-                    }
-                    if (entry.meta) {
-                        if (entry.size > this.maxMetaEntrySize) {
-                            entry.ignore = true;
-                            this[EMIT]('ignoredEntry', entry);
-                            this[STATE] = 'ignore';
-                            entry.resume();
-                        }
-                        else if (entry.size > 0) {
-                            this[META] = '';
-                            entry.on('data', c => (this[META] += c));
-                            this[STATE] = 'meta';
-                        }
-                    }
-                    else {
-                        this[EX] = undefined;
-                        entry.ignore =
-                            entry.ignore || !this.filter(entry.path, entry);
-                        if (entry.ignore) {
-                            // probably valid, just not something we care about
-                            this[EMIT]('ignoredEntry', entry);
-                            this[STATE] = entry.remain ? 'ignore' : 'header';
-                            entry.resume();
-                        }
-                        else {
-                            if (entry.remain) {
-                                this[STATE] = 'body';
-                            }
-                            else {
-                                this[STATE] = 'header';
-                                entry.end();
-                            }
-                            if (!this[READENTRY]) {
-                                this[QUEUE].push(entry);
-                                this[NEXTENTRY]();
-                            }
-                            else {
-                                this[QUEUE].push(entry);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    [CLOSESTREAM]() {
-        queueMicrotask(() => this.emit('close'));
-    }
-    [PROCESSENTRY](entry) {
-        let go = true;
-        if (!entry) {
-            this[READENTRY] = undefined;
-            go = false;
-        }
-        else if (Array.isArray(entry)) {
-            const [ev, ...args] = entry;
-            this.emit(ev, ...args);
-        }
-        else {
-            this[READENTRY] = entry;
-            this.emit('entry', entry);
-            if (!entry.emittedEnd) {
-                entry.on('end', () => this[NEXTENTRY]());
-                go = false;
-            }
-        }
-        return go;
-    }
-    [NEXTENTRY]() {
-        do { } while (this[PROCESSENTRY](this[QUEUE].shift()));
-        if (!this[QUEUE].length) {
-            // At this point, there's nothing in the queue, but we may have an
-            // entry which is being consumed (readEntry).
-            // If we don't, then we definitely can handle more data.
-            // If we do, and either it's flowing, or it has never had any data
-            // written to it, then it needs more.
-            // The only other possibility is that it has returned false from a
-            // write() call, so we wait for the next drain to continue.
-            const re = this[READENTRY];
-            const drainNow = !re || re.flowing || re.size === re.remain;
-            if (drainNow) {
-                if (!this[WRITING]) {
-                    this.emit('drain');
-                }
-            }
-            else {
-                re.once('drain', () => this.emit('drain'));
-            }
-        }
-    }
-    [CONSUMEBODY](chunk, position) {
-        // write up to but no  more than writeEntry.blockRemain
-        const entry = this[WRITEENTRY];
-        /* c8 ignore start */
-        if (!entry) {
-            throw new Error('attempt to consume body without entry??');
-        }
-        const br = entry.blockRemain ?? 0;
-        /* c8 ignore stop */
-        const c = br >= chunk.length && position === 0 ?
-            chunk
-            : chunk.subarray(position, position + br);
-        entry.write(c);
-        if (!entry.blockRemain) {
-            this[STATE] = 'header';
-            this[WRITEENTRY] = undefined;
-            entry.end();
-        }
-        return c.length;
-    }
-    [CONSUMEMETA](chunk, position) {
-        const entry = this[WRITEENTRY];
-        const ret = this[CONSUMEBODY](chunk, position);
-        // if we finished, then the entry is reset
-        if (!this[WRITEENTRY] && entry) {
-            this[EMITMETA](entry);
-        }
-        return ret;
-    }
-    [EMIT](ev, data, extra) {
-        if (!this[QUEUE].length && !this[READENTRY]) {
-            this.emit(ev, data, extra);
-        }
-        else {
-            this[QUEUE].push([ev, data, extra]);
-        }
-    }
-    [EMITMETA](entry) {
-        this[EMIT]('meta', this[META]);
-        switch (entry.type) {
-            case 'ExtendedHeader':
-            case 'OldExtendedHeader':
-                this[EX] = pax_js_1.Pax.parse(this[META], this[EX], false);
-                break;
-            case 'GlobalExtendedHeader':
-                this[GEX] = pax_js_1.Pax.parse(this[META], this[GEX], true);
-                break;
-            case 'NextFileHasLongPath':
-            case 'OldGnuLongPath': {
-                const ex = this[EX] ?? Object.create(null);
-                this[EX] = ex;
-                ex.path = this[META].replace(/\0.*/, '');
-                break;
-            }
-            case 'NextFileHasLongLinkpath': {
-                const ex = this[EX] || Object.create(null);
-                this[EX] = ex;
-                ex.linkpath = this[META].replace(/\0.*/, '');
-                break;
-            }
-            /* c8 ignore start */
-            default:
-                throw new Error('unknown meta: ' + entry.type);
-            /* c8 ignore stop */
-        }
-    }
-    abort(error) {
-        this[ABORTED] = true;
-        this.emit('abort', error);
-        // always throws, even in non-strict mode
-        this.warn('TAR_ABORT', error, { recoverable: false });
-    }
-    write(chunk, encoding, cb) {
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        if (typeof chunk === 'string') {
-            chunk = Buffer.from(chunk, 
-            /* c8 ignore next */
-            typeof encoding === 'string' ? encoding : 'utf8');
-        }
-        if (this[ABORTED]) {
-            /* c8 ignore next */
-            cb?.();
-            return false;
-        }
-        // first write, might be gzipped, zstd, or brotli compressed
-        const needSniff = this[UNZIP] === undefined ||
-            (this.brotli === undefined && this[UNZIP] === false);
-        if (needSniff && chunk) {
-            if (this[BUFFER]) {
-                chunk = Buffer.concat([this[BUFFER], chunk]);
-                this[BUFFER] = undefined;
-            }
-            if (chunk.length < ZIP_HEADER_LEN) {
-                this[BUFFER] = chunk;
-                /* c8 ignore next */
-                cb?.();
-                return true;
-            }
-            // look for gzip header
-            for (let i = 0; this[UNZIP] === undefined && i < gzipHeader.length; i++) {
-                if (chunk[i] !== gzipHeader[i]) {
-                    this[UNZIP] = false;
-                }
-            }
-            // look for zstd header if gzip header not found
-            let isZstd = false;
-            if (this[UNZIP] === false && this.zstd !== false) {
-                isZstd = true;
-                for (let i = 0; i < zstdHeader.length; i++) {
-                    if (chunk[i] !== zstdHeader[i]) {
-                        isZstd = false;
-                        break;
-                    }
-                }
-            }
-            const maybeBrotli = this.brotli === undefined && !isZstd;
-            if (this[UNZIP] === false && maybeBrotli) {
-                // read the first header to see if it's a valid tar file. If so,
-                // we can safely assume that it's not actually brotli, despite the
-                // .tbr or .tar.br file extension.
-                // if we ended before getting a full chunk, yes, def brotli
-                if (chunk.length < 512) {
-                    if (this[ENDED]) {
-                        this.brotli = true;
-                    }
-                    else {
-                        this[BUFFER] = chunk;
-                        /* c8 ignore next */
-                        cb?.();
-                        return true;
-                    }
-                }
-                else {
-                    // if it's tar, it's pretty reliably not brotli, chances of
-                    // that happening are astronomical.
-                    try {
-                        new header_js_1.Header(chunk.subarray(0, 512));
-                        this.brotli = false;
-                    }
-                    catch (_) {
-                        this.brotli = true;
-                    }
-                }
-            }
-            if (this[UNZIP] === undefined ||
-                (this[UNZIP] === false && (this.brotli || isZstd))) {
-                const ended = this[ENDED];
-                this[ENDED] = false;
-                this[UNZIP] =
-                    this[UNZIP] === undefined ? new minizlib_1.Unzip({})
-                        : isZstd ? new minizlib_1.ZstdDecompress({})
-                            : new minizlib_1.BrotliDecompress({});
-                this[UNZIP].on('data', chunk => this[CONSUMECHUNK](chunk));
-                this[UNZIP].on('error', er => this.abort(er));
-                this[UNZIP].on('end', () => {
-                    this[ENDED] = true;
-                    this[CONSUMECHUNK]();
-                });
-                this[WRITING] = true;
-                const ret = !!this[UNZIP][ended ? 'end' : 'write'](chunk);
-                this[WRITING] = false;
-                cb?.();
-                return ret;
-            }
-        }
-        this[WRITING] = true;
-        if (this[UNZIP]) {
-            this[UNZIP].write(chunk);
-        }
-        else {
-            this[CONSUMECHUNK](chunk);
-        }
-        this[WRITING] = false;
-        // return false if there's a queue, or if the current entry isn't flowing
-        const ret = this[QUEUE].length ? false
-            : this[READENTRY] ? this[READENTRY].flowing
-                : true;
-        // if we have no queue, then that means a clogged READENTRY
-        if (!ret && !this[QUEUE].length) {
-            this[READENTRY]?.once('drain', () => this.emit('drain'));
-        }
-        /* c8 ignore next */
-        cb?.();
-        return ret;
-    }
-    [BUFFERCONCAT](c) {
-        if (c && !this[ABORTED]) {
-            this[BUFFER] =
-                this[BUFFER] ? Buffer.concat([this[BUFFER], c]) : c;
-        }
-    }
-    [MAYBEEND]() {
-        if (this[ENDED] &&
-            !this[EMITTEDEND] &&
-            !this[ABORTED] &&
-            !this[CONSUMING]) {
-            this[EMITTEDEND] = true;
-            const entry = this[WRITEENTRY];
-            if (entry && entry.blockRemain) {
-                // truncated, likely a damaged file
-                const have = this[BUFFER] ? this[BUFFER].length : 0;
-                this.warn('TAR_BAD_ARCHIVE', `Truncated input (needed ${entry.blockRemain} more bytes, only ${have} available)`, { entry });
-                if (this[BUFFER]) {
-                    entry.write(this[BUFFER]);
-                }
-                entry.end();
-            }
-            this[EMIT](DONE);
-        }
-    }
-    [CONSUMECHUNK](chunk) {
-        if (this[CONSUMING] && chunk) {
-            this[BUFFERCONCAT](chunk);
-        }
-        else if (!chunk && !this[BUFFER]) {
-            this[MAYBEEND]();
-        }
-        else if (chunk) {
-            this[CONSUMING] = true;
-            if (this[BUFFER]) {
-                this[BUFFERCONCAT](chunk);
-                const c = this[BUFFER];
-                this[BUFFER] = undefined;
-                this[CONSUMECHUNKSUB](c);
-            }
-            else {
-                this[CONSUMECHUNKSUB](chunk);
-            }
-            while (this[BUFFER] &&
-                this[BUFFER]?.length >= 512 &&
-                !this[ABORTED] &&
-                !this[SAW_EOF]) {
-                const c = this[BUFFER];
-                this[BUFFER] = undefined;
-                this[CONSUMECHUNKSUB](c);
-            }
-            this[CONSUMING] = false;
-        }
-        if (!this[BUFFER] || this[ENDED]) {
-            this[MAYBEEND]();
-        }
-    }
-    [CONSUMECHUNKSUB](chunk) {
-        // we know that we are in CONSUMING mode, so anything written goes into
-        // the buffer.  Advance the position and put any remainder in the buffer.
-        let position = 0;
-        const length = chunk.length;
-        while (position + 512 <= length &&
-            !this[ABORTED] &&
-            !this[SAW_EOF]) {
-            switch (this[STATE]) {
-                case 'begin':
-                case 'header':
-                    this[CONSUMEHEADER](chunk, position);
-                    position += 512;
-                    break;
-                case 'ignore':
-                case 'body':
-                    position += this[CONSUMEBODY](chunk, position);
-                    break;
-                case 'meta':
-                    position += this[CONSUMEMETA](chunk, position);
-                    break;
-                /* c8 ignore start */
-                default:
-                    throw new Error('invalid state: ' + this[STATE]);
-                /* c8 ignore stop */
-            }
-        }
-        if (position < length) {
-            if (this[BUFFER]) {
-                this[BUFFER] = Buffer.concat([
-                    chunk.subarray(position),
-                    this[BUFFER],
-                ]);
-            }
-            else {
-                this[BUFFER] = chunk.subarray(position);
-            }
-        }
-    }
-    end(chunk, encoding, cb) {
-        if (typeof chunk === 'function') {
-            cb = chunk;
-            encoding = undefined;
-            chunk = undefined;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        if (typeof chunk === 'string') {
-            chunk = Buffer.from(chunk, encoding);
-        }
-        if (cb)
-            this.once('finish', cb);
-        if (!this[ABORTED]) {
-            if (this[UNZIP]) {
-                /* c8 ignore start */
-                if (chunk)
-                    this[UNZIP].write(chunk);
-                /* c8 ignore stop */
-                this[UNZIP].end();
-            }
-            else {
-                this[ENDED] = true;
-                if (this.brotli === undefined || this.zstd === undefined)
-                    chunk = chunk || Buffer.alloc(0);
-                if (chunk)
-                    this.write(chunk);
-                this[MAYBEEND]();
-            }
-        }
-        return this;
-    }
-}
-exports.Parser = Parser;
-//# sourceMappingURL=parse.js.map
-
-/***/ }),
-
-/***/ 52865:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-// A path exclusive reservation system
-// reserve([list, of, paths], fn)
-// When the fn is first in line for all its paths, it
-// is called with a cb that clears the reservation.
-//
-// Used by async unpack to avoid clobbering paths in use,
-// while still allowing maximal safe parallelization.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.PathReservations = void 0;
-const node_path_1 = __nccwpck_require__(76760);
-const normalize_unicode_js_1 = __nccwpck_require__(44629);
-const strip_trailing_slashes_js_1 = __nccwpck_require__(23335);
-const platform = process.env.TESTING_TAR_FAKE_PLATFORM || process.platform;
-const isWindows = platform === 'win32';
-// return a set of parent dirs for a given path
-// '/a/b/c/d' -> ['/', '/a', '/a/b', '/a/b/c', '/a/b/c/d']
-const getDirs = (path) => {
-    const dirs = path
-        .split('/')
-        .slice(0, -1)
-        .reduce((set, path) => {
-        const s = set[set.length - 1];
-        if (s !== undefined) {
-            path = (0, node_path_1.join)(s, path);
-        }
-        set.push(path || '/');
-        return set;
-    }, []);
-    return dirs;
-};
-class PathReservations {
-    // path => [function or Set]
-    // A Set object means a directory reservation
-    // A fn is a direct reservation on that path
-    #queues = new Map();
-    // fn => {paths:[path,...], dirs:[path, ...]}
-    #reservations = new Map();
-    // functions currently running
-    #running = new Set();
-    reserve(paths, fn) {
-        paths =
-            isWindows ?
-                ['win32 parallelization disabled']
-                : paths.map(p => {
-                    // don't need normPath, because we skip this entirely for windows
-                    return (0, strip_trailing_slashes_js_1.stripTrailingSlashes)((0, node_path_1.join)((0, normalize_unicode_js_1.normalizeUnicode)(p)));
-                });
-        const dirs = new Set(paths.map(path => getDirs(path)).reduce((a, b) => a.concat(b)));
-        this.#reservations.set(fn, { dirs, paths });
-        for (const p of paths) {
-            const q = this.#queues.get(p);
-            if (!q) {
-                this.#queues.set(p, [fn]);
-            }
-            else {
-                q.push(fn);
-            }
-        }
-        for (const dir of dirs) {
-            const q = this.#queues.get(dir);
-            if (!q) {
-                this.#queues.set(dir, [new Set([fn])]);
-            }
-            else {
-                const l = q[q.length - 1];
-                if (l instanceof Set) {
-                    l.add(fn);
-                }
-                else {
-                    q.push(new Set([fn]));
-                }
-            }
-        }
-        return this.#run(fn);
-    }
-    // return the queues for each path the function cares about
-    // fn => {paths, dirs}
-    #getQueues(fn) {
-        const res = this.#reservations.get(fn);
-        /* c8 ignore start */
-        if (!res) {
-            throw new Error('function does not have any path reservations');
-        }
-        /* c8 ignore stop */
-        return {
-            paths: res.paths.map((path) => this.#queues.get(path)),
-            dirs: [...res.dirs].map(path => this.#queues.get(path)),
-        };
-    }
-    // check if fn is first in line for all its paths, and is
-    // included in the first set for all its dir queues
-    check(fn) {
-        const { paths, dirs } = this.#getQueues(fn);
-        return (paths.every(q => q && q[0] === fn) &&
-            dirs.every(q => q && q[0] instanceof Set && q[0].has(fn)));
-    }
-    // run the function if it's first in line and not already running
-    #run(fn) {
-        if (this.#running.has(fn) || !this.check(fn)) {
-            return false;
-        }
-        this.#running.add(fn);
-        fn(() => this.#clear(fn));
-        return true;
-    }
-    #clear(fn) {
-        if (!this.#running.has(fn)) {
-            return false;
-        }
-        const res = this.#reservations.get(fn);
-        /* c8 ignore start */
-        if (!res) {
-            throw new Error('invalid reservation');
-        }
-        /* c8 ignore stop */
-        const { paths, dirs } = res;
-        const next = new Set();
-        for (const path of paths) {
-            const q = this.#queues.get(path);
-            /* c8 ignore start */
-            if (!q || q?.[0] !== fn) {
-                continue;
-            }
-            /* c8 ignore stop */
-            const q0 = q[1];
-            if (!q0) {
-                this.#queues.delete(path);
-                continue;
-            }
-            q.shift();
-            if (typeof q0 === 'function') {
-                next.add(q0);
-            }
-            else {
-                for (const f of q0) {
-                    next.add(f);
-                }
-            }
-        }
-        for (const dir of dirs) {
-            const q = this.#queues.get(dir);
-            const q0 = q?.[0];
-            /* c8 ignore next - type safety only */
-            if (!q || !(q0 instanceof Set))
-                continue;
-            if (q0.size === 1 && q.length === 1) {
-                this.#queues.delete(dir);
-                continue;
-            }
-            else if (q0.size === 1) {
-                q.shift();
-                // next one must be a function,
-                // or else the Set would've been reused
-                const n = q[0];
-                if (typeof n === 'function') {
-                    next.add(n);
-                }
-            }
-            else {
-                q0.delete(fn);
-            }
-        }
-        this.#running.delete(fn);
-        next.forEach(fn => this.#run(fn));
-        return true;
-    }
-}
-exports.PathReservations = PathReservations;
-//# sourceMappingURL=path-reservations.js.map
-
-/***/ }),
-
-/***/ 19509:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Pax = void 0;
-const node_path_1 = __nccwpck_require__(76760);
-const header_js_1 = __nccwpck_require__(23264);
-class Pax {
-    atime;
-    mtime;
-    ctime;
-    charset;
-    comment;
-    gid;
-    uid;
-    gname;
-    uname;
-    linkpath;
-    dev;
-    ino;
-    nlink;
-    path;
-    size;
-    mode;
-    global;
-    constructor(obj, global = false) {
-        this.atime = obj.atime;
-        this.charset = obj.charset;
-        this.comment = obj.comment;
-        this.ctime = obj.ctime;
-        this.dev = obj.dev;
-        this.gid = obj.gid;
-        this.global = global;
-        this.gname = obj.gname;
-        this.ino = obj.ino;
-        this.linkpath = obj.linkpath;
-        this.mtime = obj.mtime;
-        this.nlink = obj.nlink;
-        this.path = obj.path;
-        this.size = obj.size;
-        this.uid = obj.uid;
-        this.uname = obj.uname;
-    }
-    encode() {
-        const body = this.encodeBody();
-        if (body === '') {
-            return Buffer.allocUnsafe(0);
-        }
-        const bodyLen = Buffer.byteLength(body);
-        // round up to 512 bytes
-        // add 512 for header
-        const bufLen = 512 * Math.ceil(1 + bodyLen / 512);
-        const buf = Buffer.allocUnsafe(bufLen);
-        // 0-fill the header section, it might not hit every field
-        for (let i = 0; i < 512; i++) {
-            buf[i] = 0;
-        }
-        new header_js_1.Header({
-            // XXX split the path
-            // then the path should be PaxHeader + basename, but less than 99,
-            // prepend with the dirname
-            /* c8 ignore start */
-            path: ('PaxHeader/' + (0, node_path_1.basename)(this.path ?? '')).slice(0, 99),
-            /* c8 ignore stop */
-            mode: this.mode || 0o644,
-            uid: this.uid,
-            gid: this.gid,
-            size: bodyLen,
-            mtime: this.mtime,
-            type: this.global ? 'GlobalExtendedHeader' : 'ExtendedHeader',
-            linkpath: '',
-            uname: this.uname || '',
-            gname: this.gname || '',
-            devmaj: 0,
-            devmin: 0,
-            atime: this.atime,
-            ctime: this.ctime,
-        }).encode(buf);
-        buf.write(body, 512, bodyLen, 'utf8');
-        // null pad after the body
-        for (let i = bodyLen + 512; i < buf.length; i++) {
-            buf[i] = 0;
-        }
-        return buf;
-    }
-    encodeBody() {
-        return (this.encodeField('path') +
-            this.encodeField('ctime') +
-            this.encodeField('atime') +
-            this.encodeField('dev') +
-            this.encodeField('ino') +
-            this.encodeField('nlink') +
-            this.encodeField('charset') +
-            this.encodeField('comment') +
-            this.encodeField('gid') +
-            this.encodeField('gname') +
-            this.encodeField('linkpath') +
-            this.encodeField('mtime') +
-            this.encodeField('size') +
-            this.encodeField('uid') +
-            this.encodeField('uname'));
-    }
-    encodeField(field) {
-        if (this[field] === undefined) {
-            return '';
-        }
-        const r = this[field];
-        const v = r instanceof Date ? r.getTime() / 1000 : r;
-        const s = ' ' +
-            (field === 'dev' || field === 'ino' || field === 'nlink' ?
-                'SCHILY.'
-                : '') +
-            field +
-            '=' +
-            v +
-            '\n';
-        const byteLen = Buffer.byteLength(s);
-        // the digits includes the length of the digits in ascii base-10
-        // so if it's 9 characters, then adding 1 for the 9 makes it 10
-        // which makes it 11 chars.
-        let digits = Math.floor(Math.log(byteLen) / Math.log(10)) + 1;
-        if (byteLen + digits >= Math.pow(10, digits)) {
-            digits += 1;
-        }
-        const len = digits + byteLen;
-        return len + s;
-    }
-    static parse(str, ex, g = false) {
-        return new Pax(merge(parseKV(str), ex), g);
-    }
-}
-exports.Pax = Pax;
-const merge = (a, b) => b ? Object.assign({}, b, a) : a;
-const parseKV = (str) => str
-    .replace(/\n$/, '')
-    .split('\n')
-    .reduce(parseKVLine, Object.create(null));
-const parseKVLine = (set, line) => {
-    const n = parseInt(line, 10);
-    // XXX Values with \n in them will fail this.
-    // Refactor to not be a naive line-by-line parse.
-    if (n !== Buffer.byteLength(line) + 1) {
-        return set;
-    }
-    line = line.slice((n + ' ').length);
-    const kv = line.split('=');
-    const r = kv.shift();
-    if (!r) {
-        return set;
-    }
-    const k = r.replace(/^SCHILY\.(dev|ino|nlink)/, '$1');
-    const v = kv.join('=');
-    set[k] =
-        /^([A-Z]+\.)?([mac]|birth|creation)time$/.test(k) ?
-            new Date(Number(v) * 1000)
-            : /^[0-9]+$/.test(v) ? +v
-                : v;
-    return set;
-};
-//# sourceMappingURL=pax.js.map
-
-/***/ }),
-
-/***/ 61991:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ReadEntry = void 0;
-const minipass_1 = __nccwpck_require__(78275);
-const normalize_windows_path_js_1 = __nccwpck_require__(7867);
-class ReadEntry extends minipass_1.Minipass {
-    extended;
-    globalExtended;
-    header;
-    startBlockSize;
-    blockRemain;
-    remain;
-    type;
-    meta = false;
-    ignore = false;
-    path;
-    mode;
-    uid;
-    gid;
-    uname;
-    gname;
-    size = 0;
-    mtime;
-    atime;
-    ctime;
-    linkpath;
-    dev;
-    ino;
-    nlink;
-    invalid = false;
-    absolute;
-    unsupported = false;
-    constructor(header, ex, gex) {
-        super({});
-        // read entries always start life paused.  this is to avoid the
-        // situation where Minipass's auto-ending empty streams results
-        // in an entry ending before we're ready for it.
-        this.pause();
-        this.extended = ex;
-        this.globalExtended = gex;
-        this.header = header;
-        /* c8 ignore start */
-        this.remain = header.size ?? 0;
-        /* c8 ignore stop */
-        this.startBlockSize = 512 * Math.ceil(this.remain / 512);
-        this.blockRemain = this.startBlockSize;
-        this.type = header.type;
-        switch (this.type) {
-            case 'File':
-            case 'OldFile':
-            case 'Link':
-            case 'SymbolicLink':
-            case 'CharacterDevice':
-            case 'BlockDevice':
-            case 'Directory':
-            case 'FIFO':
-            case 'ContiguousFile':
-            case 'GNUDumpDir':
-                break;
-            case 'NextFileHasLongLinkpath':
-            case 'NextFileHasLongPath':
-            case 'OldGnuLongPath':
-            case 'GlobalExtendedHeader':
-            case 'ExtendedHeader':
-            case 'OldExtendedHeader':
-                this.meta = true;
-                break;
-            // NOTE: gnutar and bsdtar treat unrecognized types as 'File'
-            // it may be worth doing the same, but with a warning.
-            default:
-                this.ignore = true;
-        }
-        /* c8 ignore start */
-        if (!header.path) {
-            throw new Error('no path provided for tar.ReadEntry');
-        }
-        /* c8 ignore stop */
-        this.path = (0, normalize_windows_path_js_1.normalizeWindowsPath)(header.path);
-        this.mode = header.mode;
-        if (this.mode) {
-            this.mode = this.mode & 0o7777;
-        }
-        this.uid = header.uid;
-        this.gid = header.gid;
-        this.uname = header.uname;
-        this.gname = header.gname;
-        this.size = this.remain;
-        this.mtime = header.mtime;
-        this.atime = header.atime;
-        this.ctime = header.ctime;
-        /* c8 ignore start */
-        this.linkpath =
-            header.linkpath ?
-                (0, normalize_windows_path_js_1.normalizeWindowsPath)(header.linkpath)
-                : undefined;
-        /* c8 ignore stop */
-        this.uname = header.uname;
-        this.gname = header.gname;
-        if (ex) {
-            this.#slurp(ex);
-        }
-        if (gex) {
-            this.#slurp(gex, true);
-        }
-    }
-    write(data) {
-        const writeLen = data.length;
-        if (writeLen > this.blockRemain) {
-            throw new Error('writing more to entry than is appropriate');
-        }
-        const r = this.remain;
-        const br = this.blockRemain;
-        this.remain = Math.max(0, r - writeLen);
-        this.blockRemain = Math.max(0, br - writeLen);
-        if (this.ignore) {
-            return true;
-        }
-        if (r >= writeLen) {
-            return super.write(data);
-        }
-        // r < writeLen
-        return super.write(data.subarray(0, r));
-    }
-    #slurp(ex, gex = false) {
-        if (ex.path)
-            ex.path = (0, normalize_windows_path_js_1.normalizeWindowsPath)(ex.path);
-        if (ex.linkpath)
-            ex.linkpath = (0, normalize_windows_path_js_1.normalizeWindowsPath)(ex.linkpath);
-        Object.assign(this, Object.fromEntries(Object.entries(ex).filter(([k, v]) => {
-            // we slurp in everything except for the path attribute in
-            // a global extended header, because that's weird. Also, any
-            // null/undefined values are ignored.
-            return !(v === null ||
-                v === undefined ||
-                (k === 'path' && gex));
-        })));
-    }
-}
-exports.ReadEntry = ReadEntry;
-//# sourceMappingURL=read-entry.js.map
-
-/***/ }),
-
-/***/ 30476:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.replace = void 0;
-// tar -r
-const fs_minipass_1 = __nccwpck_require__(69084);
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const node_path_1 = __importDefault(__nccwpck_require__(76760));
-const header_js_1 = __nccwpck_require__(23264);
-const list_js_1 = __nccwpck_require__(24110);
-const make_command_js_1 = __nccwpck_require__(51272);
-const options_js_1 = __nccwpck_require__(94602);
-const pack_js_1 = __nccwpck_require__(44499);
-// starting at the head of the file, read a Header
-// If the checksum is invalid, that's our position to start writing
-// If it is, jump forward by the specified size (round up to 512)
-// and try again.
-// Write the new Pack stream starting there.
-const replaceSync = (opt, files) => {
-    const p = new pack_js_1.PackSync(opt);
-    let threw = true;
-    let fd;
-    let position;
-    try {
-        try {
-            fd = node_fs_1.default.openSync(opt.file, 'r+');
-        }
-        catch (er) {
-            if (er?.code === 'ENOENT') {
-                fd = node_fs_1.default.openSync(opt.file, 'w+');
-            }
-            else {
-                throw er;
-            }
-        }
-        const st = node_fs_1.default.fstatSync(fd);
-        const headBuf = Buffer.alloc(512);
-        POSITION: for (position = 0; position < st.size; position += 512) {
-            for (let bufPos = 0, bytes = 0; bufPos < 512; bufPos += bytes) {
-                bytes = node_fs_1.default.readSync(fd, headBuf, bufPos, headBuf.length - bufPos, position + bufPos);
-                if (position === 0 &&
-                    headBuf[0] === 0x1f &&
-                    headBuf[1] === 0x8b) {
-                    throw new Error('cannot append to compressed archives');
-                }
-                if (!bytes) {
-                    break POSITION;
-                }
-            }
-            const h = new header_js_1.Header(headBuf);
-            if (!h.cksumValid) {
-                break;
-            }
-            const entryBlockSize = 512 * Math.ceil((h.size || 0) / 512);
-            if (position + entryBlockSize + 512 > st.size) {
-                break;
-            }
-            // the 512 for the header we just parsed will be added as well
-            // also jump ahead all the blocks for the body
-            position += entryBlockSize;
-            if (opt.mtimeCache && h.mtime) {
-                opt.mtimeCache.set(String(h.path), h.mtime);
-            }
-        }
-        threw = false;
-        streamSync(opt, p, position, fd, files);
-    }
-    finally {
-        if (threw) {
-            try {
-                node_fs_1.default.closeSync(fd);
-            }
-            catch (er) { }
-        }
-    }
-};
-const streamSync = (opt, p, position, fd, files) => {
-    const stream = new fs_minipass_1.WriteStreamSync(opt.file, {
-        fd: fd,
-        start: position,
-    });
-    p.pipe(stream);
-    addFilesSync(p, files);
-};
-const replaceAsync = (opt, files) => {
-    files = Array.from(files);
-    const p = new pack_js_1.Pack(opt);
-    const getPos = (fd, size, cb_) => {
-        const cb = (er, pos) => {
-            if (er) {
-                node_fs_1.default.close(fd, _ => cb_(er));
-            }
-            else {
-                cb_(null, pos);
-            }
-        };
-        let position = 0;
-        if (size === 0) {
-            return cb(null, 0);
-        }
-        let bufPos = 0;
-        const headBuf = Buffer.alloc(512);
-        const onread = (er, bytes) => {
-            if (er || typeof bytes === 'undefined') {
-                return cb(er);
-            }
-            bufPos += bytes;
-            if (bufPos < 512 && bytes) {
-                return node_fs_1.default.read(fd, headBuf, bufPos, headBuf.length - bufPos, position + bufPos, onread);
-            }
-            if (position === 0 &&
-                headBuf[0] === 0x1f &&
-                headBuf[1] === 0x8b) {
-                return cb(new Error('cannot append to compressed archives'));
-            }
-            // truncated header
-            if (bufPos < 512) {
-                return cb(null, position);
-            }
-            const h = new header_js_1.Header(headBuf);
-            if (!h.cksumValid) {
-                return cb(null, position);
-            }
-            /* c8 ignore next */
-            const entryBlockSize = 512 * Math.ceil((h.size ?? 0) / 512);
-            if (position + entryBlockSize + 512 > size) {
-                return cb(null, position);
-            }
-            position += entryBlockSize + 512;
-            if (position >= size) {
-                return cb(null, position);
-            }
-            if (opt.mtimeCache && h.mtime) {
-                opt.mtimeCache.set(String(h.path), h.mtime);
-            }
-            bufPos = 0;
-            node_fs_1.default.read(fd, headBuf, 0, 512, position, onread);
-        };
-        node_fs_1.default.read(fd, headBuf, 0, 512, position, onread);
-    };
-    const promise = new Promise((resolve, reject) => {
-        p.on('error', reject);
-        let flag = 'r+';
-        const onopen = (er, fd) => {
-            if (er && er.code === 'ENOENT' && flag === 'r+') {
-                flag = 'w+';
-                return node_fs_1.default.open(opt.file, flag, onopen);
-            }
-            if (er || !fd) {
-                return reject(er);
-            }
-            node_fs_1.default.fstat(fd, (er, st) => {
-                if (er) {
-                    return node_fs_1.default.close(fd, () => reject(er));
-                }
-                getPos(fd, st.size, (er, position) => {
-                    if (er) {
-                        return reject(er);
-                    }
-                    const stream = new fs_minipass_1.WriteStream(opt.file, {
-                        fd: fd,
-                        start: position,
-                    });
-                    p.pipe(stream);
-                    stream.on('error', reject);
-                    stream.on('close', resolve);
-                    addFilesAsync(p, files);
-                });
-            });
-        };
-        node_fs_1.default.open(opt.file, flag, onopen);
-    });
-    return promise;
-};
-const addFilesSync = (p, files) => {
-    files.forEach(file => {
-        if (file.charAt(0) === '@') {
-            (0, list_js_1.list)({
-                file: node_path_1.default.resolve(p.cwd, file.slice(1)),
-                sync: true,
-                noResume: true,
-                onReadEntry: entry => p.add(entry),
-            });
-        }
-        else {
-            p.add(file);
-        }
-    });
-    p.end();
-};
-const addFilesAsync = async (p, files) => {
-    for (let i = 0; i < files.length; i++) {
-        const file = String(files[i]);
-        if (file.charAt(0) === '@') {
-            await (0, list_js_1.list)({
-                file: node_path_1.default.resolve(String(p.cwd), file.slice(1)),
-                noResume: true,
-                onReadEntry: entry => p.add(entry),
-            });
-        }
-        else {
-            p.add(file);
-        }
-    }
-    p.end();
-};
-exports.replace = (0, make_command_js_1.makeCommand)(replaceSync, replaceAsync, 
-/* c8 ignore start */
-() => {
-    throw new TypeError('file is required');
-}, () => {
-    throw new TypeError('file is required');
-}, 
-/* c8 ignore stop */
-(opt, entries) => {
-    if (!(0, options_js_1.isFile)(opt)) {
-        throw new TypeError('file is required');
-    }
-    if (opt.gzip ||
-        opt.brotli ||
-        opt.zstd ||
-        opt.file.endsWith('.br') ||
-        opt.file.endsWith('.tbr')) {
-        throw new TypeError('cannot append to compressed archives');
-    }
-    if (!entries?.length) {
-        throw new TypeError('no paths specified to add/replace');
-    }
-});
-//# sourceMappingURL=replace.js.map
-
-/***/ }),
-
-/***/ 76252:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.stripAbsolutePath = void 0;
-// unix absolute paths are also absolute on win32, so we use this for both
-const node_path_1 = __nccwpck_require__(76760);
-const { isAbsolute, parse } = node_path_1.win32;
-// returns [root, stripped]
-// Note that windows will think that //x/y/z/a has a "root" of //x/y, and in
-// those cases, we want to sanitize it to x/y/z/a, not z/a, so we strip /
-// explicitly if it's the first character.
-// drive-specific relative paths on Windows get their root stripped off even
-// though they are not absolute, so `c:../foo` becomes ['c:', '../foo']
-const stripAbsolutePath = (path) => {
-    let r = '';
-    let parsed = parse(path);
-    while (isAbsolute(path) || parsed.root) {
-        // windows will think that //x/y/z has a "root" of //x/y/
-        // but strip the //?/C:/ off of //?/C:/path
-        const root = path.charAt(0) === '/' && path.slice(0, 4) !== '//?/' ?
-            '/'
-            : parsed.root;
-        path = path.slice(root.length);
-        r += root;
-        parsed = parse(path);
-    }
-    return [r, path];
-};
-exports.stripAbsolutePath = stripAbsolutePath;
-//# sourceMappingURL=strip-absolute-path.js.map
-
-/***/ }),
-
-/***/ 23335:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.stripTrailingSlashes = void 0;
-// warning: extremely hot code path.
-// This has been meticulously optimized for use
-// within npm install on large package trees.
-// Do not edit without careful benchmarking.
-const stripTrailingSlashes = (str) => {
-    let i = str.length - 1;
-    let slashesStart = -1;
-    while (i > -1 && str.charAt(i) === '/') {
-        slashesStart = i;
-        i--;
-    }
-    return slashesStart === -1 ? str : str.slice(0, slashesStart);
-};
-exports.stripTrailingSlashes = stripTrailingSlashes;
-//# sourceMappingURL=strip-trailing-slashes.js.map
-
-/***/ }),
-
-/***/ 64028:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.SymlinkError = void 0;
-class SymlinkError extends Error {
-    path;
-    symlink;
-    syscall = 'symlink';
-    code = 'TAR_SYMLINK_ERROR';
-    constructor(symlink, path) {
-        super('TAR_SYMLINK_ERROR: Cannot extract through symbolic link');
-        this.symlink = symlink;
-        this.path = path;
-    }
-    get name() {
-        return 'SymlinkError';
-    }
-}
-exports.SymlinkError = SymlinkError;
-//# sourceMappingURL=symlink-error.js.map
-
-/***/ }),
-
-/***/ 89361:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.code = exports.name = exports.isName = exports.isCode = void 0;
-const isCode = (c) => exports.name.has(c);
-exports.isCode = isCode;
-const isName = (c) => exports.code.has(c);
-exports.isName = isName;
-// map types from key to human-friendly name
-exports.name = new Map([
-    ['0', 'File'],
-    // same as File
-    ['', 'OldFile'],
-    ['1', 'Link'],
-    ['2', 'SymbolicLink'],
-    // Devices and FIFOs aren't fully supported
-    // they are parsed, but skipped when unpacking
-    ['3', 'CharacterDevice'],
-    ['4', 'BlockDevice'],
-    ['5', 'Directory'],
-    ['6', 'FIFO'],
-    // same as File
-    ['7', 'ContiguousFile'],
-    // pax headers
-    ['g', 'GlobalExtendedHeader'],
-    ['x', 'ExtendedHeader'],
-    // vendor-specific stuff
-    // skip
-    ['A', 'SolarisACL'],
-    // like 5, but with data, which should be skipped
-    ['D', 'GNUDumpDir'],
-    // metadata only, skip
-    ['I', 'Inode'],
-    // data = link path of next file
-    ['K', 'NextFileHasLongLinkpath'],
-    // data = path of next file
-    ['L', 'NextFileHasLongPath'],
-    // skip
-    ['M', 'ContinuationFile'],
-    // like L
-    ['N', 'OldGnuLongPath'],
-    // skip
-    ['S', 'SparseFile'],
-    // skip
-    ['V', 'TapeVolumeHeader'],
-    // like x
-    ['X', 'OldExtendedHeader'],
-]);
-// map the other direction
-exports.code = new Map(Array.from(exports.name).map(kv => [kv[1], kv[0]]));
-//# sourceMappingURL=types.js.map
-
-/***/ }),
-
-/***/ 73532:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-// the PEND/UNPEND stuff tracks whether we're ready to emit end/close yet.
-// but the path reservations are required to avoid race conditions where
-// parallelized unpack ops may mess with one another, due to dependencies
-// (like a Link depending on its target) or destructive operations (like
-// clobbering an fs object to create one of a different type.)
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.UnpackSync = exports.Unpack = void 0;
-const fsm = __importStar(__nccwpck_require__(69084));
-const node_assert_1 = __importDefault(__nccwpck_require__(34589));
-const node_crypto_1 = __nccwpck_require__(77598);
-const node_fs_1 = __importDefault(__nccwpck_require__(73024));
-const node_path_1 = __importDefault(__nccwpck_require__(76760));
-const get_write_flag_js_1 = __nccwpck_require__(21781);
-const mkdir_js_1 = __nccwpck_require__(15867);
-const normalize_windows_path_js_1 = __nccwpck_require__(7867);
-const parse_js_1 = __nccwpck_require__(60535);
-const strip_absolute_path_js_1 = __nccwpck_require__(76252);
-const wc = __importStar(__nccwpck_require__(3525));
-const path_reservations_js_1 = __nccwpck_require__(52865);
-const ONENTRY = Symbol('onEntry');
-const CHECKFS = Symbol('checkFs');
-const CHECKFS2 = Symbol('checkFs2');
-const ISREUSABLE = Symbol('isReusable');
-const MAKEFS = Symbol('makeFs');
-const FILE = Symbol('file');
-const DIRECTORY = Symbol('directory');
-const LINK = Symbol('link');
-const SYMLINK = Symbol('symlink');
-const HARDLINK = Symbol('hardlink');
-const UNSUPPORTED = Symbol('unsupported');
-const CHECKPATH = Symbol('checkPath');
-const STRIPABSOLUTEPATH = Symbol('stripAbsolutePath');
-const MKDIR = Symbol('mkdir');
-const ONERROR = Symbol('onError');
-const PENDING = Symbol('pending');
-const PEND = Symbol('pend');
-const UNPEND = Symbol('unpend');
-const ENDED = Symbol('ended');
-const MAYBECLOSE = Symbol('maybeClose');
-const SKIP = Symbol('skip');
-const DOCHOWN = Symbol('doChown');
-const UID = Symbol('uid');
-const GID = Symbol('gid');
-const CHECKED_CWD = Symbol('checkedCwd');
-const platform = process.env.TESTING_TAR_FAKE_PLATFORM || process.platform;
-const isWindows = platform === 'win32';
-const DEFAULT_MAX_DEPTH = 1024;
-// Unlinks on Windows are not atomic.
-//
-// This means that if you have a file entry, followed by another
-// file entry with an identical name, and you cannot re-use the file
-// (because it's a hardlink, or because unlink:true is set, or it's
-// Windows, which does not have useful nlink values), then the unlink
-// will be committed to the disk AFTER the new file has been written
-// over the old one, deleting the new file.
-//
-// To work around this, on Windows systems, we rename the file and then
-// delete the renamed file.  It's a sloppy kludge, but frankly, I do not
-// know of a better way to do this, given windows' non-atomic unlink
-// semantics.
-//
-// See: https://github.com/npm/node-tar/issues/183
-/* c8 ignore start */
-const unlinkFile = (path, cb) => {
-    if (!isWindows) {
-        return node_fs_1.default.unlink(path, cb);
-    }
-    const name = path + '.DELETE.' + (0, node_crypto_1.randomBytes)(16).toString('hex');
-    node_fs_1.default.rename(path, name, er => {
-        if (er) {
-            return cb(er);
-        }
-        node_fs_1.default.unlink(name, cb);
-    });
-};
-/* c8 ignore stop */
-/* c8 ignore start */
-const unlinkFileSync = (path) => {
-    if (!isWindows) {
-        return node_fs_1.default.unlinkSync(path);
-    }
-    const name = path + '.DELETE.' + (0, node_crypto_1.randomBytes)(16).toString('hex');
-    node_fs_1.default.renameSync(path, name);
-    node_fs_1.default.unlinkSync(name);
-};
-/* c8 ignore stop */
-// this.gid, entry.gid, this.processUid
-const uint32 = (a, b, c) => a !== undefined && a === a >>> 0 ? a
-    : b !== undefined && b === b >>> 0 ? b
-        : c;
-class Unpack extends parse_js_1.Parser {
-    [ENDED] = false;
-    [CHECKED_CWD] = false;
-    [PENDING] = 0;
-    reservations = new path_reservations_js_1.PathReservations();
-    transform;
-    writable = true;
-    readable = false;
-    uid;
-    gid;
-    setOwner;
-    preserveOwner;
-    processGid;
-    processUid;
-    maxDepth;
-    forceChown;
-    win32;
-    newer;
-    keep;
-    noMtime;
-    preservePaths;
-    unlink;
-    cwd;
-    strip;
-    processUmask;
-    umask;
-    dmode;
-    fmode;
-    chmod;
-    constructor(opt = {}) {
-        opt.ondone = () => {
-            this[ENDED] = true;
-            this[MAYBECLOSE]();
-        };
-        super(opt);
-        this.transform = opt.transform;
-        this.chmod = !!opt.chmod;
-        if (typeof opt.uid === 'number' || typeof opt.gid === 'number') {
-            // need both or neither
-            if (typeof opt.uid !== 'number' ||
-                typeof opt.gid !== 'number') {
-                throw new TypeError('cannot set owner without number uid and gid');
-            }
-            if (opt.preserveOwner) {
-                throw new TypeError('cannot preserve owner in archive and also set owner explicitly');
-            }
-            this.uid = opt.uid;
-            this.gid = opt.gid;
-            this.setOwner = true;
-        }
-        else {
-            this.uid = undefined;
-            this.gid = undefined;
-            this.setOwner = false;
-        }
-        // default true for root
-        if (opt.preserveOwner === undefined &&
-            typeof opt.uid !== 'number') {
-            this.preserveOwner = !!(process.getuid && process.getuid() === 0);
-        }
-        else {
-            this.preserveOwner = !!opt.preserveOwner;
-        }
-        this.processUid =
-            (this.preserveOwner || this.setOwner) && process.getuid ?
-                process.getuid()
-                : undefined;
-        this.processGid =
-            (this.preserveOwner || this.setOwner) && process.getgid ?
-                process.getgid()
-                : undefined;
-        // prevent excessively deep nesting of subfolders
-        // set to `Infinity` to remove this restriction
-        this.maxDepth =
-            typeof opt.maxDepth === 'number' ?
-                opt.maxDepth
-                : DEFAULT_MAX_DEPTH;
-        // mostly just for testing, but useful in some cases.
-        // Forcibly trigger a chown on every entry, no matter what
-        this.forceChown = opt.forceChown === true;
-        // turn ><?| in filenames into 0xf000-higher encoded forms
-        this.win32 = !!opt.win32 || isWindows;
-        // do not unpack over files that are newer than what's in the archive
-        this.newer = !!opt.newer;
-        // do not unpack over ANY files
-        this.keep = !!opt.keep;
-        // do not set mtime/atime of extracted entries
-        this.noMtime = !!opt.noMtime;
-        // allow .., absolute path entries, and unpacking through symlinks
-        // without this, warn and skip .., relativize absolutes, and error
-        // on symlinks in extraction path
-        this.preservePaths = !!opt.preservePaths;
-        // unlink files and links before writing. This breaks existing hard
-        // links, and removes symlink directories rather than erroring
-        this.unlink = !!opt.unlink;
-        this.cwd = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(opt.cwd || process.cwd()));
-        this.strip = Number(opt.strip) || 0;
-        // if we're not chmodding, then we don't need the process umask
-        this.processUmask =
-            !this.chmod ? 0
-                : typeof opt.processUmask === 'number' ? opt.processUmask
-                    : process.umask();
-        this.umask =
-            typeof opt.umask === 'number' ? opt.umask : this.processUmask;
-        // default mode for dirs created as parents
-        this.dmode = opt.dmode || 0o0777 & ~this.umask;
-        this.fmode = opt.fmode || 0o0666 & ~this.umask;
-        this.on('entry', entry => this[ONENTRY](entry));
-    }
-    // a bad or damaged archive is a warning for Parser, but an error
-    // when extracting.  Mark those errors as unrecoverable, because
-    // the Unpack contract cannot be met.
-    warn(code, msg, data = {}) {
-        if (code === 'TAR_BAD_ARCHIVE' || code === 'TAR_ABORT') {
-            data.recoverable = false;
-        }
-        return super.warn(code, msg, data);
-    }
-    [MAYBECLOSE]() {
-        if (this[ENDED] && this[PENDING] === 0) {
-            this.emit('prefinish');
-            this.emit('finish');
-            this.emit('end');
-        }
-    }
-    // return false if we need to skip this file
-    // return true if the field was successfully sanitized
-    [STRIPABSOLUTEPATH](entry, field) {
-        const p = entry[field];
-        const { type } = entry;
-        if (!p || this.preservePaths)
-            return true;
-        const parts = p.split('/');
-        if (parts.includes('..') ||
-            /* c8 ignore next */
-            (isWindows && /^[a-z]:\.\.$/i.test(parts[0] ?? ''))) {
-            // For linkpath, check if the resolved path escapes cwd rather than
-            // just rejecting any path with '..' - relative symlinks like
-            // '../sibling/file' are valid if they resolve within the cwd.
-            // For paths, they just simply may not ever use .. at all.
-            if (field === 'path' || type === 'Link') {
-                this.warn('TAR_ENTRY_ERROR', `${field} contains '..'`, {
-                    entry,
-                    [field]: p,
-                });
-                // not ok!
-                return false;
-            }
-            else {
-                // Resolve linkpath relative to the entry's directory.
-                // `path.posix` is safe to use because we're operating on
-                // tar paths, not a filesystem.
-                const entryDir = node_path_1.default.posix.dirname(entry.path);
-                const resolved = node_path_1.default.posix.normalize(node_path_1.default.posix.join(entryDir, p));
-                // If the resolved path escapes (starts with ..), reject it
-                if (resolved.startsWith('../') || resolved === '..') {
-                    this.warn('TAR_ENTRY_ERROR', `${field} escapes extraction directory`, {
-                        entry,
-                        [field]: p,
-                    });
-                    return false;
-                }
-            }
-        }
-        // strip off the root
-        const [root, stripped] = (0, strip_absolute_path_js_1.stripAbsolutePath)(p);
-        if (root) {
-            // ok, but triggers warning about stripping root
-            entry[field] = String(stripped);
-            this.warn('TAR_ENTRY_INFO', `stripping ${root} from absolute ${field}`, {
-                entry,
-                [field]: p,
-            });
-        }
-        return true;
-    }
-    [CHECKPATH](entry) {
-        const p = (0, normalize_windows_path_js_1.normalizeWindowsPath)(entry.path);
-        const parts = p.split('/');
-        if (this.strip) {
-            if (parts.length < this.strip) {
-                return false;
-            }
-            if (entry.type === 'Link') {
-                const linkparts = (0, normalize_windows_path_js_1.normalizeWindowsPath)(String(entry.linkpath)).split('/');
-                if (linkparts.length >= this.strip) {
-                    entry.linkpath = linkparts.slice(this.strip).join('/');
-                }
-                else {
-                    return false;
-                }
-            }
-            parts.splice(0, this.strip);
-            entry.path = parts.join('/');
-        }
-        if (isFinite(this.maxDepth) && parts.length > this.maxDepth) {
-            this.warn('TAR_ENTRY_ERROR', 'path excessively deep', {
-                entry,
-                path: p,
-                depth: parts.length,
-                maxDepth: this.maxDepth,
-            });
-            return false;
-        }
-        if (!this[STRIPABSOLUTEPATH](entry, 'path') ||
-            !this[STRIPABSOLUTEPATH](entry, 'linkpath')) {
-            return false;
-        }
-        if (node_path_1.default.isAbsolute(entry.path)) {
-            entry.absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(entry.path));
-        }
-        else {
-            entry.absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(this.cwd, entry.path));
-        }
-        // if we somehow ended up with a path that escapes the cwd, and we are
-        // not in preservePaths mode, then something is fishy!  This should have
-        // been prevented above, so ignore this for coverage.
-        /* c8 ignore start - defense in depth */
-        if (!this.preservePaths &&
-            typeof entry.absolute === 'string' &&
-            entry.absolute.indexOf(this.cwd + '/') !== 0 &&
-            entry.absolute !== this.cwd) {
-            this.warn('TAR_ENTRY_ERROR', 'path escaped extraction target', {
-                entry,
-                path: (0, normalize_windows_path_js_1.normalizeWindowsPath)(entry.path),
-                resolvedPath: entry.absolute,
-                cwd: this.cwd,
-            });
-            return false;
-        }
-        /* c8 ignore stop */
-        // an archive can set properties on the extraction directory, but it
-        // may not replace the cwd with a different kind of thing entirely.
-        if (entry.absolute === this.cwd &&
-            entry.type !== 'Directory' &&
-            entry.type !== 'GNUDumpDir') {
-            return false;
-        }
-        // only encode : chars that aren't drive letter indicators
-        if (this.win32) {
-            const { root: aRoot } = node_path_1.default.win32.parse(String(entry.absolute));
-            entry.absolute =
-                aRoot + wc.encode(String(entry.absolute).slice(aRoot.length));
-            const { root: pRoot } = node_path_1.default.win32.parse(entry.path);
-            entry.path = pRoot + wc.encode(entry.path.slice(pRoot.length));
-        }
-        return true;
-    }
-    [ONENTRY](entry) {
-        if (!this[CHECKPATH](entry)) {
-            return entry.resume();
-        }
-        node_assert_1.default.equal(typeof entry.absolute, 'string');
-        switch (entry.type) {
-            case 'Directory':
-            case 'GNUDumpDir':
-                if (entry.mode) {
-                    entry.mode = entry.mode | 0o700;
-                }
-            // eslint-disable-next-line no-fallthrough
-            case 'File':
-            case 'OldFile':
-            case 'ContiguousFile':
-            case 'Link':
-            case 'SymbolicLink':
-                return this[CHECKFS](entry);
-            case 'CharacterDevice':
-            case 'BlockDevice':
-            case 'FIFO':
-            default:
-                return this[UNSUPPORTED](entry);
-        }
-    }
-    [ONERROR](er, entry) {
-        // Cwd has to exist, or else nothing works. That's serious.
-        // Other errors are warnings, which raise the error in strict
-        // mode, but otherwise continue on.
-        if (er.name === 'CwdError') {
-            this.emit('error', er);
-        }
-        else {
-            this.warn('TAR_ENTRY_ERROR', er, { entry });
-            this[UNPEND]();
-            entry.resume();
-        }
-    }
-    [MKDIR](dir, mode, cb) {
-        (0, mkdir_js_1.mkdir)((0, normalize_windows_path_js_1.normalizeWindowsPath)(dir), {
-            uid: this.uid,
-            gid: this.gid,
-            processUid: this.processUid,
-            processGid: this.processGid,
-            umask: this.processUmask,
-            preserve: this.preservePaths,
-            unlink: this.unlink,
-            cwd: this.cwd,
-            mode: mode,
-        }, cb);
-    }
-    [DOCHOWN](entry) {
-        // in preserve owner mode, chown if the entry doesn't match process
-        // in set owner mode, chown if setting doesn't match process
-        return (this.forceChown ||
-            (this.preserveOwner &&
-                ((typeof entry.uid === 'number' &&
-                    entry.uid !== this.processUid) ||
-                    (typeof entry.gid === 'number' &&
-                        entry.gid !== this.processGid))) ||
-            (typeof this.uid === 'number' &&
-                this.uid !== this.processUid) ||
-            (typeof this.gid === 'number' && this.gid !== this.processGid));
-    }
-    [UID](entry) {
-        return uint32(this.uid, entry.uid, this.processUid);
-    }
-    [GID](entry) {
-        return uint32(this.gid, entry.gid, this.processGid);
-    }
-    [FILE](entry, fullyDone) {
-        const mode = typeof entry.mode === 'number' ?
-            entry.mode & 0o7777
-            : this.fmode;
-        const stream = new fsm.WriteStream(String(entry.absolute), {
-            // slight lie, but it can be numeric flags
-            flags: (0, get_write_flag_js_1.getWriteFlag)(entry.size),
-            mode: mode,
-            autoClose: false,
-        });
-        stream.on('error', (er) => {
-            if (stream.fd) {
-                node_fs_1.default.close(stream.fd, () => { });
-            }
-            // flush all the data out so that we aren't left hanging
-            // if the error wasn't actually fatal.  otherwise the parse
-            // is blocked, and we never proceed.
-            stream.write = () => true;
-            this[ONERROR](er, entry);
-            fullyDone();
-        });
-        let actions = 1;
-        const done = (er) => {
-            if (er) {
-                /* c8 ignore start - we should always have a fd by now */
-                if (stream.fd) {
-                    node_fs_1.default.close(stream.fd, () => { });
-                }
-                /* c8 ignore stop */
-                this[ONERROR](er, entry);
-                fullyDone();
-                return;
-            }
-            if (--actions === 0) {
-                if (stream.fd !== undefined) {
-                    node_fs_1.default.close(stream.fd, er => {
-                        if (er) {
-                            this[ONERROR](er, entry);
-                        }
-                        else {
-                            this[UNPEND]();
-                        }
-                        fullyDone();
-                    });
-                }
-            }
-        };
-        stream.on('finish', () => {
-            // if futimes fails, try utimes
-            // if utimes fails, fail with the original error
-            // same for fchown/chown
-            const abs = String(entry.absolute);
-            const fd = stream.fd;
-            if (typeof fd === 'number' && entry.mtime && !this.noMtime) {
-                actions++;
-                const atime = entry.atime || new Date();
-                const mtime = entry.mtime;
-                node_fs_1.default.futimes(fd, atime, mtime, er => er ?
-                    node_fs_1.default.utimes(abs, atime, mtime, er2 => done(er2 && er))
-                    : done());
-            }
-            if (typeof fd === 'number' && this[DOCHOWN](entry)) {
-                actions++;
-                const uid = this[UID](entry);
-                const gid = this[GID](entry);
-                if (typeof uid === 'number' && typeof gid === 'number') {
-                    node_fs_1.default.fchown(fd, uid, gid, er => er ?
-                        node_fs_1.default.chown(abs, uid, gid, er2 => done(er2 && er))
-                        : done());
-                }
-            }
-            done();
-        });
-        const tx = this.transform ? this.transform(entry) || entry : entry;
-        if (tx !== entry) {
-            tx.on('error', (er) => {
-                this[ONERROR](er, entry);
-                fullyDone();
-            });
-            entry.pipe(tx);
-        }
-        tx.pipe(stream);
-    }
-    [DIRECTORY](entry, fullyDone) {
-        const mode = typeof entry.mode === 'number' ?
-            entry.mode & 0o7777
-            : this.dmode;
-        this[MKDIR](String(entry.absolute), mode, er => {
-            if (er) {
-                this[ONERROR](er, entry);
-                fullyDone();
-                return;
-            }
-            let actions = 1;
-            const done = () => {
-                if (--actions === 0) {
-                    fullyDone();
-                    this[UNPEND]();
-                    entry.resume();
-                }
-            };
-            if (entry.mtime && !this.noMtime) {
-                actions++;
-                node_fs_1.default.utimes(String(entry.absolute), entry.atime || new Date(), entry.mtime, done);
-            }
-            if (this[DOCHOWN](entry)) {
-                actions++;
-                node_fs_1.default.chown(String(entry.absolute), Number(this[UID](entry)), Number(this[GID](entry)), done);
-            }
-            done();
-        });
-    }
-    [UNSUPPORTED](entry) {
-        entry.unsupported = true;
-        this.warn('TAR_ENTRY_UNSUPPORTED', `unsupported entry type: ${entry.type}`, { entry });
-        entry.resume();
-    }
-    [SYMLINK](entry, done) {
-        this[LINK](entry, String(entry.linkpath), 'symlink', done);
-    }
-    [HARDLINK](entry, done) {
-        const linkpath = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.resolve(this.cwd, String(entry.linkpath)));
-        this[LINK](entry, linkpath, 'link', done);
-    }
-    [PEND]() {
-        this[PENDING]++;
-    }
-    [UNPEND]() {
-        this[PENDING]--;
-        this[MAYBECLOSE]();
-    }
-    [SKIP](entry) {
-        this[UNPEND]();
-        entry.resume();
-    }
-    // Check if we can reuse an existing filesystem entry safely and
-    // overwrite it, rather than unlinking and recreating
-    // Windows doesn't report a useful nlink, so we just never reuse entries
-    [ISREUSABLE](entry, st) {
-        return (entry.type === 'File' &&
-            !this.unlink &&
-            st.isFile() &&
-            st.nlink <= 1 &&
-            !isWindows);
-    }
-    // check if a thing is there, and if so, try to clobber it
-    [CHECKFS](entry) {
-        this[PEND]();
-        const paths = [entry.path];
-        if (entry.linkpath) {
-            paths.push(entry.linkpath);
-        }
-        this.reservations.reserve(paths, done => this[CHECKFS2](entry, done));
-    }
-    [CHECKFS2](entry, fullyDone) {
-        const done = (er) => {
-            fullyDone(er);
-        };
-        const checkCwd = () => {
-            this[MKDIR](this.cwd, this.dmode, er => {
-                if (er) {
-                    this[ONERROR](er, entry);
-                    done();
-                    return;
-                }
-                this[CHECKED_CWD] = true;
-                start();
-            });
-        };
-        const start = () => {
-            if (entry.absolute !== this.cwd) {
-                const parent = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.dirname(String(entry.absolute)));
-                if (parent !== this.cwd) {
-                    return this[MKDIR](parent, this.dmode, er => {
-                        if (er) {
-                            this[ONERROR](er, entry);
-                            done();
-                            return;
-                        }
-                        afterMakeParent();
-                    });
-                }
-            }
-            afterMakeParent();
-        };
-        const afterMakeParent = () => {
-            node_fs_1.default.lstat(String(entry.absolute), (lstatEr, st) => {
-                if (st &&
-                    (this.keep ||
-                        /* c8 ignore next */
-                        (this.newer && st.mtime > (entry.mtime ?? st.mtime)))) {
-                    this[SKIP](entry);
-                    done();
-                    return;
-                }
-                if (lstatEr || this[ISREUSABLE](entry, st)) {
-                    return this[MAKEFS](null, entry, done);
-                }
-                if (st.isDirectory()) {
-                    if (entry.type === 'Directory') {
-                        const needChmod = this.chmod &&
-                            entry.mode &&
-                            (st.mode & 0o7777) !== entry.mode;
-                        const afterChmod = (er) => this[MAKEFS](er ?? null, entry, done);
-                        if (!needChmod) {
-                            return afterChmod();
-                        }
-                        return node_fs_1.default.chmod(String(entry.absolute), Number(entry.mode), afterChmod);
-                    }
-                    // Not a dir entry, have to remove it.
-                    // NB: the only way to end up with an entry that is the cwd
-                    // itself, in such a way that == does not detect, is a
-                    // tricky windows absolute path with UNC or 8.3 parts (and
-                    // preservePaths:true, or else it will have been stripped).
-                    // In that case, the user has opted out of path protections
-                    // explicitly, so if they blow away the cwd, c'est la vie.
-                    if (entry.absolute !== this.cwd) {
-                        return node_fs_1.default.rmdir(String(entry.absolute), (er) => this[MAKEFS](er ?? null, entry, done));
-                    }
-                }
-                // not a dir, and not reusable
-                // don't remove if the cwd, we want that error
-                if (entry.absolute === this.cwd) {
-                    return this[MAKEFS](null, entry, done);
-                }
-                unlinkFile(String(entry.absolute), er => this[MAKEFS](er ?? null, entry, done));
-            });
-        };
-        if (this[CHECKED_CWD]) {
-            start();
-        }
-        else {
-            checkCwd();
-        }
-    }
-    [MAKEFS](er, entry, done) {
-        if (er) {
-            this[ONERROR](er, entry);
-            done();
-            return;
-        }
-        switch (entry.type) {
-            case 'File':
-            case 'OldFile':
-            case 'ContiguousFile':
-                return this[FILE](entry, done);
-            case 'Link':
-                return this[HARDLINK](entry, done);
-            case 'SymbolicLink':
-                return this[SYMLINK](entry, done);
-            case 'Directory':
-            case 'GNUDumpDir':
-                return this[DIRECTORY](entry, done);
-        }
-    }
-    [LINK](entry, linkpath, link, done) {
-        // XXX: get the type ('symlink' or 'junction') for windows
-        node_fs_1.default[link](linkpath, String(entry.absolute), er => {
-            if (er) {
-                this[ONERROR](er, entry);
-            }
-            else {
-                this[UNPEND]();
-                entry.resume();
-            }
-            done();
-        });
-    }
-}
-exports.Unpack = Unpack;
-const callSync = (fn) => {
-    try {
-        return [null, fn()];
-    }
-    catch (er) {
-        return [er, null];
-    }
-};
-class UnpackSync extends Unpack {
-    sync = true;
-    [MAKEFS](er, entry) {
-        return super[MAKEFS](er, entry, () => { });
-    }
-    [CHECKFS](entry) {
-        if (!this[CHECKED_CWD]) {
-            const er = this[MKDIR](this.cwd, this.dmode);
-            if (er) {
-                return this[ONERROR](er, entry);
-            }
-            this[CHECKED_CWD] = true;
-        }
-        // don't bother to make the parent if the current entry is the cwd,
-        // we've already checked it.
-        if (entry.absolute !== this.cwd) {
-            const parent = (0, normalize_windows_path_js_1.normalizeWindowsPath)(node_path_1.default.dirname(String(entry.absolute)));
-            if (parent !== this.cwd) {
-                const mkParent = this[MKDIR](parent, this.dmode);
-                if (mkParent) {
-                    return this[ONERROR](mkParent, entry);
-                }
-            }
-        }
-        const [lstatEr, st] = callSync(() => node_fs_1.default.lstatSync(String(entry.absolute)));
-        if (st &&
-            (this.keep ||
-                /* c8 ignore next */
-                (this.newer && st.mtime > (entry.mtime ?? st.mtime)))) {
-            return this[SKIP](entry);
-        }
-        if (lstatEr || this[ISREUSABLE](entry, st)) {
-            return this[MAKEFS](null, entry);
-        }
-        if (st.isDirectory()) {
-            if (entry.type === 'Directory') {
-                const needChmod = this.chmod &&
-                    entry.mode &&
-                    (st.mode & 0o7777) !== entry.mode;
-                const [er] = needChmod ?
-                    callSync(() => {
-                        node_fs_1.default.chmodSync(String(entry.absolute), Number(entry.mode));
-                    })
-                    : [];
-                return this[MAKEFS](er, entry);
-            }
-            // not a dir entry, have to remove it
-            const [er] = callSync(() => node_fs_1.default.rmdirSync(String(entry.absolute)));
-            this[MAKEFS](er, entry);
-        }
-        // not a dir, and not reusable.
-        // don't remove if it's the cwd, since we want that error.
-        const [er] = entry.absolute === this.cwd ?
-            []
-            : callSync(() => unlinkFileSync(String(entry.absolute)));
-        this[MAKEFS](er, entry);
-    }
-    [FILE](entry, done) {
-        const mode = typeof entry.mode === 'number' ?
-            entry.mode & 0o7777
-            : this.fmode;
-        const oner = (er) => {
-            let closeError;
-            try {
-                node_fs_1.default.closeSync(fd);
-            }
-            catch (e) {
-                closeError = e;
-            }
-            if (er || closeError) {
-                this[ONERROR](er || closeError, entry);
-            }
-            done();
-        };
-        let fd;
-        try {
-            fd = node_fs_1.default.openSync(String(entry.absolute), (0, get_write_flag_js_1.getWriteFlag)(entry.size), mode);
-            /* c8 ignore start - This is only a problem if the file was successfully
-             * statted, BUT failed to open. Testing this is annoying, and we
-             * already have ample testint for other uses of oner() methods.
-             */
-        }
-        catch (er) {
-            return oner(er);
-        }
-        /* c8 ignore stop */
-        const tx = this.transform ? this.transform(entry) || entry : entry;
-        if (tx !== entry) {
-            tx.on('error', (er) => this[ONERROR](er, entry));
-            entry.pipe(tx);
-        }
-        tx.on('data', (chunk) => {
-            try {
-                node_fs_1.default.writeSync(fd, chunk, 0, chunk.length);
-            }
-            catch (er) {
-                oner(er);
-            }
-        });
-        tx.on('end', () => {
-            let er = null;
-            // try both, falling futimes back to utimes
-            // if either fails, handle the first error
-            if (entry.mtime && !this.noMtime) {
-                const atime = entry.atime || new Date();
-                const mtime = entry.mtime;
-                try {
-                    node_fs_1.default.futimesSync(fd, atime, mtime);
-                }
-                catch (futimeser) {
-                    try {
-                        node_fs_1.default.utimesSync(String(entry.absolute), atime, mtime);
-                    }
-                    catch (utimeser) {
-                        er = futimeser;
-                    }
-                }
-            }
-            if (this[DOCHOWN](entry)) {
-                const uid = this[UID](entry);
-                const gid = this[GID](entry);
-                try {
-                    node_fs_1.default.fchownSync(fd, Number(uid), Number(gid));
-                }
-                catch (fchowner) {
-                    try {
-                        node_fs_1.default.chownSync(String(entry.absolute), Number(uid), Number(gid));
-                    }
-                    catch (chowner) {
-                        er = er || fchowner;
-                    }
-                }
-            }
-            oner(er);
-        });
-    }
-    [DIRECTORY](entry, done) {
-        const mode = typeof entry.mode === 'number' ?
-            entry.mode & 0o7777
-            : this.dmode;
-        const er = this[MKDIR](String(entry.absolute), mode);
-        if (er) {
-            this[ONERROR](er, entry);
-            done();
-            return;
-        }
-        if (entry.mtime && !this.noMtime) {
-            try {
-                node_fs_1.default.utimesSync(String(entry.absolute), entry.atime || new Date(), entry.mtime);
-                /* c8 ignore next */
-            }
-            catch (er) { }
-        }
-        if (this[DOCHOWN](entry)) {
-            try {
-                node_fs_1.default.chownSync(String(entry.absolute), Number(this[UID](entry)), Number(this[GID](entry)));
-            }
-            catch (er) { }
-        }
-        done();
-        entry.resume();
-    }
-    [MKDIR](dir, mode) {
-        try {
-            return (0, mkdir_js_1.mkdirSync)((0, normalize_windows_path_js_1.normalizeWindowsPath)(dir), {
-                uid: this.uid,
-                gid: this.gid,
-                processUid: this.processUid,
-                processGid: this.processGid,
-                umask: this.processUmask,
-                preserve: this.preservePaths,
-                unlink: this.unlink,
-                cwd: this.cwd,
-                mode: mode,
-            });
-        }
-        catch (er) {
-            return er;
-        }
-    }
-    [LINK](entry, linkpath, link, done) {
-        const ls = `${link}Sync`;
-        try {
-            node_fs_1.default[ls](linkpath, String(entry.absolute));
-            done();
-            entry.resume();
-        }
-        catch (er) {
-            return this[ONERROR](er, entry);
-        }
-    }
-}
-exports.UnpackSync = UnpackSync;
-//# sourceMappingURL=unpack.js.map
-
-/***/ }),
-
-/***/ 45647:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-// tar -u
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.update = void 0;
-const make_command_js_1 = __nccwpck_require__(51272);
-const replace_js_1 = __nccwpck_require__(30476);
-// just call tar.r with the filter and mtimeCache
-exports.update = (0, make_command_js_1.makeCommand)(replace_js_1.replace.syncFile, replace_js_1.replace.asyncFile, replace_js_1.replace.syncNoFile, replace_js_1.replace.asyncNoFile, (opt, entries = []) => {
-    replace_js_1.replace.validate?.(opt, entries);
-    mtimeFilter(opt);
-});
-const mtimeFilter = (opt) => {
-    const filter = opt.filter;
-    if (!opt.mtimeCache) {
-        opt.mtimeCache = new Map();
-    }
-    opt.filter =
-        filter ?
-            (path, stat) => filter(path, stat) &&
-                !(
-                /* c8 ignore start */
-                ((opt.mtimeCache?.get(path) ?? stat.mtime ?? 0) >
-                    (stat.mtime ?? 0))
-                /* c8 ignore stop */
-                )
-            : (path, stat) => !(
-            /* c8 ignore start */
-            ((opt.mtimeCache?.get(path) ?? stat.mtime ?? 0) >
-                (stat.mtime ?? 0))
-            /* c8 ignore stop */
-            );
-};
-//# sourceMappingURL=update.js.map
-
-/***/ }),
-
-/***/ 31154:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.warnMethod = void 0;
-const warnMethod = (self, code, message, data = {}) => {
-    if (self.file) {
-        data.file = self.file;
-    }
-    if (self.cwd) {
-        data.cwd = self.cwd;
-    }
-    data.code =
-        (message instanceof Error &&
-            message.code) ||
-            code;
-    data.tarCode = code;
-    if (!self.strict && data.recoverable !== false) {
-        if (message instanceof Error) {
-            data = Object.assign(message, data);
-            message = message.message;
-        }
-        self.emit('warn', code, message, data);
-    }
-    else if (message instanceof Error) {
-        self.emit('error', Object.assign(message, data));
-    }
-    else {
-        self.emit('error', Object.assign(new Error(`${code}: ${message}`), data));
-    }
-};
-exports.warnMethod = warnMethod;
-//# sourceMappingURL=warn-method.js.map
-
-/***/ }),
-
-/***/ 3525:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// When writing files on Windows, translate the characters to their
-// 0xf000 higher-encoded versions.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.decode = exports.encode = void 0;
-const raw = ['|', '<', '>', '?', ':'];
-const win = raw.map(char => String.fromCharCode(0xf000 + char.charCodeAt(0)));
-const toWin = new Map(raw.map((char, i) => [char, win[i]]));
-const toRaw = new Map(win.map((char, i) => [char, raw[i]]));
-const encode = (s) => raw.reduce((s, c) => s.split(c).join(toWin.get(c)), s);
-exports.encode = encode;
-const decode = (s) => win.reduce((s, c) => s.split(c).join(toRaw.get(c)), s);
-exports.decode = decode;
-//# sourceMappingURL=winchars.js.map
-
-/***/ }),
-
-/***/ 44130:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.WriteEntryTar = exports.WriteEntrySync = exports.WriteEntry = void 0;
-const fs_1 = __importDefault(__nccwpck_require__(79896));
-const minipass_1 = __nccwpck_require__(78275);
-const path_1 = __importDefault(__nccwpck_require__(16928));
-const header_js_1 = __nccwpck_require__(23264);
-const mode_fix_js_1 = __nccwpck_require__(98723);
-const normalize_windows_path_js_1 = __nccwpck_require__(7867);
-const options_js_1 = __nccwpck_require__(94602);
-const pax_js_1 = __nccwpck_require__(19509);
-const strip_absolute_path_js_1 = __nccwpck_require__(76252);
-const strip_trailing_slashes_js_1 = __nccwpck_require__(23335);
-const warn_method_js_1 = __nccwpck_require__(31154);
-const winchars = __importStar(__nccwpck_require__(3525));
-const prefixPath = (path, prefix) => {
-    if (!prefix) {
-        return (0, normalize_windows_path_js_1.normalizeWindowsPath)(path);
-    }
-    path = (0, normalize_windows_path_js_1.normalizeWindowsPath)(path).replace(/^\.(\/|$)/, '');
-    return (0, strip_trailing_slashes_js_1.stripTrailingSlashes)(prefix) + '/' + path;
-};
-const maxReadSize = 16 * 1024 * 1024;
-const PROCESS = Symbol('process');
-const FILE = Symbol('file');
-const DIRECTORY = Symbol('directory');
-const SYMLINK = Symbol('symlink');
-const HARDLINK = Symbol('hardlink');
-const HEADER = Symbol('header');
-const READ = Symbol('read');
-const LSTAT = Symbol('lstat');
-const ONLSTAT = Symbol('onlstat');
-const ONREAD = Symbol('onread');
-const ONREADLINK = Symbol('onreadlink');
-const OPENFILE = Symbol('openfile');
-const ONOPENFILE = Symbol('onopenfile');
-const CLOSE = Symbol('close');
-const MODE = Symbol('mode');
-const AWAITDRAIN = Symbol('awaitDrain');
-const ONDRAIN = Symbol('ondrain');
-const PREFIX = Symbol('prefix');
-class WriteEntry extends minipass_1.Minipass {
-    path;
-    portable;
-    myuid = (process.getuid && process.getuid()) || 0;
-    // until node has builtin pwnam functions, this'll have to do
-    myuser = process.env.USER || '';
-    maxReadSize;
-    linkCache;
-    statCache;
-    preservePaths;
-    cwd;
-    strict;
-    mtime;
-    noPax;
-    noMtime;
-    prefix;
-    fd;
-    blockLen = 0;
-    blockRemain = 0;
-    buf;
-    pos = 0;
-    remain = 0;
-    length = 0;
-    offset = 0;
-    win32;
-    absolute;
-    header;
-    type;
-    linkpath;
-    stat;
-    onWriteEntry;
-    #hadError = false;
-    constructor(p, opt_ = {}) {
-        const opt = (0, options_js_1.dealias)(opt_);
-        super();
-        this.path = (0, normalize_windows_path_js_1.normalizeWindowsPath)(p);
-        // suppress atime, ctime, uid, gid, uname, gname
-        this.portable = !!opt.portable;
-        this.maxReadSize = opt.maxReadSize || maxReadSize;
-        this.linkCache = opt.linkCache || new Map();
-        this.statCache = opt.statCache || new Map();
-        this.preservePaths = !!opt.preservePaths;
-        this.cwd = (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.cwd || process.cwd());
-        this.strict = !!opt.strict;
-        this.noPax = !!opt.noPax;
-        this.noMtime = !!opt.noMtime;
-        this.mtime = opt.mtime;
-        this.prefix =
-            opt.prefix ? (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.prefix) : undefined;
-        this.onWriteEntry = opt.onWriteEntry;
-        if (typeof opt.onwarn === 'function') {
-            this.on('warn', opt.onwarn);
-        }
-        let pathWarn = false;
-        if (!this.preservePaths) {
-            const [root, stripped] = (0, strip_absolute_path_js_1.stripAbsolutePath)(this.path);
-            if (root && typeof stripped === 'string') {
-                this.path = stripped;
-                pathWarn = root;
-            }
-        }
-        this.win32 = !!opt.win32 || process.platform === 'win32';
-        if (this.win32) {
-            // force the \ to / normalization, since we might not *actually*
-            // be on windows, but want \ to be considered a path separator.
-            this.path = winchars.decode(this.path.replace(/\\/g, '/'));
-            p = p.replace(/\\/g, '/');
-        }
-        this.absolute = (0, normalize_windows_path_js_1.normalizeWindowsPath)(opt.absolute || path_1.default.resolve(this.cwd, p));
-        if (this.path === '') {
-            this.path = './';
-        }
-        if (pathWarn) {
-            this.warn('TAR_ENTRY_INFO', `stripping ${pathWarn} from absolute path`, {
-                entry: this,
-                path: pathWarn + this.path,
-            });
-        }
-        const cs = this.statCache.get(this.absolute);
-        if (cs) {
-            this[ONLSTAT](cs);
-        }
-        else {
-            this[LSTAT]();
-        }
-    }
-    warn(code, message, data = {}) {
-        return (0, warn_method_js_1.warnMethod)(this, code, message, data);
-    }
-    emit(ev, ...data) {
-        if (ev === 'error') {
-            this.#hadError = true;
-        }
-        return super.emit(ev, ...data);
-    }
-    [LSTAT]() {
-        fs_1.default.lstat(this.absolute, (er, stat) => {
-            if (er) {
-                return this.emit('error', er);
-            }
-            this[ONLSTAT](stat);
-        });
-    }
-    [ONLSTAT](stat) {
-        this.statCache.set(this.absolute, stat);
-        this.stat = stat;
-        if (!stat.isFile()) {
-            stat.size = 0;
-        }
-        this.type = getType(stat);
-        this.emit('stat', stat);
-        this[PROCESS]();
-    }
-    [PROCESS]() {
-        switch (this.type) {
-            case 'File':
-                return this[FILE]();
-            case 'Directory':
-                return this[DIRECTORY]();
-            case 'SymbolicLink':
-                return this[SYMLINK]();
-            // unsupported types are ignored.
-            default:
-                return this.end();
-        }
-    }
-    [MODE](mode) {
-        return (0, mode_fix_js_1.modeFix)(mode, this.type === 'Directory', this.portable);
-    }
-    [PREFIX](path) {
-        return prefixPath(path, this.prefix);
-    }
-    [HEADER]() {
-        /* c8 ignore start */
-        if (!this.stat) {
-            throw new Error('cannot write header before stat');
-        }
-        /* c8 ignore stop */
-        if (this.type === 'Directory' && this.portable) {
-            this.noMtime = true;
-        }
-        this.onWriteEntry?.(this);
-        this.header = new header_js_1.Header({
-            path: this[PREFIX](this.path),
-            // only apply the prefix to hard links.
-            linkpath: this.type === 'Link' && this.linkpath !== undefined ?
-                this[PREFIX](this.linkpath)
-                : this.linkpath,
-            // only the permissions and setuid/setgid/sticky bitflags
-            // not the higher-order bits that specify file type
-            mode: this[MODE](this.stat.mode),
-            uid: this.portable ? undefined : this.stat.uid,
-            gid: this.portable ? undefined : this.stat.gid,
-            size: this.stat.size,
-            mtime: this.noMtime ? undefined : this.mtime || this.stat.mtime,
-            /* c8 ignore next */
-            type: this.type === 'Unsupported' ? undefined : this.type,
-            uname: this.portable ? undefined
-                : this.stat.uid === this.myuid ? this.myuser
-                    : '',
-            atime: this.portable ? undefined : this.stat.atime,
-            ctime: this.portable ? undefined : this.stat.ctime,
-        });
-        if (this.header.encode() && !this.noPax) {
-            super.write(new pax_js_1.Pax({
-                atime: this.portable ? undefined : this.header.atime,
-                ctime: this.portable ? undefined : this.header.ctime,
-                gid: this.portable ? undefined : this.header.gid,
-                mtime: this.noMtime ? undefined : (this.mtime || this.header.mtime),
-                path: this[PREFIX](this.path),
-                linkpath: this.type === 'Link' && this.linkpath !== undefined ?
-                    this[PREFIX](this.linkpath)
-                    : this.linkpath,
-                size: this.header.size,
-                uid: this.portable ? undefined : this.header.uid,
-                uname: this.portable ? undefined : this.header.uname,
-                dev: this.portable ? undefined : this.stat.dev,
-                ino: this.portable ? undefined : this.stat.ino,
-                nlink: this.portable ? undefined : this.stat.nlink,
-            }).encode());
-        }
-        const block = this.header?.block;
-        /* c8 ignore start */
-        if (!block) {
-            throw new Error('failed to encode header');
-        }
-        /* c8 ignore stop */
-        super.write(block);
-    }
-    [DIRECTORY]() {
-        /* c8 ignore start */
-        if (!this.stat) {
-            throw new Error('cannot create directory entry without stat');
-        }
-        /* c8 ignore stop */
-        if (this.path.slice(-1) !== '/') {
-            this.path += '/';
-        }
-        this.stat.size = 0;
-        this[HEADER]();
-        this.end();
-    }
-    [SYMLINK]() {
-        fs_1.default.readlink(this.absolute, (er, linkpath) => {
-            if (er) {
-                return this.emit('error', er);
-            }
-            this[ONREADLINK](linkpath);
-        });
-    }
-    [ONREADLINK](linkpath) {
-        this.linkpath = (0, normalize_windows_path_js_1.normalizeWindowsPath)(linkpath);
-        this[HEADER]();
-        this.end();
-    }
-    [HARDLINK](linkpath) {
-        /* c8 ignore start */
-        if (!this.stat) {
-            throw new Error('cannot create link entry without stat');
-        }
-        /* c8 ignore stop */
-        this.type = 'Link';
-        this.linkpath = (0, normalize_windows_path_js_1.normalizeWindowsPath)(path_1.default.relative(this.cwd, linkpath));
-        this.stat.size = 0;
-        this[HEADER]();
-        this.end();
-    }
-    [FILE]() {
-        /* c8 ignore start */
-        if (!this.stat) {
-            throw new Error('cannot create file entry without stat');
-        }
-        /* c8 ignore stop */
-        if (this.stat.nlink > 1) {
-            const linkKey = `${this.stat.dev}:${this.stat.ino}`;
-            const linkpath = this.linkCache.get(linkKey);
-            if (linkpath?.indexOf(this.cwd) === 0) {
-                return this[HARDLINK](linkpath);
-            }
-            this.linkCache.set(linkKey, this.absolute);
-        }
-        this[HEADER]();
-        if (this.stat.size === 0) {
-            return this.end();
-        }
-        this[OPENFILE]();
-    }
-    [OPENFILE]() {
-        fs_1.default.open(this.absolute, 'r', (er, fd) => {
-            if (er) {
-                return this.emit('error', er);
-            }
-            this[ONOPENFILE](fd);
-        });
-    }
-    [ONOPENFILE](fd) {
-        this.fd = fd;
-        if (this.#hadError) {
-            return this[CLOSE]();
-        }
-        /* c8 ignore start */
-        if (!this.stat) {
-            throw new Error('should stat before calling onopenfile');
-        }
-        /* c8 ignore start */
-        this.blockLen = 512 * Math.ceil(this.stat.size / 512);
-        this.blockRemain = this.blockLen;
-        const bufLen = Math.min(this.blockLen, this.maxReadSize);
-        this.buf = Buffer.allocUnsafe(bufLen);
-        this.offset = 0;
-        this.pos = 0;
-        this.remain = this.stat.size;
-        this.length = this.buf.length;
-        this[READ]();
-    }
-    [READ]() {
-        const { fd, buf, offset, length, pos } = this;
-        if (fd === undefined || buf === undefined) {
-            throw new Error('cannot read file without first opening');
-        }
-        fs_1.default.read(fd, buf, offset, length, pos, (er, bytesRead) => {
-            if (er) {
-                // ignoring the error from close(2) is a bad practice, but at
-                // this point we already have an error, don't need another one
-                return this[CLOSE](() => this.emit('error', er));
-            }
-            this[ONREAD](bytesRead);
-        });
-    }
-    /* c8 ignore start */
-    [CLOSE](cb = () => { }) {
-        /* c8 ignore stop */
-        if (this.fd !== undefined)
-            fs_1.default.close(this.fd, cb);
-    }
-    [ONREAD](bytesRead) {
-        if (bytesRead <= 0 && this.remain > 0) {
-            const er = Object.assign(new Error('encountered unexpected EOF'), {
-                path: this.absolute,
-                syscall: 'read',
-                code: 'EOF',
-            });
-            return this[CLOSE](() => this.emit('error', er));
-        }
-        if (bytesRead > this.remain) {
-            const er = Object.assign(new Error('did not encounter expected EOF'), {
-                path: this.absolute,
-                syscall: 'read',
-                code: 'EOF',
-            });
-            return this[CLOSE](() => this.emit('error', er));
-        }
-        /* c8 ignore start */
-        if (!this.buf) {
-            throw new Error('should have created buffer prior to reading');
-        }
-        /* c8 ignore stop */
-        // null out the rest of the buffer, if we could fit the block padding
-        // at the end of this loop, we've incremented bytesRead and this.remain
-        // to be incremented up to the blockRemain level, as if we had expected
-        // to get a null-padded file, and read it until the end.  then we will
-        // decrement both remain and blockRemain by bytesRead, and know that we
-        // reached the expected EOF, without any null buffer to append.
-        if (bytesRead === this.remain) {
-            for (let i = bytesRead; i < this.length && bytesRead < this.blockRemain; i++) {
-                this.buf[i + this.offset] = 0;
-                bytesRead++;
-                this.remain++;
-            }
-        }
-        const chunk = this.offset === 0 && bytesRead === this.buf.length ?
-            this.buf
-            : this.buf.subarray(this.offset, this.offset + bytesRead);
-        const flushed = this.write(chunk);
-        if (!flushed) {
-            this[AWAITDRAIN](() => this[ONDRAIN]());
-        }
-        else {
-            this[ONDRAIN]();
-        }
-    }
-    [AWAITDRAIN](cb) {
-        this.once('drain', cb);
-    }
-    write(chunk, encoding, cb) {
-        /* c8 ignore start - just junk to comply with NodeJS.WritableStream */
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        if (typeof chunk === 'string') {
-            chunk = Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8');
-        }
-        /* c8 ignore stop */
-        if (this.blockRemain < chunk.length) {
-            const er = Object.assign(new Error('writing more data than expected'), {
-                path: this.absolute,
-            });
-            return this.emit('error', er);
-        }
-        this.remain -= chunk.length;
-        this.blockRemain -= chunk.length;
-        this.pos += chunk.length;
-        this.offset += chunk.length;
-        return super.write(chunk, null, cb);
-    }
-    [ONDRAIN]() {
-        if (!this.remain) {
-            if (this.blockRemain) {
-                super.write(Buffer.alloc(this.blockRemain));
-            }
-            return this[CLOSE](er => er ? this.emit('error', er) : this.end());
-        }
-        /* c8 ignore start */
-        if (!this.buf) {
-            throw new Error('buffer lost somehow in ONDRAIN');
-        }
-        /* c8 ignore stop */
-        if (this.offset >= this.length) {
-            // if we only have a smaller bit left to read, alloc a smaller buffer
-            // otherwise, keep it the same length it was before.
-            this.buf = Buffer.allocUnsafe(Math.min(this.blockRemain, this.buf.length));
-            this.offset = 0;
-        }
-        this.length = this.buf.length - this.offset;
-        this[READ]();
-    }
-}
-exports.WriteEntry = WriteEntry;
-class WriteEntrySync extends WriteEntry {
-    sync = true;
-    [LSTAT]() {
-        this[ONLSTAT](fs_1.default.lstatSync(this.absolute));
-    }
-    [SYMLINK]() {
-        this[ONREADLINK](fs_1.default.readlinkSync(this.absolute));
-    }
-    [OPENFILE]() {
-        this[ONOPENFILE](fs_1.default.openSync(this.absolute, 'r'));
-    }
-    [READ]() {
-        let threw = true;
-        try {
-            const { fd, buf, offset, length, pos } = this;
-            /* c8 ignore start */
-            if (fd === undefined || buf === undefined) {
-                throw new Error('fd and buf must be set in READ method');
-            }
-            /* c8 ignore stop */
-            const bytesRead = fs_1.default.readSync(fd, buf, offset, length, pos);
-            this[ONREAD](bytesRead);
-            threw = false;
-        }
-        finally {
-            // ignoring the error from close(2) is a bad practice, but at
-            // this point we already have an error, don't need another one
-            if (threw) {
-                try {
-                    this[CLOSE](() => { });
-                }
-                catch (er) { }
-            }
-        }
-    }
-    [AWAITDRAIN](cb) {
-        cb();
-    }
-    /* c8 ignore start */
-    [CLOSE](cb = () => { }) {
-        /* c8 ignore stop */
-        if (this.fd !== undefined)
-            fs_1.default.closeSync(this.fd);
-        cb();
-    }
-}
-exports.WriteEntrySync = WriteEntrySync;
-class WriteEntryTar extends minipass_1.Minipass {
-    blockLen = 0;
-    blockRemain = 0;
-    buf = 0;
-    pos = 0;
-    remain = 0;
-    length = 0;
-    preservePaths;
-    portable;
-    strict;
-    noPax;
-    noMtime;
-    readEntry;
-    type;
-    prefix;
-    path;
-    mode;
-    uid;
-    gid;
-    uname;
-    gname;
-    header;
-    mtime;
-    atime;
-    ctime;
-    linkpath;
-    size;
-    onWriteEntry;
-    warn(code, message, data = {}) {
-        return (0, warn_method_js_1.warnMethod)(this, code, message, data);
-    }
-    constructor(readEntry, opt_ = {}) {
-        const opt = (0, options_js_1.dealias)(opt_);
-        super();
-        this.preservePaths = !!opt.preservePaths;
-        this.portable = !!opt.portable;
-        this.strict = !!opt.strict;
-        this.noPax = !!opt.noPax;
-        this.noMtime = !!opt.noMtime;
-        this.onWriteEntry = opt.onWriteEntry;
-        this.readEntry = readEntry;
-        const { type } = readEntry;
-        /* c8 ignore start */
-        if (type === 'Unsupported') {
-            throw new Error('writing entry that should be ignored');
-        }
-        /* c8 ignore stop */
-        this.type = type;
-        if (this.type === 'Directory' && this.portable) {
-            this.noMtime = true;
-        }
-        this.prefix = opt.prefix;
-        this.path = (0, normalize_windows_path_js_1.normalizeWindowsPath)(readEntry.path);
-        this.mode =
-            readEntry.mode !== undefined ?
-                this[MODE](readEntry.mode)
-                : undefined;
-        this.uid = this.portable ? undefined : readEntry.uid;
-        this.gid = this.portable ? undefined : readEntry.gid;
-        this.uname = this.portable ? undefined : readEntry.uname;
-        this.gname = this.portable ? undefined : readEntry.gname;
-        this.size = readEntry.size;
-        this.mtime =
-            this.noMtime ? undefined : opt.mtime || readEntry.mtime;
-        this.atime = this.portable ? undefined : readEntry.atime;
-        this.ctime = this.portable ? undefined : readEntry.ctime;
-        this.linkpath =
-            readEntry.linkpath !== undefined ?
-                (0, normalize_windows_path_js_1.normalizeWindowsPath)(readEntry.linkpath)
-                : undefined;
-        if (typeof opt.onwarn === 'function') {
-            this.on('warn', opt.onwarn);
-        }
-        let pathWarn = false;
-        if (!this.preservePaths) {
-            const [root, stripped] = (0, strip_absolute_path_js_1.stripAbsolutePath)(this.path);
-            if (root && typeof stripped === 'string') {
-                this.path = stripped;
-                pathWarn = root;
-            }
-        }
-        this.remain = readEntry.size;
-        this.blockRemain = readEntry.startBlockSize;
-        this.onWriteEntry?.(this);
-        this.header = new header_js_1.Header({
-            path: this[PREFIX](this.path),
-            linkpath: this.type === 'Link' && this.linkpath !== undefined ?
-                this[PREFIX](this.linkpath)
-                : this.linkpath,
-            // only the permissions and setuid/setgid/sticky bitflags
-            // not the higher-order bits that specify file type
-            mode: this.mode,
-            uid: this.portable ? undefined : this.uid,
-            gid: this.portable ? undefined : this.gid,
-            size: this.size,
-            mtime: this.noMtime ? undefined : this.mtime,
-            type: this.type,
-            uname: this.portable ? undefined : this.uname,
-            atime: this.portable ? undefined : this.atime,
-            ctime: this.portable ? undefined : this.ctime,
-        });
-        if (pathWarn) {
-            this.warn('TAR_ENTRY_INFO', `stripping ${pathWarn} from absolute path`, {
-                entry: this,
-                path: pathWarn + this.path,
-            });
-        }
-        if (this.header.encode() && !this.noPax) {
-            super.write(new pax_js_1.Pax({
-                atime: this.portable ? undefined : this.atime,
-                ctime: this.portable ? undefined : this.ctime,
-                gid: this.portable ? undefined : this.gid,
-                mtime: this.noMtime ? undefined : this.mtime,
-                path: this[PREFIX](this.path),
-                linkpath: this.type === 'Link' && this.linkpath !== undefined ?
-                    this[PREFIX](this.linkpath)
-                    : this.linkpath,
-                size: this.size,
-                uid: this.portable ? undefined : this.uid,
-                uname: this.portable ? undefined : this.uname,
-                dev: this.portable ? undefined : this.readEntry.dev,
-                ino: this.portable ? undefined : this.readEntry.ino,
-                nlink: this.portable ? undefined : this.readEntry.nlink,
-            }).encode());
-        }
-        const b = this.header?.block;
-        /* c8 ignore start */
-        if (!b)
-            throw new Error('failed to encode header');
-        /* c8 ignore stop */
-        super.write(b);
-        readEntry.pipe(this);
-    }
-    [PREFIX](path) {
-        return prefixPath(path, this.prefix);
-    }
-    [MODE](mode) {
-        return (0, mode_fix_js_1.modeFix)(mode, this.type === 'Directory', this.portable);
-    }
-    write(chunk, encoding, cb) {
-        /* c8 ignore start - just junk to comply with NodeJS.WritableStream */
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        if (typeof chunk === 'string') {
-            chunk = Buffer.from(chunk, typeof encoding === 'string' ? encoding : 'utf8');
-        }
-        /* c8 ignore stop */
-        const writeLen = chunk.length;
-        if (writeLen > this.blockRemain) {
-            throw new Error('writing more to entry than is appropriate');
-        }
-        this.blockRemain -= writeLen;
-        return super.write(chunk, cb);
-    }
-    end(chunk, encoding, cb) {
-        if (this.blockRemain) {
-            super.write(Buffer.alloc(this.blockRemain));
-        }
-        /* c8 ignore start - just junk to comply with NodeJS.WritableStream */
-        if (typeof chunk === 'function') {
-            cb = chunk;
-            encoding = undefined;
-            chunk = undefined;
-        }
-        if (typeof encoding === 'function') {
-            cb = encoding;
-            encoding = undefined;
-        }
-        if (typeof chunk === 'string') {
-            chunk = Buffer.from(chunk, encoding ?? 'utf8');
-        }
-        if (cb)
-            this.once('finish', cb);
-        chunk ? super.end(chunk, cb) : super.end(cb);
-        /* c8 ignore stop */
-        return this;
-    }
-}
-exports.WriteEntryTar = WriteEntryTar;
-const getType = (stat) => stat.isFile() ? 'File'
-    : stat.isDirectory() ? 'Directory'
-        : stat.isSymbolicLink() ? 'SymbolicLink'
-            : 'Unsupported';
-//# sourceMappingURL=write-entry.js.map
-
-/***/ }),
-
-/***/ 66762:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.Node = exports.Yallist = void 0;
-class Yallist {
-    tail;
-    head;
-    length = 0;
-    static create(list = []) {
-        return new Yallist(list);
-    }
-    constructor(list = []) {
-        for (const item of list) {
-            this.push(item);
-        }
-    }
-    *[Symbol.iterator]() {
-        for (let walker = this.head; walker; walker = walker.next) {
-            yield walker.value;
-        }
-    }
-    removeNode(node) {
-        if (node.list !== this) {
-            throw new Error('removing node which does not belong to this list');
-        }
-        const next = node.next;
-        const prev = node.prev;
-        if (next) {
-            next.prev = prev;
-        }
-        if (prev) {
-            prev.next = next;
-        }
-        if (node === this.head) {
-            this.head = next;
-        }
-        if (node === this.tail) {
-            this.tail = prev;
-        }
-        this.length--;
-        node.next = undefined;
-        node.prev = undefined;
-        node.list = undefined;
-        return next;
-    }
-    unshiftNode(node) {
-        if (node === this.head) {
-            return;
-        }
-        if (node.list) {
-            node.list.removeNode(node);
-        }
-        const head = this.head;
-        node.list = this;
-        node.next = head;
-        if (head) {
-            head.prev = node;
-        }
-        this.head = node;
-        if (!this.tail) {
-            this.tail = node;
-        }
-        this.length++;
-    }
-    pushNode(node) {
-        if (node === this.tail) {
-            return;
-        }
-        if (node.list) {
-            node.list.removeNode(node);
-        }
-        const tail = this.tail;
-        node.list = this;
-        node.prev = tail;
-        if (tail) {
-            tail.next = node;
-        }
-        this.tail = node;
-        if (!this.head) {
-            this.head = node;
-        }
-        this.length++;
-    }
-    push(...args) {
-        for (let i = 0, l = args.length; i < l; i++) {
-            push(this, args[i]);
-        }
-        return this.length;
-    }
-    unshift(...args) {
-        for (var i = 0, l = args.length; i < l; i++) {
-            unshift(this, args[i]);
-        }
-        return this.length;
-    }
-    pop() {
-        if (!this.tail) {
-            return undefined;
-        }
-        const res = this.tail.value;
-        const t = this.tail;
-        this.tail = this.tail.prev;
-        if (this.tail) {
-            this.tail.next = undefined;
-        }
-        else {
-            this.head = undefined;
-        }
-        t.list = undefined;
-        this.length--;
-        return res;
-    }
-    shift() {
-        if (!this.head) {
-            return undefined;
-        }
-        const res = this.head.value;
-        const h = this.head;
-        this.head = this.head.next;
-        if (this.head) {
-            this.head.prev = undefined;
-        }
-        else {
-            this.tail = undefined;
-        }
-        h.list = undefined;
-        this.length--;
-        return res;
-    }
-    forEach(fn, thisp) {
-        thisp = thisp || this;
-        for (let walker = this.head, i = 0; !!walker; i++) {
-            fn.call(thisp, walker.value, i, this);
-            walker = walker.next;
-        }
-    }
-    forEachReverse(fn, thisp) {
-        thisp = thisp || this;
-        for (let walker = this.tail, i = this.length - 1; !!walker; i--) {
-            fn.call(thisp, walker.value, i, this);
-            walker = walker.prev;
-        }
-    }
-    get(n) {
-        let i = 0;
-        let walker = this.head;
-        for (; !!walker && i < n; i++) {
-            walker = walker.next;
-        }
-        if (i === n && !!walker) {
-            return walker.value;
-        }
-    }
-    getReverse(n) {
-        let i = 0;
-        let walker = this.tail;
-        for (; !!walker && i < n; i++) {
-            // abort out of the list early if we hit a cycle
-            walker = walker.prev;
-        }
-        if (i === n && !!walker) {
-            return walker.value;
-        }
-    }
-    map(fn, thisp) {
-        thisp = thisp || this;
-        const res = new Yallist();
-        for (let walker = this.head; !!walker;) {
-            res.push(fn.call(thisp, walker.value, this));
-            walker = walker.next;
-        }
-        return res;
-    }
-    mapReverse(fn, thisp) {
-        thisp = thisp || this;
-        var res = new Yallist();
-        for (let walker = this.tail; !!walker;) {
-            res.push(fn.call(thisp, walker.value, this));
-            walker = walker.prev;
-        }
-        return res;
-    }
-    reduce(fn, initial) {
-        let acc;
-        let walker = this.head;
-        if (arguments.length > 1) {
-            acc = initial;
-        }
-        else if (this.head) {
-            walker = this.head.next;
-            acc = this.head.value;
-        }
-        else {
-            throw new TypeError('Reduce of empty list with no initial value');
-        }
-        for (var i = 0; !!walker; i++) {
-            acc = fn(acc, walker.value, i);
-            walker = walker.next;
-        }
-        return acc;
-    }
-    reduceReverse(fn, initial) {
-        let acc;
-        let walker = this.tail;
-        if (arguments.length > 1) {
-            acc = initial;
-        }
-        else if (this.tail) {
-            walker = this.tail.prev;
-            acc = this.tail.value;
-        }
-        else {
-            throw new TypeError('Reduce of empty list with no initial value');
-        }
-        for (let i = this.length - 1; !!walker; i--) {
-            acc = fn(acc, walker.value, i);
-            walker = walker.prev;
-        }
-        return acc;
-    }
-    toArray() {
-        const arr = new Array(this.length);
-        for (let i = 0, walker = this.head; !!walker; i++) {
-            arr[i] = walker.value;
-            walker = walker.next;
-        }
-        return arr;
-    }
-    toArrayReverse() {
-        const arr = new Array(this.length);
-        for (let i = 0, walker = this.tail; !!walker; i++) {
-            arr[i] = walker.value;
-            walker = walker.prev;
-        }
-        return arr;
-    }
-    slice(from = 0, to = this.length) {
-        if (to < 0) {
-            to += this.length;
-        }
-        if (from < 0) {
-            from += this.length;
-        }
-        const ret = new Yallist();
-        if (to < from || to < 0) {
-            return ret;
-        }
-        if (from < 0) {
-            from = 0;
-        }
-        if (to > this.length) {
-            to = this.length;
-        }
-        let walker = this.head;
-        let i = 0;
-        for (i = 0; !!walker && i < from; i++) {
-            walker = walker.next;
-        }
-        for (; !!walker && i < to; i++, walker = walker.next) {
-            ret.push(walker.value);
-        }
-        return ret;
-    }
-    sliceReverse(from = 0, to = this.length) {
-        if (to < 0) {
-            to += this.length;
-        }
-        if (from < 0) {
-            from += this.length;
-        }
-        const ret = new Yallist();
-        if (to < from || to < 0) {
-            return ret;
-        }
-        if (from < 0) {
-            from = 0;
-        }
-        if (to > this.length) {
-            to = this.length;
-        }
-        let i = this.length;
-        let walker = this.tail;
-        for (; !!walker && i > to; i--) {
-            walker = walker.prev;
-        }
-        for (; !!walker && i > from; i--, walker = walker.prev) {
-            ret.push(walker.value);
-        }
-        return ret;
-    }
-    splice(start, deleteCount = 0, ...nodes) {
-        if (start > this.length) {
-            start = this.length - 1;
-        }
-        if (start < 0) {
-            start = this.length + start;
-        }
-        let walker = this.head;
-        for (let i = 0; !!walker && i < start; i++) {
-            walker = walker.next;
-        }
-        const ret = [];
-        for (let i = 0; !!walker && i < deleteCount; i++) {
-            ret.push(walker.value);
-            walker = this.removeNode(walker);
-        }
-        if (!walker) {
-            walker = this.tail;
-        }
-        else if (walker !== this.tail) {
-            walker = walker.prev;
-        }
-        for (const v of nodes) {
-            walker = insertAfter(this, walker, v);
-        }
-        return ret;
-    }
-    reverse() {
-        const head = this.head;
-        const tail = this.tail;
-        for (let walker = head; !!walker; walker = walker.prev) {
-            const p = walker.prev;
-            walker.prev = walker.next;
-            walker.next = p;
-        }
-        this.head = tail;
-        this.tail = head;
-        return this;
-    }
-}
-exports.Yallist = Yallist;
-// insertAfter undefined means "make the node the new head of list"
-function insertAfter(self, node, value) {
-    const prev = node;
-    const next = node ? node.next : self.head;
-    const inserted = new Node(value, prev, next, self);
-    if (inserted.next === undefined) {
-        self.tail = inserted;
-    }
-    if (inserted.prev === undefined) {
-        self.head = inserted;
-    }
-    self.length++;
-    return inserted;
-}
-function push(self, item) {
-    self.tail = new Node(item, self.tail, undefined, self);
-    if (!self.head) {
-        self.head = self.tail;
-    }
-    self.length++;
-}
-function unshift(self, item) {
-    self.head = new Node(item, undefined, self.head, self);
-    if (!self.tail) {
-        self.tail = self.head;
-    }
-    self.length++;
-}
-class Node {
-    list;
-    next;
-    prev;
-    value;
-    constructor(value, prev, next, list) {
-        this.list = list;
-        this.value = value;
-        if (prev) {
-            prev.next = this;
-            this.prev = prev;
-        }
-        else {
-            this.prev = undefined;
-        }
-        if (next) {
-            next.prev = this;
-            this.next = next;
-        }
-        else {
-            this.next = undefined;
-        }
-    }
-}
-exports.Node = Node;
-//# sourceMappingURL=index.js.map
 
 /***/ })
 
