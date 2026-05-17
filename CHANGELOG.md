@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- chore(deps): update `@quarto-wizard/core` to 3.1.0 (#48).
+- ci(test): use major version of action in test workflow.
+- chore(deps): update `@quarto-wizard/core` to 2.3.0 (#47).
+- chore(deps): bump `actions/upload-artifact` from 7.0.0 to 7.0.1 (#46).
+- chore(deps): bump `actions/upload-artifact` from 6.0.0 to 7.0.0 (#45).
+
 ## 2.1.1 (2026-02-26)
 
 - chore(deps): update `@quarto-wizard/core` to 2.2.0.
