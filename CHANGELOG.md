@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.2 (2026-05-17)
 
 - chore(deps): update `@quarto-wizard/core` to 3.1.0 (#48).
 - ci(test): use major version of action in test workflow.
