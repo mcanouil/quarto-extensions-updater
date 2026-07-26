@@ -1,0 +1,59 @@
+meta:
+  name: Mickaël CANOUIL
+  link:
+    home: https://mickael.canouil.fr
+    github: https://github.com/mcanouil
+    bluesky: https://bsky.app/profile/mickael.canouil.fr
+    linkedin: https://www.linkedin.com/in/MickaelCanouil
+
+color:
+  palette:
+    graphite: "#0E1618"
+    graphite-2: "#162326"
+    frost: "#F4F8F8"
+    ink: "#121B1E"
+    mist: "#D7E3E5"
+    mist-muted: "#8AA0A3"
+    teal: "#2BB3C0"
+    teal-deep: "#0B6E79"
+  background:
+    dark: graphite
+    light: frost
+  foreground:
+    dark: mist
+    light: ink
+  primary:
+    dark: teal
+    light: teal-deep
+  dark:
+    dark: graphite
+    light: graphite
+  light:
+    dark: mist
+    light: mist
+
+typography:
+  fonts:
+    - family: Outfit
+      source: google
+      weight: [500, 600, 700]
+    - family: Source Sans 3
+      source: google
+      weight: [300, 400, 500, 600]
+    - family: JetBrains Mono
+      source: google
+      weight: [400, 500, 600]
+  base: Source Sans 3
+  headings:
+    family: Outfit
+    weight: 600
+  monospace: JetBrains Mono
+  link:
+    color: primary
+
+defaults:
+  bootstrap:
+    defaults:
+      tooltip-color: $background
+      tooltip-bg: $foreground
+      btn-close-color: $foreground

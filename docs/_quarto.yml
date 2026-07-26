@@ -1,0 +1,100 @@
+project:
+  type: atelier
+  render:
+    - index.qmd
+    - getting-started/
+    - reference/
+    - contributing.qmd
+    - 404.qmd
+  # Quarto copies nothing to the output directory by convention: only these
+  # globs, plus files it finds behind an `href` or `src` in the rendered HTML.
+  # The manifest names its icons in JSON, which is not scanned, so they are
+  # listed here.
+  resources:
+    - favicon.ico
+    - site.webmanifest
+    - assets/icons/*.png
+
+website:
+  title: "Quarto Extensions Updater"
+  description: "GitHub Action that keeps the Quarto extensions of a repository up to date, the way Dependabot keeps dependencies up to date."
+  site-url: &site-url https://m.canouil.dev/quarto-extensions-updater
+  repo-url: https://github.com/mcanouil/quarto-extensions-updater
+  favicon: favicon.ico
+  # The leading slash marks a project-relative path, which Quarto turns into
+  # `<site-url>/assets/social/og-image.png` and measures to fill the image
+  # width and height tags. Written without it, the path is resolved against the
+  # page instead, which turns into /reference/assets/... below the root.
+  image: /assets/social/og-image.png
+  image-alt: "Dark card carrying the teal package icon of the action, the words \"github action\", the title \"Quarto Extensions Updater\", and the line \"Dependabot-style updates for the Quarto extensions of a repository\"."
+  page-footer:
+    right: |
+      Licence: [MIT](https://github.com/mcanouil/quarto-extensions-updater?tab=MIT-1-ov-file#readme).
+  navbar:
+    left:
+      - text: "{{< iconify octicon:rocket-16 title='Getting started' label='Getting started' >}} Getting started"
+        href: getting-started/index.qmd
+      - text: "{{< iconify octicon:book-16 title='Reference' label='Reference' >}} Reference"
+        href: reference/index.qmd
+    right:
+      - text: "{{< iconify octicon:git-pull-request-16 title='Contributing' label='Contributing' >}} Contributing"
+        href: contributing.qmd
+      - href: "#gitlink-widget"
+        aria-label: "GitHub"
+
+metadata-files:
+  - _sidebar-getting-started.yml
+  - _sidebar-reference.yml
+
+brand: _brand.yml
+
+# The `atelier` project type sets `format: atelier-html`. Declaring `html`
+# here would replace that format rather than configure it, silently dropping
+# the accessibility scripts, `lang: en-GB`, the colour-scheme handling, and
+# the extension stylesheet. The theme lists below extend the format's own,
+# which is why the project layer wins the cascade. They are written out twice
+# rather than shared through a YAML anchor, which the schema check rejects.
+format:
+  atelier-html:
+    theme:
+      light:
+        - brand
+        - assets/stylesheets/theme.scss
+      dark:
+        - brand
+        - assets/stylesheets/theme.scss
+
+filters:
+  - assets/filters/action-reference.lua
+  - at: post-quarto
+    path: gitlink
+
+extensions:
+  # Quarto keeps the `website` block out of the metadata it hands to Lua
+  # filters, so the atelier social-metadata filter cannot read
+  # `website.site-url` to build the canonical URL. The anchor above republishes
+  # the same scalar here, without a second copy of the string.
+  atelier:
+    site-url: *site-url
+    icon: assets/icons/icon.svg
+    apple-touch-icon: assets/icons/apple-touch-icon.png
+    manifest: site.webmanifest
+    theme-color:
+      light: "#F4F8F8"
+      dark: "#0E1618"
+
+  gitlink:
+    # Widget only: the platform and repository come from `website.repo-url`,
+    # and in-text reference rewriting stays off.
+    enabled: false
+    widget:
+      enabled: true
+      extra-links:
+        - text: "Marketplace listing"
+          href: "https://github.com/marketplace/actions/quarto-extensions-updater"
+          icon: package
+        - text: "Changelog"
+          href: "https://github.com/mcanouil/quarto-extensions-updater/blob/main/CHANGELOG.md"
+          icon: history
+      sponsor: mcanouil
+      style-navbar-tools: true

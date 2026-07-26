@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <title>Social preview template</title>
+    <!--
+      Source for docs/assets/social/og-image.png, 1200x630.
+
+      Regenerate after a change with a headless Chromium, for example:
+
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
+          --headless --disable-gpu --hide-scrollbars \
+          --force-device-scale-factor=1 --window-size=1200,630 \
+          --screenshot=docs/assets/social/og-image.png \
+          docs/assets/social/og-image.html
+
+      Colours and fonts come from docs/_brand.yml. The fonts are loaded from
+      Google Fonts, so the render needs network access; the committed PNG is
+      what the site serves.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@600&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --graphite: #0e1618;
+        --graphite-2: #162326;
+        --frost: #f4f8f8;
+        --mist: #d7e3e5;
+        --mist-muted: #8aa0a3;
+        --teal: #2bb3c0;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 1200px;
+        height: 630px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2rem;
+        /* 96px margins keep every element clear of the 60px safe area. */
+        padding: 96px;
+        background:
+          radial-gradient(90% 120% at 100% 0%, rgba(43, 179, 192, 0.22), transparent 62%),
+          var(--graphite);
+        color: var(--frost);
+        font-family: "Source Sans 3", system-ui, sans-serif;
+        overflow: hidden;
+      }
+
+      .mark {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+      }
+
+      .mark img {
+        width: 128px;
+        height: 128px;
+      }
+
+      .mark span {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--teal);
+      }
+
+      h1 {
+        max-width: 20ch;
+        font-family: Outfit, system-ui, sans-serif;
+        font-size: 88px;
+        font-weight: 600;
+        line-height: 1.04;
+        letter-spacing: -0.015em;
+      }
+
+      /* Two lines at most: a third one would push the text inside the 60px
+         safe area at the bottom of the card. */
+      p {
+        max-width: 40ch;
+        font-size: 36px;
+        line-height: 1.35;
+        color: var(--mist-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mark">
+      <img src="../icons/icon-512.png" alt="" />
+      <span>github action</span>
+    </div>
+    <h1>Quarto Extensions Updater</h1>
+    <p>Dependabot-style updates for the Quarto extensions of a repository.</p>
+  </body>
+</html>

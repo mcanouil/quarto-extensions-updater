@@ -1,0 +1,85 @@
+---
+title: "Quarto Extensions Updater"
+description: "A GitHub Action that scans the extension directories of a repository, updates the extensions that moved, and opens a pull request for each one."
+subtitle: "Keep the Quarto extensions of a repository up to date, the way Dependabot keeps dependencies up to date."
+toc: false
+---
+
+::: {.updater-hero}
+
+[quarto add owner/name@latest, on a schedule]{.updater-hero-strapline}
+
+A GitHub Action that reads the `_extensions` directories of a repository, compares every installed extension against the Quarto extensions registry, updates the ones that moved, and opens a pull request per extension with the release notes attached.
+It runs on a schedule, on demand, or in dry-run mode when all that is wanted is a report.
+
+:::
+
+## What a run produces
+
+::: {.updater-log data-title="Workflow log"}
+
+```txt
+🚀 Starting Quarto Extensions Updater...
+Fetching extensions registry from: https://m.canouil.dev/quarto-extensions/extensions.json
+Successfully fetched 359 extensions from registry
+Found 3 extension manifests
+Checking 3 extensions for updates...
+Update available for mcanouil/iconify: 3.0.0 → 3.0.2
+Update available for quarto-ext/lightbox: 0.1.1 → 0.1.2
+mcanouil/gitlink is up to date (0.3.0)
+📊 Summary: Created/updated 2 PR(s)
+🎉 Successfully completed!
+```
+
+:::
+
+Each pull request carries the diff of a single extension, the release notes pulled from the upstream repository, and the update type as a label.
+Reopening the same branch on a later run updates the existing pull request rather than adding another one.
+
+## Minimal workflow
+
+```yaml
+name: Update Quarto Extensions
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "release"
+
+      - uses: mcanouil/quarto-extensions-updater@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Quarto itself does the installing, so the setup step is required.
+
+## What it can do
+
+- One pull request per extension, or [a single grouped pull request](reference/updates.qmd#grouped-updates).
+- [Update strategies](reference/updates.qmd#update-strategy) that hold back major or minor changes.
+- [Include and exclude lists](reference/updates.qmd#selective-updates) for pinning individual extensions.
+- [Multi-directory scanning](reference/updates.qmd#multi-directory-scanning) for repositories with several Quarto sub-projects.
+- [Auto-merge](reference/auto-merge.qmd) by update type, with the merge method of your choice.
+- [Dry-run mode](reference/dry-run.qmd), optionally reporting into a GitHub issue.
+- [Reviewers and assignees](reference/pull-requests.qmd#reviewers-and-assignees) for team workflows.
+- Compatibility checks against `quarto-required`, so an extension that needs a newer Quarto is skipped and reported rather than breaking the render.
+
+## Next steps
+
+- [Getting started](getting-started/index.qmd) covers the requirements, the first run, and what the action does step by step.
+- [Reference](reference/index.qmd) documents every input and output, and each behaviour in detail.

@@ -1,0 +1,23 @@
+website:
+  sidebar:
+    - id: reference
+      title: "{{< iconify octicon:book-16 title='Reference' label='Reference' >}} Reference"
+      style: floating
+      collapse-level: 2
+      contents:
+        - text: "{{< iconify octicon:compass-16 title='Overview' label='Overview' >}} Overview"
+          href: reference/index.qmd
+        - text: "{{< iconify octicon:sliders-16 title='Inputs and outputs' label='Inputs and outputs' >}} Inputs and outputs"
+          href: reference/action.qmd
+        - text: "{{< iconify octicon:versions-16 title='Update selection' label='Update selection' >}} Update selection"
+          href: reference/updates.qmd
+        - text: "{{< iconify octicon:git-merge-16 title='Auto-merge' label='Auto-merge' >}} Auto-merge"
+          href: reference/auto-merge.qmd
+        - text: "{{< iconify octicon:beaker-16 title='Dry-run mode' label='Dry-run mode' >}} Dry-run mode"
+          href: reference/dry-run.qmd
+        - text: "{{< iconify octicon:git-pull-request-16 title='Pull requests' label='Pull requests' >}} Pull requests"
+          href: reference/pull-requests.qmd
+        - text: "{{< iconify octicon:database-16 title='Registry and manifests' label='Registry and manifests' >}} Registry and manifests"
+          href: reference/registry.qmd
+        - text: "{{< iconify octicon:question-16 title='Troubleshooting' label='Troubleshooting' >}} Troubleshooting"
+          href: reference/troubleshooting.qmd

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Quarto Extensions Updater">
+  <title>Quarto Extensions Updater</title>
+  <!--
+    One package tile carrying an upward arrow: an extension, moved to a newer
+    version. Geometry is snapped to the 32 unit grid so the mark stays crisp at
+    16 pixels, and the two fills come from the brand palette in docs/_brand.yml
+    (teal-deep #0B6E79 and teal #2BB3C0 for the tile, frost #F4F8F8 and
+    graphite #0E1618 for the arrow).
+  -->
+  <style>
+    .tile { fill: #0B6E79; }
+    .mark { fill: #F4F8F8; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #2BB3C0; }
+      .mark { fill: #0E1618; }
+    }
+  </style>
+  <rect class="tile" x="2" y="2" width="28" height="28" rx="6" />
+  <path class="mark" d="M16 6 25 17 7 17 Z" />
+  <rect class="mark" x="12" y="16" width="8" height="10" />
+</svg>

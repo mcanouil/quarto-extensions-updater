@@ -1,0 +1,13 @@
+---
+title: "Reference"
+description: "A map of the reference: inputs and outputs, update selection, auto-merge, dry-run mode, pull requests, registry and manifests, and troubleshooting."
+subtitle: "Every input, and the behaviour behind each of them."
+---
+
+- [Inputs and outputs](action.qmd) lists everything the action accepts and returns, generated from `action.yml`.
+- [Update selection](updates.qmd) covers the update strategy, include and exclude lists, grouped updates, and multi-directory scanning.
+- [Auto-merge](auto-merge.qmd) covers the merge strategies, the merge methods, and what GitHub requires before auto-merge can be enabled.
+- [Dry-run mode](dry-run.qmd) covers reporting without writing, and the optional issue.
+- [Pull requests](pull-requests.qmd) covers branch naming, titles, labels, the body format, reviewers, and assignees.
+- [Registry and manifests](registry.qmd) covers where versions come from and the manifest fields the action reads and writes.
+- [Troubleshooting](troubleshooting.qmd) covers the cases where a run reports nothing, or less than expected.

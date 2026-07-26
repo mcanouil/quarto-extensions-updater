@@ -1,0 +1,114 @@
+---
+title: "Recipes"
+description: "Ready-made configurations for scheduling, custom registries, branch naming, team review, and merging only the updates that are safe."
+subtitle: "Configurations that come up often, ready to copy."
+---
+
+## Test a configuration before applying it
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"
+    exclude-extensions: "owner/unstable-ext"
+    dry-run: true
+```
+
+Nothing is written; the job summary reports what would have happened.
+
+## Check for updates without creating a pull request
+
+```yaml
+- name: Check for updates
+  id: check
+  uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    create-pr: false
+
+- name: Display results
+  run: |
+    echo "Updates available: ${{ steps.check.outputs.updates-available }}"
+    echo "Number of updates: ${{ steps.check.outputs.update-count }}"
+```
+
+## Use a custom registry
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    registry-url: "https://example.com/custom-registry.json"
+```
+
+The file must follow the shape described in [registry and manifests](../reference/registry.qmd).
+
+## Change the schedule
+
+Weekly, on Sunday:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 0 * * 0"
+```
+
+Monthly, on the first day:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+```
+
+## Custom branch naming and pull request format
+
+Conventional commits style with custom labels:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    branch-prefix: "deps/quarto"
+    pr-title-prefix: "build(deps):"
+    commit-message-prefix: "build(deps):"
+    pr-labels: "dependencies,quarto,automated,low-priority"
+```
+
+This produces:
+
+- Branch: `deps/quarto/update-owner-name-1.2.3`.
+- Title: `build(deps): update owner/name extension to 1.2.3`.
+- Labels: `dependencies`, `quarto`, `automated`, `low-priority`.
+
+See [pull requests](../reference/pull-requests.qmd) for the naming rules in full.
+
+## Team workflow
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pr-reviewers: "user1,user2"
+    pr-team-reviewers: "platform-team"
+    pr-assignees: "dependency-manager,team-lead"
+    auto-merge: true
+    auto-merge-strategy: "patch"
+```
+
+Individual reviewers and the team are requested, the pull request is assigned, and patch updates merge on their own once the required checks and approvals are in place.
+See [pull requests](../reference/pull-requests.qmd#reviewers-and-assignees) and [auto-merge](../reference/auto-merge.qmd).
+
+## Only safe updates, merged automatically
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"
+    auto-merge: true
+    auto-merge-strategy: "patch"
+```
+
+Major updates are never detected, minor updates wait for review, and patch updates merge on their own.
