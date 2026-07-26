@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- docs: add a documentation website at <https://m.canouil.dev/quarto-extensions-updater>, built with Quarto and deployed to GitHub Pages; the inputs and outputs reference is generated from `action.yml` at render time.
+- docs: reduce `README.md` to a landing page pointing at the documentation website.
+- docs: add a hand-authored SVG icon with its favicon, apple touch icon, and web app manifest, a 1200x630 social preview image rendered from a committed HTML template, and full Open Graph and Twitter card metadata including a per-page description, canonical URL, and `og:url`; the head tags come from the `atelier` extension's `social-metadata` filter, configured through `extensions.atelier`. The manifest names its icons relatively, so it resolves both under `quarto preview` at the server root and under the project path prefix on GitHub Pages.
+- ci: scan `docs` for Quarto extension updates, so the action maintains its own documentation extensions.
 - chore(deps): bump `@actions/core` from 1 to 3 and `@actions/github` from 6 to 9, clearing every `undici` advisory reported for the action.
 - refactor: build the action as an ES module, required by `@actions/core` 3 and `@actions/github` 9.
 - chore(deps): bump `js-yaml` from 4 to 5, deduplicating it with `@quarto-wizard/core` and removing one copy from the bundle.

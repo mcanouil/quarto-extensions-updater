@@ -1,0 +1,44 @@
+---
+title: "Troubleshooting"
+description: "What to check when no extensions are found, no updates are detected, no pull request appears, or an extension is skipped during a run."
+subtitle: "When a run reports nothing, or less than expected."
+---
+
+## No extensions found
+
+Extensions must sit in `_extensions/owner/name/` with an `_extension.yml` or `_extension.yaml` manifest.
+When the Quarto sub-projects live in sub-directories, list them through [`scan-directories`](updates.qmd#multi-directory-scanning); only the workspace root is scanned by default.
+
+## No updates detected
+
+- Confirm the extension is in the registry: <https://m.canouil.dev/quarto-extensions/>.
+- Confirm each manifest carries a `version` field and a [`source` field](registry.qmd#the-source-field); an extension without a source is skipped, because there is nothing to track.
+- Confirm the versions follow semantic versioning (`X.Y.Z`).
+- Confirm the [update strategy](updates.qmd#update-strategy) and the [include and exclude lists](updates.qmd#selective-updates) are not filtering out the update.
+
+## Pull request not created
+
+- Confirm the workflow grants `contents: write` and `pull-requests: write`.
+- Confirm `create-pr` is not `false`, and [`dry-run`](dry-run.qmd) is not `true`.
+- Check the workflow logs for API errors.
+- Check that no pull request is already open with the same branch and title, since that update is then skipped rather than opened again.
+
+## Extensions skipped {#extensions-skipped}
+
+An extension can be skipped during an update for two reasons:
+
+- **The Quarto version requirement is not met.**
+  The updated extension declares a `quarto-required` that exceeds the Quarto version installed in the workflow.
+  Raise the version in the setup step, or wait for a compatible extension release.
+- **`quarto add` failed.**
+  The Quarto CLI could not install the extension, for example because of a network error or an invalid release.
+  The specific error is in the workflow logs.
+
+Skipped extensions are reported in the job summary and, where applicable, in the pull request body under a "Skipped Extensions" section.
+A skipped extension does not fail the run: the other extensions are still processed.
+
+## Auto-merge not enabled
+
+GitHub refuses auto-merge unless the base branch has at least one required status check or branch protection rule.
+The pull request is still created, and the action logs a warning.
+See [auto-merge](auto-merge.qmd).

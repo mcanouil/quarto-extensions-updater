@@ -1,0 +1,37 @@
+---
+title: "Contributing"
+description: "Building and testing the action, previewing the documentation website, and where to report issues or ask questions."
+subtitle: "Working on the action itself."
+---
+
+Contributions are welcome.
+Open an issue or a pull request on the [GitHub repository](https://github.com/mcanouil/quarto-extensions-updater), and use [Discussions](https://github.com/mcanouil/quarto-extensions-updater/discussions) for questions.
+
+## Development
+
+```bash
+npm install     # Install dependencies
+npm run build   # Build the action
+npm test        # Run tests
+npm run format  # Format code
+npm run lint    # Lint code
+npm run all     # Format, lint, and build
+```
+
+The action runs from `dist/index.js`, which is built from `src/` with `ncc` and committed to the repository, so `npm run build` must be run before opening a pull request that touches `src/`.
+
+## Documentation
+
+This website lives in `docs/` and is a Quarto project using the [`atelier`](https://github.com/mcanouil/quarto-atelier) project type.
+
+```bash
+quarto preview docs   # Preview locally
+quarto render docs    # Render to docs/_site
+```
+
+The [inputs and outputs](reference/action.qmd) tables are generated from `action.yml` by `docs/assets/filters/action-reference.lua`, so adding an input to the action is enough for it to appear in the documentation.
+
+## Related projects
+
+- [Quarto Wizard](https://github.com/mcanouil/quarto-wizard): a Visual Studio Code extension for managing Quarto extensions.
+- [Quarto Extensions](https://github.com/mcanouil/quarto-extensions): the registry of Quarto extensions this action reads.

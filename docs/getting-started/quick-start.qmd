@@ -1,0 +1,87 @@
+---
+title: "Quick start"
+description: "Add the workflow file, learn what the first run does, and try the configuration in dry-run mode before any pull request is opened."
+subtitle: "From an empty workflow file to a first pull request."
+---
+
+## Add the workflow
+
+Create `.github/workflows/update-extensions.yml`:
+
+```yaml
+name: Update Quarto Extensions
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Daily at midnight UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "release"
+
+      - uses: mcanouil/quarto-extensions-updater@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The reference to use in a workflow is []{.action-ref}, and `workflow_dispatch` makes the first run available immediately from the Actions tab rather than at the next scheduled time.
+
+## What the first run does
+
+- Every extension found under `_extensions/` is compared against the registry.
+- Extensions that are already current are logged and left alone.
+- Extensions without a `source` field are skipped, because there is no upstream to track.
+  Reinstalling them with a recent Quarto CLI adds the field, or it can be added by hand as described in [registry and manifests](../reference/registry.qmd#the-source-field).
+- Each remaining update produces one pull request, named after the extension and prefixed with `chore/quarto-extensions`.
+
+A later run that finds the same version again skips it, so a pull request left open is not duplicated.
+A newer version gets a pull request of its own, since the branch name carries the version it updates to.
+
+## Try it without writing anything
+
+To confirm the configuration before letting the action open pull requests, run it once in [dry-run mode](../reference/dry-run.qmd):
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    dry-run: true
+```
+
+The job summary then reports the configuration in use and every update that would have been applied.
+
+## A fuller configuration
+
+Every input is optional except `github-token`, which defaults to the workflow token.
+A configuration exercising the common options looks like this:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    workspace-path: "."
+    registry-url: "https://m.canouil.dev/quarto-extensions/extensions.json"
+    create-pr: true
+    branch-prefix: "chore/quarto-extensions"
+    base-branch: "main"
+    pr-title-prefix: "chore(deps):"
+    commit-message-prefix: "chore(deps):"
+    pr-labels: "dependencies,quarto-extensions"
+    auto-merge: true
+    auto-merge-strategy: "patch"
+    auto-merge-method: "squash"
+```
+
+See [inputs and outputs](../reference/action.qmd) for the full list.

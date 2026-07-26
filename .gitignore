@@ -4,3 +4,7 @@ node_modules/
 # Output directories
 lib/
 coverage/
+
+# Quarto
+.quarto/
+_site/

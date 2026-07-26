@@ -1,0 +1,37 @@
+---
+title: "Getting started"
+description: "What the action needs before its first run: the Quarto CLI, a source field in every extension manifest, and write access to contents and pull requests."
+subtitle: "What the action needs before it can open its first pull request."
+---
+
+## What the action does
+
+The action scans the `_extensions` directories of a repository, compares the version in each `_extension.yml` against the [Quarto extensions registry](../reference/registry.qmd), and updates the ones that moved by calling the Quarto CLI.
+Every update becomes a pull request carrying the release notes of the extension it updates.
+
+## Requirements
+
+- The Quarto CLI must be installed in the workflow environment, because the action performs updates through `quarto add`.
+  Use [`quarto-dev/quarto-actions/setup@v2`](https://github.com/quarto-dev/quarto-actions) for this.
+- Pin an explicit Quarto version in the setup step, for example `version: "release"`, so runs stay reproducible.
+- Each extension must live in `_extensions/owner/name/` with an `_extension.yml` or `_extension.yaml` manifest.
+- The manifest must carry a `source` field, which the action reads to know which upstream repository to track.
+  See [registry and manifests](../reference/registry.qmd#the-source-field).
+
+## Permissions
+
+The workflow needs write access to contents and to pull requests:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+```
+
+Dropping to `contents: read` is only viable with `create-pr: false` or [`dry-run: true`](../reference/dry-run.qmd), where nothing is written back to the repository.
+
+## Where to go next
+
+- [Quick start](quick-start.qmd) sets up the workflow file and explains what the first run does.
+- [How it works](how-it-works.qmd) walks through the run, step by step.
+- [Recipes](recipes.qmd) collects the configurations that come up most often.

@@ -1,0 +1,54 @@
+---
+title: "Dry-run mode"
+description: "Report the available extension updates without creating pull requests or changing the repository, optionally into a GitHub issue."
+subtitle: "Reporting what would happen, without touching the repository."
+---
+
+## Enable it
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    dry-run: true
+```
+
+## What it does
+
+With `dry-run` enabled the action:
+
+- checks for available updates as usual;
+- reports the configuration in force, covering the update strategy, the filters, grouping, and auto-merge;
+- shows exactly which pull requests would be created;
+- indicates which updates would have been merged automatically;
+- creates no pull requests;
+- makes no changes to the repository.
+
+## Reporting into an issue
+
+A GitHub issue can carry the summary instead of leaving it in the job log:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    dry-run: true
+    create-issue: true
+```
+
+With `create-issue` enabled in dry-run mode:
+
+- an issue is opened with the update summary;
+- the issue repeats the configuration and every available update;
+- the issue number and URL are exposed as the `issue-number` and `issue-url` [outputs](action.qmd#outputs);
+- updates can be tracked without opening pull requests straight away.
+
+## The job summary
+
+Dry-run mode writes a GitHub Actions job summary containing:
+
+- **Dry-run summary**: a notice that no pull requests will be created.
+- **Configuration**: a table of the mode, update strategy, filters, and auto-merge settings.
+- **Planned actions**: how many pull requests would be created.
+- **Updates**: every update with its current version, its latest version, and whether it would have been merged automatically.
+- **Next steps**: a reminder to remove `dry-run: true` to apply the updates.

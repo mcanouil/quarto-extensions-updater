@@ -1,0 +1,112 @@
+name: "Deploy: Documentation"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "action.yml"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "action.yml"
+      - ".github/workflows/deploy.yml"
+  release:
+    types: [ published ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build - Documentation website
+
+    steps:
+      - name: Setup Git user
+        uses: mcanouil/quarto-workflows/.github/actions/setup-git-user@main
+        id: setup-git-user
+        with:
+          # Pull requests from forks cannot read the app key, so fall back to
+          # the workflow token there; nothing is pushed from this workflow.
+          gh-app-id: ${{ github.event_name != 'pull_request' && vars.APP_ID || '' }}
+          app-key: ${{ secrets.APP_KEY }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          token: ${{ steps.setup-git-user.outputs.token }}
+          # Publish the default branch whatever the trigger: a release runs
+          # against its tag, which predates the version bump commit that lands
+          # on the default branch afterwards. Pull requests keep the checkout
+          # action's default so the gate renders the proposed change.
+          ref: ${{ github.event_name != 'pull_request' && github.event.repository.default_branch || '' }}
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: release
+          tinytex: false
+
+      - name: Render website
+        working-directory: ./docs
+        run: quarto render .
+
+      # The filter that builds the reference from action.yml warns and leaves
+      # its placeholder in place when it cannot find the file, which a render
+      # alone reports as success. Fail here instead of publishing a reference
+      # page with no reference on it. Both tables have to be there, so count
+      # the tables rather than grep for a name the surrounding prose also uses.
+      - name: Check the generated action reference
+        working-directory: ./docs
+        run: |
+          tables=$(grep -c '<table' _site/reference/action.html)
+          if [ "${tables}" -lt 2 ]; then
+            echo "Expected the inputs and outputs tables, found ${tables} table(s)." >&2
+            exit 1
+          fi
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: "./docs/_site"
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy - Documentation website
+
+    needs:
+      - "build"
+
+    if: github.event_name != 'pull_request'
+
+    # A release runs against refs/tags/<version> while the version bump runs
+    # against refs/heads/main, so the workflow-level group does not keep the
+    # two apart. Serialise the deployment itself on a fixed group instead.
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,214 @@
+/*-- scss:rules --*/
+
+// Pin the dark navbar and footer surfaces to the palette from _brand.yml.
+// Atelier defaults these tokens to a neutral slate and bridges them onto the
+// gitlink widget, so overriding them here is enough for both bars. The values
+// come from the brand palette rather than repeated literals, so the site has a
+// single source of truth for its colours.
+:root {
+  --atelier-navbar-bg: #{$brand-graphite};
+  --atelier-navbar-surface: #{$brand-graphite-2};
+  --atelier-navbar-fg: #{$brand-mist};
+  --atelier-navbar-muted: #{$brand-mist-muted};
+  --atelier-navbar-accent: #{$brand-teal};
+  --atelier-navbar-accent-soft: #{rgba($brand-teal, 0.16)};
+  --atelier-navbar-border: #{rgba($brand-mist, 0.14)};
+
+  // Outfit is geometric and reads better with negative tracking than the
+  // positive default tuned for the fallback stack.
+  --atelier-heading-letter-spacing: -0.012em;
+}
+
+// ===========================================================================
+// SHARED SURFACES
+// ===========================================================================
+// The hero, the run log, and the pipeline steps are all raised panels over the
+// page background; body-mix() keeps them correct in both colour schemes.
+%updater-surface {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid body-mix(85%);
+  border-radius: $border-radius;
+  background: body-mix(97%);
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// ===========================================================================
+// HOME HERO
+// ===========================================================================
+.updater-hero {
+  @extend %updater-surface;
+
+  margin-block: 0 2.5rem;
+  padding: 2rem 2rem 1.75rem;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba($brand-teal, 0.14), transparent 60%),
+    body-mix(96%);
+
+  > p {
+    max-width: 62ch;
+    font-size: 1.05rem;
+  }
+}
+
+// Monospace strapline above the hero paragraph.
+.updater-hero-strapline {
+  display: block;
+  margin-bottom: 0.85rem;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: $primary;
+
+  &::before {
+    content: "$ ";
+    opacity: 0.6;
+  }
+}
+
+// ===========================================================================
+// RUN LOG
+// ===========================================================================
+// A terminal-styled panel showing what a run produces. The content is a code
+// block, so the padding sits on the wrapper and the block itself goes flat.
+.updater-log {
+  margin-block: 1.5rem;
+  border: 1px solid body-mix(82%);
+  border-radius: $border-radius;
+  overflow: hidden;
+
+  // Title bar, labelled through the `data-title` attribute on the div.
+  &::before {
+    content: attr(data-title);
+    display: block;
+    padding: 0.45rem 0.9rem;
+    border-bottom: 1px solid body-mix(82%);
+    background: body-mix(92%);
+    font-family: var(--bs-font-monospace);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: body-mix(35%);
+  }
+
+  pre {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    font-size: 0.85rem;
+  }
+}
+
+// ===========================================================================
+// PIPELINE STEPPER
+// ===========================================================================
+// The ordered list on "How it works" becomes a vertical stepper: numbered
+// markers on a connector line, so the run reads as a sequence rather than a
+// wall of bullets.
+.updater-pipeline {
+  ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: pipeline-step;
+  }
+
+  > ol > li {
+    position: relative;
+    counter-increment: pipeline-step;
+    margin: 0;
+    padding: 0 0 1.4rem 3rem;
+
+    // Connector line, stopping at the last marker.
+    &::before {
+      content: "";
+      position: absolute;
+      top: 2rem;
+      bottom: 0;
+      left: 0.95rem;
+      width: 1px;
+      background: body-mix(85%);
+    }
+
+    &:last-child {
+      padding-bottom: 0;
+
+      &::before {
+        display: none;
+      }
+    }
+
+    // Numbered marker.
+    &::after {
+      content: counter(pipeline-step);
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: grid;
+      place-items: center;
+      width: 2rem;
+      height: 2rem;
+      border: 1px solid rgba($primary, 0.45);
+      border-radius: 50%;
+      background: rgba($primary, 0.12);
+      font-family: var(--bs-font-monospace);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: $primary;
+    }
+  }
+}
+
+// ===========================================================================
+// UPDATE-TYPE PILLS
+// ===========================================================================
+// Inline labels for the three update types, so a sentence about strategies
+// carries the same visual key as the pull request bodies it describes.
+%updater-pill {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid currentcolor;
+  border-radius: 2rem;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.bump-patch {
+  @extend %updater-pill;
+
+  color: $primary;
+}
+
+.bump-minor {
+  @extend %updater-pill;
+
+  color: mix($primary, body-mix(20%), 55%);
+}
+
+.bump-major {
+  @extend %updater-pill;
+
+  color: body-mix(25%);
+}
+
+// ===========================================================================
+// OPTION TABLES
+// ===========================================================================
+// The generated inputs and outputs tables are mostly option keys; keep the
+// first column monospaced and unwrapped so a long list stays scannable.
+.updater-options table {
+  font-size: 0.9rem;
+
+  td:first-child,
+  th:first-child {
+    font-family: var(--bs-font-monospace);
+    white-space: nowrap;
+  }
+}

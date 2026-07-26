@@ -1,0 +1,28 @@
+---
+title: "Inputs and outputs"
+description: "Every input and output of the action, generated from action.yml so the tables always match the version in the repository."
+subtitle: "Everything the action accepts and returns."
+---
+
+The tables below are generated from `action.yml` when this site is rendered, so they always describe the version of the action in this repository.
+
+## Inputs
+
+::: {#action-inputs .updater-options}
+
+The inputs table is generated from `action.yml` at render time.
+
+:::
+
+Only `github-token` is required, and it defaults to the token of the running workflow.
+An input whose default is `""` is inactive unless set.
+
+## Outputs
+
+::: {#action-outputs .updater-options}
+
+The outputs table is generated from `action.yml` at render time.
+
+:::
+
+Outputs are read through the step identifier, as in [check for updates without creating a pull request](../getting-started/recipes.qmd#check-for-updates-without-creating-a-pull-request).

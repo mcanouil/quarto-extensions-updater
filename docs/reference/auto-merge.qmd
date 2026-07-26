@@ -1,0 +1,95 @@
+---
+title: "Auto-merge"
+description: "Merge strategies by update type, the available merge methods, and the branch protection GitHub requires before auto-merge can be enabled."
+subtitle: "Letting qualifying updates merge without a human in the loop."
+---
+
+## How it works
+
+With `auto-merge` enabled, the action turns on GitHub's auto-merge on the pull requests that match the configured strategy.
+Those pull requests merge once the required status checks pass and the branch protection rules are satisfied.
+
+::: {.callout-important}
+
+Auto-merge requires at least one required status check or branch protection rule on the base branch.
+Without one, GitHub refuses to enable auto-merge.
+
+:::
+
+## Strategies
+
+`auto-merge-strategy` decides which updates qualify:
+
+- `patch` (default) merges [patch]{.bump-patch} updates only, for example `1.0.0` to `1.0.1`.
+- `minor` merges [minor]{.bump-minor} and [patch]{.bump-patch} updates, for example `1.0.0` to `1.1.0`.
+- `all` merges every update, including [major]{.bump-major} versions.
+
+## Methods
+
+`auto-merge-method` decides how the merge is performed:
+
+- `squash` (default) squashes the commits into one.
+- `merge` creates a merge commit.
+- `rebase` rebases and merges.
+
+## Permissions
+
+The workflow needs write access to pull requests:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+```
+
+## Examples
+
+Auto-merge patch updates:
+
+```yaml
+name: Update Quarto Extensions
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "release"
+
+      - uses: mcanouil/quarto-extensions-updater@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-merge: true
+          auto-merge-strategy: "patch"
+          auto-merge-method: "squash"
+```
+
+Auto-merge minor and patch updates:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    auto-merge: true
+    auto-merge-strategy: "minor"
+```
+
+## Notes
+
+- A pull request only merges once all required status checks pass.
+- When auto-merge cannot be enabled, for example because of missing permissions or missing status checks, the pull request is still created without it.
+- The action logs a warning in that case and carries on with the rest of the run.
+- With [grouped updates](updates.qmd#grouped-updates), auto-merge is enabled only when every update in the group qualifies.

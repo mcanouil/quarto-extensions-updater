@@ -51,6 +51,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           workspace-path: ${{ github.workspace }}
+          # The only extensions in this repository are the ones the
+          # documentation website renders with.
+          scan-directories: docs
           create-pr: ${{ github.event.inputs.create-pr || 'true' }}
           base-branch: ${{ github.event.repository.default_branch }}
 

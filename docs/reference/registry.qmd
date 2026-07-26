@@ -1,0 +1,60 @@
+---
+title: "Registry and manifests"
+description: "Where the latest extension versions come from, and the version, source, and quarto-required manifest fields the action reads and writes."
+subtitle: "Where the latest versions come from, and which manifest fields matter."
+---
+
+## The registry
+
+Versions are read from the Quarto extensions registry maintained in [mcanouil/quarto-extensions](https://github.com/mcanouil/quarto-extensions) and published at <https://m.canouil.dev/quarto-extensions/>, which is the default value of `registry-url`.
+
+The registry is a JSON object keyed by `owner/name`, each entry describing an extension:
+
+```json
+{
+  "mcanouil/quarto-iconify": {
+    "name": "quarto-iconify",
+    "nameWithOwner": "mcanouil/quarto-iconify",
+    "description": "Use Iconify icons in HTML-based Quarto documents.",
+    "latestRelease": "3.0.2",
+    "latestReleaseUrl": "https://github.com/mcanouil/quarto-iconify/releases/tag/3.0.2"
+  }
+}
+```
+
+The action reads the latest release of each entry and, for the pull request body, the description and the release URL.
+A registry hosted elsewhere works the same way as long as it keeps this shape; see [use a custom registry](../getting-started/recipes.qmd#use-a-custom-registry).
+
+An extension that is absent from the registry is skipped and reported in the log, because there is no published version to compare against.
+
+## Manifests
+
+Each extension lives in `_extensions/owner/name/` with an `_extension.yml` or `_extension.yaml` manifest:
+
+```yaml
+title: "My Extension"
+author: "Your Name"
+version: "1.0.0"
+quarto-required: ">=1.4.0"
+contributes: ...
+source: "owner/repo@v1.0.0"
+```
+
+Three fields drive the run.
+
+### `version`
+
+The installed version, compared against the registry release with semantic versioning.
+A manifest without a version is skipped, as is a version that does not follow `X.Y.Z`.
+
+### `source` {#the-source-field}
+
+The upstream the extension came from, which is what makes it trackable.
+An extension without a `source` field is skipped, because the action has no way to know what to install.
+Recent versions of the Quarto CLI write the field on `quarto add`, so reinstalling the extension is usually enough to add it, and the action maintains the field afterwards.
+
+### `quarto-required`
+
+The Quarto version the extension needs.
+After an update is applied, the requirement in the new manifest is compared against the Quarto version installed in the workflow, and an extension needing a newer Quarto is skipped and reported rather than committed.
+Raising the version in the `quarto-dev/quarto-actions/setup@v2` step is what unblocks it.

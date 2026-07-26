@@ -1,0 +1,41 @@
+---
+title: "How it works"
+description: "The eight steps of a run, from fetching the extensions registry to opening or updating the pull request, and what happens when an extension cannot be updated."
+subtitle: "What happens between the scheduled trigger and the pull request."
+---
+
+::: {.updater-pipeline}
+
+1. **Fetch the registry.**
+   The extensions registry is downloaded from the URL given by `registry-url`, which defaults to the [Quarto extensions](../reference/registry.qmd) directory.
+
+2. **Scan for extensions.**
+   Every `_extensions/` directory under the configured [scan directories](../reference/updates.qmd#multi-directory-scanning) is read, and each `_extension.yml` or `_extension.yaml` manifest is collected.
+
+3. **Check versions.**
+   The installed version of each extension is compared with the registry release using semantic versioning, and the difference is classified as [patch]{.bump-patch}, [minor]{.bump-minor}, or [major]{.bump-major}.
+   The [update strategy](../reference/updates.qmd#update-strategy) and the [include and exclude lists](../reference/updates.qmd#selective-updates) are applied here.
+
+4. **Process each extension.**
+   Extensions are handled one at a time so that each one can become its own pull request, unless [grouped updates](../reference/updates.qmd#grouped-updates) are enabled.
+
+5. **Apply the update.**
+   The Quarto CLI performs the installation with `quarto add owner/repo@version --no-prompt`, so the result is exactly what a local update would produce.
+
+6. **Check compatibility.**
+   The `quarto-required` field of the updated manifest is compared against the installed Quarto version, and an extension that requires a newer Quarto is skipped and reported rather than committed.
+
+7. **Track the source.**
+   The `source` field of the manifest is maintained, which is what makes the extension trackable on the next run.
+
+8. **Create or update the pull request.**
+   An open pull request is looked up by branch name and title, both of which carry the target version, so a run that finds the same version again skips it and leaves the existing pull request alone.
+   A run that finds a newer version opens a pull request of its own, and the superseded one stays open until it is merged or closed.
+
+:::
+
+## Failures do not stop the run
+
+An extension that cannot be updated does not abort the workflow.
+Failures from `quarto add` and unmet `quarto-required` constraints are collected, the remaining extensions are still processed, and the skipped ones are listed in the job summary and in the pull request body.
+See [troubleshooting](../reference/troubleshooting.qmd#extensions-skipped) for what to do about them.

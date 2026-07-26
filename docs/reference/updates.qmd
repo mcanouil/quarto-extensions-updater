@@ -1,0 +1,123 @@
+---
+title: "Update selection"
+description: "How the update strategy, include and exclude lists, grouped updates, and multi-directory scanning decide which extensions are updated and how they are packaged."
+subtitle: "Which extensions are updated, and how the updates are packaged."
+---
+
+## Update strategy {#update-strategy}
+
+`update-strategy` controls which types of update are applied, based on semantic versioning:
+
+- `all` (default) applies every update, whatever its type.
+- `minor` applies [minor]{.bump-minor} and [patch]{.bump-patch} updates, and skips [major]{.bump-major} breaking changes.
+- `patch` applies [patch]{.bump-patch} updates only.
+
+Only apply safe patch updates:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "patch"
+```
+
+Avoid breaking changes:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor"
+```
+
+### Combining with auto-merge
+
+The update strategy works independently from the [auto-merge strategy](auto-merge.qmd):
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    update-strategy: "minor" # Only check for minor and patch updates
+    auto-merge: true
+    auto-merge-strategy: "patch" # Auto-merge only patch updates
+```
+
+In this configuration:
+
+- Only minor and patch updates are detected, and major updates are skipped entirely.
+- Of those updates, only patch updates are merged automatically.
+- Minor updates create pull requests that wait for review.
+
+## Selective updates {#selective-updates}
+
+`include-extensions` and `exclude-extensions` take comma-separated `owner/name` lists.
+
+Update only certain extensions:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    include-extensions: "mcanouil/iconify,quarto-ext/lightbox"
+```
+
+Every other extension is ignored.
+
+Exclude certain extensions, for example to pin a version:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    exclude-extensions: "quarto-ext/fancy-text,owner/unstable-extension"
+```
+
+Both filters can be combined, and the exclusion wins when an extension appears in both:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    include-extensions: "mcanouil/iconify,quarto-ext/lightbox,quarto-ext/fancy-text"
+    exclude-extensions: "quarto-ext/fancy-text"
+```
+
+Here, only `mcanouil/iconify` and `quarto-ext/lightbox` are updated.
+
+## Grouped updates {#grouped-updates}
+
+By default the action creates one pull request per extension, which keeps each update reviewable on its own.
+Setting `group-updates` combines them instead:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    group-updates: true
+```
+
+When grouping is enabled:
+
+- All extension updates go into a single pull request.
+- The title reflects the number of extensions being updated.
+- The body lists the updates grouped by type.
+- Auto-merge is only enabled when every extension in the group qualifies under the auto-merge strategy.
+
+## Multi-directory scanning {#multi-directory-scanning}
+
+By default only the workspace root is scanned for `_extensions`.
+A repository holding several Quarto sub-projects can list them all through `scan-directories`:
+
+```yaml
+- uses: mcanouil/quarto-extensions-updater@v2
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    scan-directories: |
+      .
+      slides
+      exercises
+```
+
+Paths are relative to `workspace-path`.
+Each directory is scanned independently, and duplicates are removed when the directories overlap.
