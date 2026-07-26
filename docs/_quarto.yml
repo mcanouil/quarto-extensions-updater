@@ -90,9 +90,9 @@ extensions:
     widget:
       enabled: true
       extra-links:
-        - text: "Marketplace listing"
-          href: "https://github.com/marketplace/actions/quarto-extensions-updater"
-          icon: package
+        - text: "Releases"
+          href: "https://github.com/mcanouil/quarto-extensions-updater/releases"
+          icon: tag
         - text: "Changelog"
           href: "https://github.com/mcanouil/quarto-extensions-updater/blob/main/CHANGELOG.md"
           icon: history
