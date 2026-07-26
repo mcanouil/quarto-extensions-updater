@@ -3,6 +3,7 @@ title: "Page not found"
 description: "The requested page of the Quarto Extensions Updater documentation does not exist or has moved."
 toc: false
 sidebar: false
+canonical-url: false
 ---
 
 ::: {.atelier-404}
