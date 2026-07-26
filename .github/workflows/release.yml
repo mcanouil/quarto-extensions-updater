@@ -143,9 +143,12 @@ jobs:
             NEW_MAJOR=$(echo ${NEW_VERSION} | cut -d. -f1)
             sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" README.md
             sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" .github/DISCUSSION_TEMPLATE/q-a.yml
+            # The documentation website generates its prose references from
+            # package.json, but the example workflows are literal YAML.
+            find docs -name "*.qmd" -exec sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" {} +
           fi
 
-          git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/ README.md .github/DISCUSSION_TEMPLATE/q-a.yml
+          git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/ README.md .github/DISCUSSION_TEMPLATE/q-a.yml docs/
           git commit -m "${COMMIT}" || echo "No changes to commit"
           git push --force origin ${BRANCH} || echo "No changes to push"
 
@@ -219,5 +222,5 @@ jobs:
           - Updated \`CHANGELOG.md\` to reflect version ${NEW_VERSION}
           - Created GitHub release: [v${NEW_VERSION}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${NEW_VERSION})
           - Updated major version tag: v${MAJOR_VERSION}
-          - Updated example version references in \`README.md\` and \`.github/DISCUSSION_TEMPLATE/q-a.yml\` (major bump only)
+          - Updated example version references in \`README.md\`, \`.github/DISCUSSION_TEMPLATE/q-a.yml\`, and \`docs/\` (major bump only)
           EOF
