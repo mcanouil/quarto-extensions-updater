@@ -3,8 +3,8 @@ import * as path from "path";
 import * as yaml from "js-yaml";
 import * as core from "@actions/core";
 import type { InstalledExtension, ExtensionManifest } from "@quarto-wizard/core";
-import type { ExtensionData } from "./types";
-import { QUARTO_MANIFEST_FILENAMES } from "./constants";
+import type { ExtensionData } from "./types.js";
+import { QUARTO_MANIFEST_FILENAMES } from "./constants.js";
 
 // Re-export core types for use in other modules
 export type { InstalledExtension, ExtensionManifest };

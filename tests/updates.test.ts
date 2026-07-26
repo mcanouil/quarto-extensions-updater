@@ -1,9 +1,18 @@
-import { checkForUpdates, groupUpdatesByType } from "../src/updates";
+import { jest } from "@jest/globals";
 import type { Registry } from "@quarto-wizard/core";
-import type { ExtensionUpdate, ExtensionFilterConfig } from "../src/types";
-import * as extensions from "../src/extensions";
+import type { ExtensionUpdate, ExtensionFilterConfig } from "../src/types.js";
+import { createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-jest.mock("../src/extensions");
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+jest.unstable_mockModule("../src/extensions.js", () => ({
+	findExtensionManifests: jest.fn(),
+	readExtensionManifest: jest.fn(),
+	extractExtensionInfo: jest.fn(),
+	updateManifestSource: jest.fn(),
+}));
+
+const extensions = await import("../src/extensions.js");
+const { checkForUpdates, groupUpdatesByType } = await import("../src/updates.js");
 
 describe("checkForUpdates", () => {
 	const mockRegistry: Registry = {

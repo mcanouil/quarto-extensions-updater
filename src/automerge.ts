@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import * as semver from "semver";
-import type { OctokitClient } from "./github";
-import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "./types";
+import type { OctokitClient } from "./github.js";
+import type { ExtensionUpdate, AutoMergeConfig, UpdateType, MergeMethod } from "./types.js";
 
 /**
  * Determines the type of version update based on semver

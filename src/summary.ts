@@ -1,6 +1,12 @@
 import * as core from "@actions/core";
-import { shouldAutoMerge } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig, UpdateStrategy, ExtensionFilterConfig, SkippedUpdate } from "./types";
+import { shouldAutoMerge } from "./automerge.js";
+import type {
+	ExtensionUpdate,
+	AutoMergeConfig,
+	UpdateStrategy,
+	ExtensionFilterConfig,
+	SkippedUpdate,
+} from "./types.js";
 
 /**
  * Raw configuration row with label, value, and whether it differs from the default

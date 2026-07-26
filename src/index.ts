@@ -1,15 +1,15 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import * as fs from "fs";
-import { fetchExtensionsRegistry } from "./registry";
-import { checkForUpdates } from "./updates";
-import { logUpdateSummary } from "./pr";
-import { parseInputs } from "./config";
-import { validateScanDirectories } from "./validation";
-import { generateDryRunSummary, generateCompletedSummary } from "./summary";
-import { processAllPRs } from "./prProcessor";
-import { createIssueForUpdates } from "./github";
-import type { ExtensionUpdate } from "./types";
+import { fetchExtensionsRegistry } from "./registry.js";
+import { checkForUpdates } from "./updates.js";
+import { logUpdateSummary } from "./pr.js";
+import { parseInputs } from "./config.js";
+import { validateScanDirectories } from "./validation.js";
+import { generateDryRunSummary, generateCompletedSummary } from "./summary.js";
+import { processAllPRs } from "./prProcessor.js";
+import { createIssueForUpdates } from "./github.js";
+import type { ExtensionUpdate } from "./types.js";
 
 /**
  * Validates that the workspace path exists

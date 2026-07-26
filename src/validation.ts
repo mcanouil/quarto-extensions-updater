@@ -1,14 +1,14 @@
 import * as path from "path";
 import * as fs from "fs";
-import type { AutoMergeStrategy, MergeMethod, UpdateStrategy } from "./types";
-import { ValidationError } from "./errors";
+import type { AutoMergeStrategy, MergeMethod, UpdateStrategy } from "./types.js";
+import { ValidationError } from "./errors.js";
 import {
 	VALID_MERGE_METHODS,
 	VALID_AUTO_MERGE_STRATEGIES,
 	VALID_UPDATE_STRATEGIES,
 	HTTPS_PROTOCOL,
 	INVALID_GIT_REF_CHARS,
-} from "./constants";
+} from "./constants.js";
 
 /**
  * Validates that a merge method is one of the allowed values

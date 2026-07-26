@@ -1,24 +1,51 @@
-// Mock all dependencies before importing
-jest.mock("@actions/core");
-jest.mock("fs", () => ({
-	...jest.requireActual("fs"),
-	readFileSync: jest.fn(),
-}));
-jest.mock("../src/git");
-jest.mock("../src/pr");
-jest.mock("../src/github");
-jest.mock("../src/automerge");
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate } from "../src/types.js";
+import type { PRProcessingConfig } from "../src/prProcessor.js";
+import {
+	createMockUpdate,
+	createMockOctokit,
+	createMockFs,
+	createMockActionsCore,
+} from "./__test-utils__/mockFactories.js";
 
-import * as core from "@actions/core";
-import * as fs from "fs";
-import * as github from "@actions/github";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "../src/git";
-import { generatePRTitle, generatePRBody } from "../src/pr";
-import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } from "../src/github";
-import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "../src/automerge";
-import { processPRForUpdateGroup, processAllPRs, type PRProcessingConfig } from "../src/prProcessor";
-import type { ExtensionUpdate } from "../src/types";
-import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+jest.unstable_mockModule("fs", createMockFs);
+jest.unstable_mockModule("../src/git.js", () => ({
+	getQuartoVersion: jest.fn(),
+	deriveQuartoAddCwd: jest.fn(),
+	applyUpdates: jest.fn(),
+	createBranchName: jest.fn(),
+	createCommitMessage: jest.fn(),
+	validateModifiedFiles: jest.fn(),
+}));
+jest.unstable_mockModule("../src/pr.js", () => ({
+	generatePRTitle: jest.fn(),
+	generatePRBody: jest.fn(),
+	generatePRLabels: jest.fn(),
+	logUpdateSummary: jest.fn(),
+}));
+jest.unstable_mockModule("../src/github.js", () => ({
+	checkExistingPR: jest.fn(),
+	createOrUpdateBranch: jest.fn(),
+	requestReviewersAndAssignees: jest.fn(),
+	createOrUpdatePR: jest.fn(),
+	createCommit: jest.fn(),
+	createIssueForUpdates: jest.fn(),
+}));
+jest.unstable_mockModule("../src/automerge.js", () => ({
+	getUpdateType: jest.fn(),
+	shouldAutoMerge: jest.fn(),
+	enableAutoMerge: jest.fn(),
+	isAutoMergeEnabled: jest.fn(),
+}));
+
+const core = await import("@actions/core");
+const fs = await import("fs");
+const { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } = await import("../src/git.js");
+const { generatePRTitle, generatePRBody } = await import("../src/pr.js");
+const { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } = await import("../src/github.js");
+const { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } = await import("../src/automerge.js");
+const { processPRForUpdateGroup, processAllPRs } = await import("../src/prProcessor.js");
 
 const mockCore = jest.mocked(core);
 const mockFs = jest.mocked(fs);

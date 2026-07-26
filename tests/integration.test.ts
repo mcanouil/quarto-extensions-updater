@@ -1,11 +1,11 @@
 import * as path from "path";
 import * as fs from "fs";
-import { checkForUpdates } from "../src/updates";
-import { fetchExtensionsRegistry } from "../src/registry";
-import type { ExtensionRegistry } from "../src/types";
+import { checkForUpdates } from "../src/updates.js";
+import { fetchExtensionsRegistry } from "../src/registry.js";
+import type { ExtensionRegistry } from "../src/types.js";
 
 describe("Integration Tests - Real Quarto Extension", () => {
-	const testDir = path.join(__dirname, "..", "test-workspace");
+	const testDir = path.join(import.meta.dirname, "..", "test-workspace");
 	const extensionPath = path.join(testDir, "_extensions", "mcanouil", "iconify", "_extension.yml");
 	let registry: ExtensionRegistry;
 

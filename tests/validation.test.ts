@@ -1,5 +1,10 @@
-import * as fs from "fs";
-import {
+import { jest } from "@jest/globals";
+import { createMockFs } from "./__test-utils__/mockFactories.js";
+
+jest.unstable_mockModule("fs", createMockFs);
+
+const fs = await import("fs");
+const {
 	validateMergeMethod,
 	validateAutoMergeStrategy,
 	validateUpdateStrategy,
@@ -9,9 +14,7 @@ import {
 	parseCommaSeparatedList,
 	parseNewlineSeparatedList,
 	validateScanDirectories,
-} from "../src/validation";
-
-jest.mock("fs");
+} = await import("../src/validation.js");
 
 describe("validateMergeMethod", () => {
 	it("should accept valid merge methods", () => {

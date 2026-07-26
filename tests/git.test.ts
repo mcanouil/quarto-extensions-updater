@@ -1,37 +1,37 @@
-import { execSync } from "child_process";
-import {
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate } from "../src/types.js";
+import { createMockFs, createMockActionsCore } from "./__test-utils__/mockFactories.js";
+
+jest.unstable_mockModule("child_process", () => ({ execSync: jest.fn() }));
+jest.unstable_mockModule("fs", createMockFs);
+jest.unstable_mockModule("path", () => ({
+	join: jest.fn(),
+	dirname: jest.fn(),
+	resolve: jest.fn(),
+	isAbsolute: jest.fn(),
+	sep: "/",
+}));
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+jest.unstable_mockModule("../src/extensions.js", () => ({
+	findExtensionManifests: jest.fn(),
+	readExtensionManifest: jest.fn(),
+	extractExtensionInfo: jest.fn(),
+	updateManifestSource: jest.fn(),
+}));
+
+const { execSync } = await import("child_process");
+const fs = await import("fs");
+const path = await import("path");
+const core = await import("@actions/core");
+const { updateManifestSource, readExtensionManifest } = await import("../src/extensions.js");
+const {
 	applyUpdates,
 	getQuartoVersion,
 	createBranchName,
 	createCommitMessage,
 	validateModifiedFiles,
 	deriveQuartoAddCwd,
-} from "../src/git";
-import { updateManifestSource, readExtensionManifest } from "../src/extensions";
-import type { ExtensionUpdate } from "../src/types";
-
-// Mock modules before importing
-jest.mock("child_process");
-jest.mock("fs", () => ({
-	...jest.requireActual<typeof import("fs")>("fs"),
-	existsSync: jest.fn(),
-	readdirSync: jest.fn(),
-	readFileSync: jest.fn(),
-	promises: {
-		access: jest.fn(),
-		appendFile: jest.fn(),
-		writeFile: jest.fn(),
-		readFile: jest.fn(),
-	},
-}));
-jest.mock("path");
-jest.mock("@actions/core");
-jest.mock("../src/extensions");
-
-// Import after mocking
-import * as fs from "fs";
-import * as path from "path";
-import * as core from "@actions/core";
+} = await import("../src/git.js");
 
 const mockExecSync = execSync as jest.MockedFunction<typeof execSync>;
 const mockUpdateManifestSource = updateManifestSource as jest.MockedFunction<typeof updateManifestSource>;

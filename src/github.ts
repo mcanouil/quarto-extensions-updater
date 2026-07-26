@@ -6,9 +6,9 @@ import type {
 	AutoMergeConfig,
 	UpdateStrategy,
 	ExtensionFilterConfig,
-} from "./types";
-import { HTTP_UNPROCESSABLE_ENTITY, HTTP_NOT_FOUND, GIT_FILE_MODE_REGULAR } from "./constants";
-import { generateDryRunMarkdown } from "./summary";
+} from "./types.js";
+import { HTTP_UNPROCESSABLE_ENTITY, HTTP_NOT_FOUND, GIT_FILE_MODE_REGULAR } from "./constants.js";
+import { generateDryRunMarkdown } from "./summary.js";
 
 /** GitHub API error with status code */
 interface GitHubError extends Error {

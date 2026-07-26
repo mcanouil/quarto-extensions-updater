@@ -1,10 +1,12 @@
-import { getUpdateType, shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "../src/automerge";
-import type { ExtensionUpdate, AutoMergeConfig } from "../src/types";
-import * as core from "@actions/core";
-import * as github from "@actions/github";
-import { createMockUpdate, createMockOctokit } from "./__test-utils__/mockFactories";
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate, AutoMergeConfig } from "../src/types.js";
+import type * as github from "@actions/github";
+import { createMockUpdate, createMockOctokit, createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-jest.mock("@actions/core");
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+
+const core = await import("@actions/core");
+const { getUpdateType, shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } = await import("../src/automerge.js");
 
 type MockOctokit = ReturnType<typeof github.getOctokit>;
 

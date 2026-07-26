@@ -1,27 +1,13 @@
-// Mock modules before importing
-jest.mock("fs", () => ({
-	...jest.requireActual<typeof import("fs")>("fs"),
-	existsSync: jest.fn(),
-	readdirSync: jest.fn(),
-	readFileSync: jest.fn(),
-	writeFileSync: jest.fn(),
-	promises: {
-		access: jest.fn(),
-		appendFile: jest.fn(),
-		writeFile: jest.fn(),
-		readFile: jest.fn(),
-	},
-}));
-jest.mock("@actions/core");
+import { jest } from "@jest/globals";
+import { createMockFs, createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-import * as fs from "fs";
-import * as core from "@actions/core";
-import {
-	findExtensionManifests,
-	readExtensionManifest,
-	extractExtensionInfo,
-	updateManifestSource,
-} from "../src/extensions";
+jest.unstable_mockModule("fs", createMockFs);
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+
+const fs = await import("fs");
+const core = await import("@actions/core");
+const { findExtensionManifests, readExtensionManifest, extractExtensionInfo, updateManifestSource } =
+	await import("../src/extensions.js");
 
 const mockFs = jest.mocked(fs);
 

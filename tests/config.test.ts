@@ -1,10 +1,22 @@
-// Mock @actions/core before importing
-jest.mock("@actions/core");
-jest.mock("../src/validation");
+import { jest } from "@jest/globals";
+import { createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-import * as core from "@actions/core";
-import { parseInputs } from "../src/config";
-import {
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+jest.unstable_mockModule("../src/validation.js", () => ({
+	validateMergeMethod: jest.fn(),
+	validateAutoMergeStrategy: jest.fn(),
+	validateUpdateStrategy: jest.fn(),
+	validateWorkspacePath: jest.fn(),
+	validateRegistryUrl: jest.fn(),
+	validateBranchPrefix: jest.fn(),
+	parseCommaSeparatedList: jest.fn(),
+	parseNewlineSeparatedList: jest.fn(),
+	validateScanDirectories: jest.fn(),
+}));
+
+const core = await import("@actions/core");
+const { parseInputs } = await import("../src/config.js");
+const {
 	validateAutoMergeStrategy,
 	validateMergeMethod,
 	validateUpdateStrategy,
@@ -12,7 +24,7 @@ import {
 	validateBranchPrefix,
 	parseCommaSeparatedList,
 	parseNewlineSeparatedList,
-} from "../src/validation";
+} = await import("../src/validation.js");
 
 const mockCore = jest.mocked(core);
 const mockValidateAutoMergeStrategy = jest.mocked(validateAutoMergeStrategy);
