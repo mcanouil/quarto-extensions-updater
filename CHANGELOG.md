@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- chore(deps): bump `js-yaml` from 4 to 5, deduplicating it with `@quarto-wizard/core` and removing one copy from the bundle.
+- chore(deps): bump `eslint` and `@eslint/js` from 9 to 10.
+- chore(deps): bump `@types/node` from 24 to 26, `@vercel/ncc` from 0.38 to 0.44, and remaining development dependencies.
+- chore(deps): remove `@types/js-yaml`, superseded by the typings shipped with `js-yaml` 5.
+- ci: add the npm ecosystem to Dependabot on a monthly schedule.
+- chore(deps): update `@quarto-wizard/core` to 3.1.3 (#52).
+- chore(deps): bump `actions/setup-node` from 6 to 7 (#51).
+- chore(deps): bump `actions/checkout` from 6 to 7 (#50).
+
 ## 2.1.2 (2026-05-17)
 
 - chore(deps): update `@quarto-wizard/core` to 3.1.0 (#48).

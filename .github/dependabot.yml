@@ -6,3 +6,12 @@ updates:
       interval: "weekly"
     labels:
       - "Type: Dependencies :arrow_up:"
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "Type: Dependencies :arrow_up:"
+    ignore:
+      # Updated by .github/workflows/update-core-dependency.yml
+      - dependency-name: "@quarto-wizard/core"
