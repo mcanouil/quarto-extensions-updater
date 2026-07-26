@@ -110,11 +110,36 @@ local function escape(text)
 end
 
 --- Render a value as a code span, or as an empty string marker when unset.
+--- A value containing a backtick needs a longer fence than the run it holds,
+--- and padding spaces so the fence is not read as part of the value.
 local function code(value)
   if value == nil or value == "" then
     return "`\"\"`"
   end
-  return "`" .. value .. "`"
+  local longest = 0
+  for run in value:gmatch("`+") do
+    longest = math.max(longest, #run)
+  end
+  if longest == 0 then
+    return "`" .. value .. "`"
+  end
+  local fence = string.rep("`", longest + 1)
+  return fence .. " " .. value .. " " .. fence
+end
+
+--- Whether an input is required, from the YAML boolean spellings GitHub
+--- accepts. An unrecognised value is reported rather than silently read as
+--- optional, which is how the rest of this parser treats a surprise.
+local function is_required(value)
+  local normalised = (value or "false"):lower()
+  if normalised == "true" or normalised == "yes" or normalised == "on" then
+    return true
+  end
+  if normalised == "false" or normalised == "no" or normalised == "off" then
+    return false
+  end
+  quarto.log.warning("[action-reference] unrecognised `required` value: " .. tostring(value))
+  return false
 end
 
 local function table_blocks(rows)
@@ -139,7 +164,7 @@ local function inputs_table()
         "| `%s` | %s | %s | %s |",
         input.name,
         escape(input.description or ""),
-        input.required == "true" and "Yes" or "No",
+        is_required(input.required) and "Yes" or "No",
         code(input.default)
       )
     )
@@ -165,16 +190,18 @@ local function outputs_table()
 end
 
 --- The major version the examples should reference, from `package.json`.
+--- The span this fills sits mid-sentence, so a failure falls back to the bare
+--- repository rather than to nothing, which would leave the sentence broken.
 local function action_reference()
   local text = read_root_file("package.json")
   if not text then
-    quarto.log.warning("[action-reference] package.json not found; leaving the placeholder in place")
-    return nil
+    quarto.log.warning("[action-reference] package.json not found; using the bare repository reference")
+    return pandoc.Code(REPOSITORY)
   end
   local major = text:match('"version"%s*:%s*"(%d+)%.')
   if not major then
-    quarto.log.warning("[action-reference] no version found in package.json; leaving the placeholder in place")
-    return nil
+    quarto.log.warning("[action-reference] no version found in package.json; using the bare repository reference")
+    return pandoc.Code(REPOSITORY)
   end
   return pandoc.Code(string.format("%s@v%s", REPOSITORY, major))
 end

@@ -62,6 +62,20 @@ jobs:
         working-directory: ./docs
         run: quarto render .
 
+      # The filter that builds the reference from action.yml warns and leaves
+      # its placeholder in place when it cannot find the file, which a render
+      # alone reports as success. Fail here instead of publishing a reference
+      # page with no reference on it. Both tables have to be there, so count
+      # the tables rather than grep for a name the surrounding prose also uses.
+      - name: Check the generated action reference
+        working-directory: ./docs
+        run: |
+          tables=$(grep -c '<table' _site/reference/action.html)
+          if [ "${tables}" -lt 2 ]; then
+            echo "Expected the inputs and outputs tables, found ${tables} table(s)." >&2
+            exit 1
+          fi
+
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v6
