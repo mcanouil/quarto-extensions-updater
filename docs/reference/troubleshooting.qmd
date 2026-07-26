@@ -21,7 +21,7 @@ When the Quarto sub-projects live in sub-directories, list them through [`scan-d
 - Confirm the workflow grants `contents: write` and `pull-requests: write`.
 - Confirm `create-pr` is not `false`, and [`dry-run`](dry-run.qmd) is not `true`.
 - Check the workflow logs for API errors.
-- Check that no pull request is already open on the same branch, since the existing one is updated instead of a new one being opened.
+- Check that no pull request is already open with the same branch and title, since that update is then skipped rather than opened again.
 
 ## Extensions skipped {#extensions-skipped}
 

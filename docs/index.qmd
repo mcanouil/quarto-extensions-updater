@@ -34,7 +34,7 @@ mcanouil/gitlink is up to date (0.3.0)
 :::
 
 Each pull request carries the diff of a single extension, the release notes pulled from the upstream repository, and the update type as a label.
-Reopening the same branch on a later run updates the existing pull request rather than adding another one.
+A later run that finds the same version again leaves the open pull request alone rather than adding a duplicate.
 
 ## Minimal workflow
 

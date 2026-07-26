@@ -29,7 +29,8 @@ subtitle: "What happens between the scheduled trigger and the pull request."
    The `source` field of the manifest is maintained, which is what makes the extension trackable on the next run.
 
 8. **Create or update the pull request.**
-   A new pull request is opened when none exists for the extension, and the existing one is updated when the branch is already there, so there is at most one pull request per extension.
+   An open pull request is looked up by branch name and title, both of which carry the target version, so a run that finds the same version again skips it and leaves the existing pull request alone.
+   A run that finds a newer version opens a pull request of its own, and the superseded one stays open until it is merged or closed.
 
 :::
 

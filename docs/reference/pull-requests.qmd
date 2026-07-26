@@ -11,7 +11,9 @@ One branch is created per pull request, named from `branch-prefix`, which defaul
 - One extension: `chore/quarto-extensions/update-<owner>-<name>-<version>`, for example `chore/quarto-extensions/update-mcanouil-iconify-3.0.2`.
 - [Grouped updates](updates.qmd#grouped-updates): `chore/quarto-extensions/update-extensions-<YYYYMMDD>`.
 
-Because the branch name carries the target version, a pull request stays attached to the update it was opened for, and a later run that finds a newer version opens a new one.
+Because the branch name carries the target version, a pull request stays attached to the update it was opened for.
+An open pull request is matched on that branch name together with the exact title, and a match makes the run skip the update rather than rewrite the branch.
+A later run that finds a newer version therefore opens a pull request of its own, and the superseded one stays open until it is merged or closed.
 
 ## Titles and commit messages
 

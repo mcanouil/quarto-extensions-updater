@@ -46,7 +46,8 @@ The reference to use in a workflow is []{.action-ref}, and `workflow_dispatch` m
   Reinstalling them with a recent Quarto CLI adds the field, or it can be added by hand as described in [registry and manifests](../reference/registry.qmd#the-source-field).
 - Each remaining update produces one pull request, named after the extension and prefixed with `chore/quarto-extensions`.
 
-Subsequent runs reuse the same branch per extension, so a pull request left open is updated in place rather than duplicated.
+A later run that finds the same version again skips it, so a pull request left open is not duplicated.
+A newer version gets a pull request of its own, since the branch name carries the version it updates to.
 
 ## Try it without writing anything
 
