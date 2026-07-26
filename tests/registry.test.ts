@@ -1,17 +1,18 @@
-import { fetchExtensionsRegistry } from "../src/registry";
-import { RegistryError } from "../src/errors";
-import * as core from "@actions/core";
+import { jest } from "@jest/globals";
 import type { Registry } from "@quarto-wizard/core";
+import { createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-// Mock @actions/core
-jest.mock("@actions/core");
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
 
-// Mock @quarto-wizard/core
-jest.mock("@quarto-wizard/core", () => ({
-	fetchRegistry: jest.fn(),
+jest.unstable_mockModule("@quarto-wizard/core", () => ({
+	fetchRegistry: jest.fn<() => Promise<Registry>>(),
+	getDefaultRegistryUrl: jest.fn(),
 }));
 
-import { fetchRegistry as mockFetchRegistry } from "@quarto-wizard/core";
+const core = await import("@actions/core");
+const { fetchRegistry: mockFetchRegistry } = await import("@quarto-wizard/core");
+const { fetchExtensionsRegistry } = await import("../src/registry.js");
+const { RegistryError } = await import("../src/errors.js");
 
 describe("fetchExtensionsRegistry", () => {
 	const mockRegistry: Registry = {

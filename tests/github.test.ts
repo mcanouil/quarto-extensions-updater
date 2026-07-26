@@ -1,23 +1,19 @@
-import {
+import { jest } from "@jest/globals";
+import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types.js";
+import { createMockUpdate, createMockActionsCore } from "./__test-utils__/mockFactories.js";
+
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+
+const core = await import("@actions/core");
+const { HTTP_UNPROCESSABLE_ENTITY } = await import("../src/constants.js");
+const {
 	checkExistingPR,
 	createOrUpdateBranch,
 	createOrUpdatePR,
 	createCommit,
 	requestReviewersAndAssignees,
 	createIssueForUpdates,
-} from "../src/github";
-import type { PRAssignmentConfig, ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types";
-import { createMockUpdate } from "./__test-utils__/mockFactories";
-import { HTTP_UNPROCESSABLE_ENTITY } from "../src/constants";
-import * as core from "@actions/core";
-
-// Mock modules
-jest.mock("@actions/core");
-
-// Get actual fs for constants
-jest.mock("fs", () => ({
-	...jest.requireActual("fs"),
-}));
+} = await import("../src/github.js");
 
 // Define mock Octokit type
 interface MockOctokit {

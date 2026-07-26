@@ -1,11 +1,11 @@
 import * as core from "@actions/core";
 import * as fs from "fs";
 import * as path from "path";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git";
-import { generatePRTitle, generatePRBody } from "./pr";
-import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github";
-import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge";
-import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types";
+import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git.js";
+import { generatePRTitle, generatePRBody } from "./pr.js";
+import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github.js";
+import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge.js";
+import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types.js";
 
 /**
  * Result of processing a PR

@@ -2,9 +2,9 @@ import * as path from "path";
 import * as core from "@actions/core";
 import * as semver from "semver";
 import type { Registry, RegistryEntry } from "@quarto-wizard/core";
-import type { ExtensionUpdate, ExtensionFilterConfig, UpdateStrategy } from "./types";
-import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions";
-import { getUpdateType } from "./automerge";
+import type { ExtensionUpdate, ExtensionFilterConfig, UpdateStrategy } from "./types.js";
+import { findExtensionManifests, readExtensionManifest, extractExtensionInfo } from "./extensions.js";
+import { getUpdateType } from "./automerge.js";
 
 /**
  * Determines if an update should be applied based on the update strategy

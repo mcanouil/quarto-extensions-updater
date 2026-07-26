@@ -7,7 +7,7 @@ import {
 	validateBranchPrefix,
 	parseCommaSeparatedList,
 	parseNewlineSeparatedList,
-} from "./validation";
+} from "./validation.js";
 import {
 	DEFAULT_BASE_BRANCH,
 	DEFAULT_BRANCH_PREFIX,
@@ -15,8 +15,8 @@ import {
 	DEFAULT_COMMIT_MESSAGE_PREFIX,
 	DEFAULT_PR_LABELS,
 	LABEL_SEPARATOR,
-} from "./constants";
-import type { AutoMergeConfig, ExtensionFilterConfig, UpdateStrategy, PRAssignmentConfig } from "./types";
+} from "./constants.js";
+import type { AutoMergeConfig, ExtensionFilterConfig, UpdateStrategy, PRAssignmentConfig } from "./types.js";
 
 /**
  * Application configuration parsed from GitHub Actions inputs

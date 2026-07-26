@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { fetchRegistry as coreFetchRegistry, type Registry } from "@quarto-wizard/core";
-import { RegistryError } from "./errors";
-import { DEFAULT_REGISTRY_URL, DEFAULT_FETCH_TIMEOUT_MS } from "./constants";
+import { RegistryError } from "./errors.js";
+import { DEFAULT_REGISTRY_URL, DEFAULT_FETCH_TIMEOUT_MS } from "./constants.js";
 
 /**
  * Fetches the Quarto extensions registry using @quarto-wizard/core

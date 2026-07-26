@@ -3,7 +3,8 @@
  * This module provides factory functions to reduce duplication across test files
  */
 
-import type { ExtensionUpdate } from "../../src/types";
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate } from "../../src/types.js";
 import type * as github from "@actions/github";
 
 /**
@@ -80,6 +81,43 @@ export function createMockSummary() {
 		addRaw: jest.fn().mockReturnThis(),
 		addBreak: jest.fn().mockReturnThis(),
 		addTable: jest.fn().mockReturnThis(),
-		write: jest.fn().mockResolvedValue(undefined),
+		write: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+	};
+}
+
+/**
+ * Creates a mock of the fs module covering the surface used by src/
+ * @returns Mock module object with the four fs functions the source calls
+ */
+export function createMockFs() {
+	return {
+		existsSync: jest.fn(),
+		readdirSync: jest.fn(),
+		readFileSync: jest.fn(),
+		writeFileSync: jest.fn(),
+	};
+}
+
+/**
+ * Creates a mock of the @actions/core module.
+ *
+ * ESM has no automock equivalent to `jest.mock("@actions/core")`, so every
+ * export the source uses has to be listed explicitly for
+ * `jest.unstable_mockModule`.
+ * @returns Mock module object covering the @actions/core surface used by src/
+ */
+export function createMockActionsCore() {
+	return {
+		info: jest.fn(),
+		debug: jest.fn(),
+		warning: jest.fn(),
+		error: jest.fn(),
+		setFailed: jest.fn(),
+		getInput: jest.fn(() => ""),
+		getBooleanInput: jest.fn(() => false),
+		setOutput: jest.fn(),
+		startGroup: jest.fn(),
+		endGroup: jest.fn(),
+		summary: createMockSummary(),
 	};
 }

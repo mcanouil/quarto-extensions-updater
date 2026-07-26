@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- chore(deps): bump `@actions/core` from 1 to 3 and `@actions/github` from 6 to 9, clearing every `undici` advisory reported for the action.
+- refactor: build the action as an ES module, required by `@actions/core` 3 and `@actions/github` 9.
 - chore(deps): bump `js-yaml` from 4 to 5, deduplicating it with `@quarto-wizard/core` and removing one copy from the bundle.
 - chore(deps): bump `eslint` and `@eslint/js` from 9 to 10.
 - chore(deps): bump `@types/node` from 24 to 26, `@vercel/ncc` from 0.38 to 0.44, and remaining development dependencies.

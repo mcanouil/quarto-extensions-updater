@@ -1,18 +1,24 @@
-// Mock @actions/core before importing
-jest.mock("@actions/core");
-jest.mock("../src/automerge");
-
-import * as core from "@actions/core";
-import { shouldAutoMerge } from "../src/automerge";
-import { generateDryRunSummary, generateCompletedSummary, generateDryRunMarkdown } from "../src/summary";
-import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types";
-import { createMockUpdate, createMockSummary } from "./__test-utils__/mockFactories";
-
-const mockCore = jest.mocked(core);
-const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate, AutoMergeConfig, ExtensionFilterConfig } from "../src/types.js";
+import { createMockUpdate, createMockSummary, createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
 // Mock the summary API
 const mockSummary = createMockSummary();
+
+jest.unstable_mockModule("@actions/core", () => ({ ...createMockActionsCore(), summary: mockSummary }));
+jest.unstable_mockModule("../src/automerge.js", () => ({
+	getUpdateType: jest.fn(),
+	shouldAutoMerge: jest.fn(),
+	enableAutoMerge: jest.fn(),
+	isAutoMergeEnabled: jest.fn(),
+}));
+
+const core = await import("@actions/core");
+const { shouldAutoMerge } = await import("../src/automerge.js");
+const { generateDryRunSummary, generateCompletedSummary, generateDryRunMarkdown } = await import("../src/summary.js");
+
+const mockCore = jest.mocked(core);
+const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 
 describe("generateDryRunMarkdown", () => {
 	const createUpdate = createMockUpdate;
@@ -139,7 +145,6 @@ describe("generateDryRunSummary", () => {
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockCore.summary = mockSummary as unknown as typeof core.summary;
 		mockShouldAutoMerge.mockReturnValue(false);
 	});
 
@@ -211,7 +216,6 @@ describe("generateCompletedSummary", () => {
 
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockCore.summary = mockSummary as unknown as typeof core.summary;
 		mockShouldAutoMerge.mockReturnValue(false);
 	});
 

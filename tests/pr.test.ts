@@ -1,10 +1,12 @@
-import { generatePRTitle, generatePRBody, generatePRLabels, logUpdateSummary } from "../src/pr";
-import { ExtensionUpdate } from "../src/types";
-import * as core from "@actions/core";
-import * as github from "@actions/github";
+import { jest } from "@jest/globals";
+import type { ExtensionUpdate } from "../src/types.js";
+import type * as github from "@actions/github";
+import { createMockActionsCore } from "./__test-utils__/mockFactories.js";
 
-// Mock @actions/core
-jest.mock("@actions/core");
+jest.unstable_mockModule("@actions/core", createMockActionsCore);
+
+const core = await import("@actions/core");
+const { generatePRTitle, generatePRBody, generatePRLabels, logUpdateSummary } = await import("../src/pr.js");
 
 // Mock GitHub Octokit
 const mockOctokit = {

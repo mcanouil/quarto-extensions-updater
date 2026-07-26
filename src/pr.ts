@@ -1,8 +1,8 @@
 import * as core from "@actions/core";
-import type { OctokitClient } from "./github";
-import type { ExtensionUpdate, SkippedUpdate } from "./types";
-import { groupUpdatesByType } from "./updates";
-import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants";
+import type { OctokitClient } from "./github.js";
+import type { ExtensionUpdate, SkippedUpdate } from "./types.js";
+import { groupUpdatesByType } from "./updates.js";
+import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants.js";
 
 /**
  * Fetches release notes for a specific release

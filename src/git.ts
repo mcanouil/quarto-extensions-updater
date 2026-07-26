@@ -3,8 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import * as semver from "semver";
-import type { ExtensionUpdate, ApplyUpdatesResult } from "./types";
-import { updateManifestSource, readExtensionManifest } from "./extensions";
+import type { ExtensionUpdate, ApplyUpdatesResult } from "./types.js";
+import { updateManifestSource, readExtensionManifest } from "./extensions.js";
 
 /**
  * Gets the installed Quarto CLI version
