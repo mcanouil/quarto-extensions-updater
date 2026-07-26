@@ -6,6 +6,7 @@
 import { jest } from "@jest/globals";
 import type { ExtensionUpdate } from "../../src/types.js";
 import type * as github from "@actions/github";
+import type * as actionsCore from "@actions/core";
 
 /**
  * Creates a mock ExtensionUpdate object for testing
@@ -113,8 +114,8 @@ export function createMockActionsCore() {
 		warning: jest.fn(),
 		error: jest.fn(),
 		setFailed: jest.fn(),
-		getInput: jest.fn(() => ""),
-		getBooleanInput: jest.fn(() => false),
+		getInput: jest.fn<typeof actionsCore.getInput>(),
+		getBooleanInput: jest.fn<typeof actionsCore.getBooleanInput>(),
 		setOutput: jest.fn(),
 		startGroup: jest.fn(),
 		endGroup: jest.fn(),
