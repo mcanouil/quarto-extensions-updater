@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.0 (2026-07-31)
 
 - docs: add a documentation website at <https://m.canouil.dev/quarto-extensions-updater>, built with Quarto and deployed to GitHub Pages; the inputs and outputs reference is generated from `action.yml` at render time.
 - docs: reduce `README.md` to a landing page pointing at the documentation website.
