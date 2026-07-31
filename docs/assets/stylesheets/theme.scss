@@ -1,19 +1,16 @@
+/*-- scss:defaults --*/
+
+// How the navbar, the footer, and the sidebar follow the colour scheme.
+// `auto` derives them from _brand.yml, so each bundle gets its own chrome and
+// the bars move with the toggle; `dark` or `light` pins them to one palette in
+// both. Pinning takes literal hex here, since this sheet's defaults are
+// emitted before the ones _brand.yml generates and `$brand-*` is not yet
+// defined at this point.
+$atelier-chrome: auto;
+
 /*-- scss:rules --*/
 
-// Pin the dark navbar and footer surfaces to the palette from _brand.yml.
-// Atelier defaults these tokens to a neutral slate and bridges them onto the
-// gitlink widget, so overriding them here is enough for both bars. The values
-// come from the brand palette rather than repeated literals, so the site has a
-// single source of truth for its colours.
 :root {
-  --atelier-navbar-bg: #{$brand-graphite};
-  --atelier-navbar-surface: #{$brand-graphite-2};
-  --atelier-navbar-fg: #{$brand-mist};
-  --atelier-navbar-muted: #{$brand-mist-muted};
-  --atelier-navbar-accent: #{$brand-teal};
-  --atelier-navbar-accent-soft: #{rgba($brand-teal, 0.16)};
-  --atelier-navbar-border: #{rgba($brand-mist, 0.14)};
-
   // Outfit is geometric and reads better with negative tracking than the
   // positive default tuned for the fallback stack.
   --atelier-heading-letter-spacing: -0.012em;
