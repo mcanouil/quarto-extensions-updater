@@ -1,15 +1,22 @@
 website:
   sidebar:
+    # No shortcode in the `contents` labels below. Quarto renders a sidebar
+    # label by substituting the rendered markdown back onto the element, keyed
+    # by that element's own innerHTML, which the DOM has HTML-escaped by then.
+    # A shortcode carries `<` and `>`, so the key never matches: the label
+    # loses whatever the shortcode produced, and the breadcrumb built from the
+    # same text keeps the shortcode verbatim. The `title` below is exempt
+    # because Quarto only renders a sidebar header when the site has no navbar.
     - id: getting-started
       title: "{{< iconify octicon:rocket-16 title='Getting started' label='Getting started' >}} Getting started"
       style: floating
       collapse-level: 2
       contents:
-        - text: "{{< iconify octicon:compass-16 title='Overview' label='Overview' >}} Overview"
+        - text: "Overview"
           href: getting-started/index.qmd
-        - text: "{{< iconify octicon:play-16 title='Quick start' label='Quick start' >}} Quick start"
+        - text: "Quick start"
           href: getting-started/quick-start.qmd
-        - text: "{{< iconify octicon:workflow-16 title='How it works' label='How it works' >}} How it works"
+        - text: "How it works"
           href: getting-started/how-it-works.qmd
-        - text: "{{< iconify octicon:code-square-16 title='Recipes' label='Recipes' >}} Recipes"
+        - text: "Recipes"
           href: getting-started/recipes.qmd
