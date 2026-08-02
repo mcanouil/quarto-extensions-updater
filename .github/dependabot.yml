@@ -3,15 +3,25 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "cron"
+      cronjob: "00 12 1 * *"
     labels:
       - "Type: Dependencies :arrow_up:"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "cron"
+      cronjob: "00 12 1 * *"
     labels:
       - "Type: Dependencies :arrow_up:"
     ignore:
       # Updated by .github/workflows/update-core-dependency.yml
       - dependency-name: "@quarto-wizard/core"
+    groups:
+      npm:
+        patterns:
+          - "*"
