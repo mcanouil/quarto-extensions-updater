@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- ci: run the action from the checked-out working tree in `quarto-extensions-updater.yml` instead of a pinned release, so every scheduled run exercises the code on `main`.
-- chore(deps): update `@quarto-wizard/core` to 3.2.0 (#68).
-- chore(deps): bump `typescript` from 5 to 6 and `@types/node` to 26.1.2 (#67).
-- ci: schedule Dependabot on the first of the month, with `github-actions` and `npm` updates grouped into a single pull request each.
-- chore(deps): update the documentation extensions `mcanouil/gitlink` to 1.9.1 and `mcanouil/atelier` to 0.10.1 (#62, #63).
+- ci: run the action from the checked-out working tree in `quarto-extensions-updater.yml` rather than a pinned release, so each scheduled run exercises the code on `main`; the reference no longer trails the latest tag by a release, and Dependabot no longer has to bump it (#66).
+- ci: schedule Dependabot on the first of the month, grouping the `github-actions` and `npm` ecosystems into one pull request each.
+- chore(deps): update `@quarto-wizard/core` to 3.2.0 (#68). The release removes `findAllExtensionRoots()` and `writeManifest()`; the action consumes only `fetchRegistry()`, `getDefaultRegistryUrl()`, and the manifest and registry types, so neither removal reaches it.
+- chore(deps): bump `typescript` from 5 to 6 and `@types/node` to 26.1.2 (#67). The bundle in `dist/` is byte for byte identical under the new compiler.
+- chore(deps): update the documentation extensions vendored in `docs/`, `mcanouil/gitlink` to 1.9.1 and `mcanouil/atelier` to 0.10.1, through the action's own scheduled run (#62, #63).
 
 ## 2.2.0 (2026-07-31)
 
