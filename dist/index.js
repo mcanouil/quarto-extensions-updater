@@ -893,13 +893,16 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.detectArchiveFormat = detectArchiveFormat;
 exports.extractArchive = extractArchive;
 exports.findExtensionRoot = findExtensionRoot;
-exports.findAllExtensionRoots = findAllExtensionRoots;
+exports.readArchiveExtensions = readArchiveExtensions;
 exports.cleanupExtraction = cleanupExtraction;
 const fs = __importStar(__nccwpck_require__(3024));
 const path = __importStar(__nccwpck_require__(6760));
 const os = __importStar(__nccwpck_require__(8161));
 const errors_js_1 = __nccwpck_require__(2356);
 const manifest_js_1 = __nccwpck_require__(4222);
+const discovery_js_1 = __nccwpck_require__(9757);
+const quartoignore_js_1 = __nccwpck_require__(7005);
+const walk_js_1 = __nccwpck_require__(1898);
 const zip_js_1 = __nccwpck_require__(1645);
 const tar_js_1 = __nccwpck_require__(2477);
 /**
@@ -964,6 +967,17 @@ async function fileExists(filePath) {
 /** Maximum recursion depth for findExtensionRoot to prevent stack overflow on crafted archives. */
 const MAX_FIND_DEPTH = 5;
 /**
+ * Check whether a directory holds an extension manifest.
+ */
+async function hasManifestFile(directory) {
+    for (const name of manifest_js_1.MANIFEST_FILENAMES) {
+        if (await fileExists(path.join(directory, name))) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
  * Find the extension root in an extracted archive.
  *
  * GitHub archives typically have a top-level directory like "repo-tag/".
@@ -977,21 +991,15 @@ async function findExtensionRoot(extractDir, depth = 0) {
     if (depth > MAX_FIND_DEPTH) {
         return null;
     }
-    for (const name of manifest_js_1.MANIFEST_FILENAMES) {
-        const directPath = path.join(extractDir, name);
-        if (await fileExists(directPath)) {
-            return extractDir;
-        }
+    if (await hasManifestFile(extractDir)) {
+        return extractDir;
     }
     const entries = await fs.promises.readdir(extractDir, { withFileTypes: true });
     const directories = entries.filter((e) => e.isDirectory());
     for (const dir of directories) {
         const dirPath = path.join(extractDir, dir.name);
-        for (const name of manifest_js_1.MANIFEST_FILENAMES) {
-            const manifestPath = path.join(dirPath, name);
-            if (await fileExists(manifestPath)) {
-                return dirPath;
-            }
+        if (await hasManifestFile(dirPath)) {
+            return dirPath;
         }
     }
     for (const dir of directories) {
@@ -1012,7 +1020,7 @@ async function findExtensionRoot(extractDir, depth = 0) {
 function deriveExtensionIdFromPath(extensionPath, extractDir) {
     const relativePath = path.relative(extractDir, extensionPath);
     const parts = relativePath.split(path.sep);
-    const extensionsIndex = parts.lastIndexOf("_extensions");
+    const extensionsIndex = parts.lastIndexOf(discovery_js_1.EXTENSIONS_DIR);
     if (extensionsIndex >= 0 && parts.length > extensionsIndex + 1) {
         const afterExtensions = parts.slice(extensionsIndex + 1);
         if (afterExtensions.length >= 2) {
@@ -1026,32 +1034,76 @@ function deriveExtensionIdFromPath(extensionPath, extractDir) {
     return { owner: null, name: parts[parts.length - 1] };
 }
 /**
- * Find all extension roots in an extracted archive.
+ * Resolve the repository root inside an extraction directory.
+ *
+ * GitHub archives wrap everything in a single top-level directory such as `repo-tag/`.
+ * That wrapper is stripped so `.quartoignore` and `_extensions/` are looked up where the
+ * repository actually declares them. A sole `_extensions/` entry is not a wrapper, and
+ * neither is a directory that is itself an extension.
+ *
+ * @param extractDir - Extraction directory
+ * @returns Path to the repository root
+ */
+async function resolveArchiveRoot(extractDir) {
+    if (await hasManifestFile(extractDir)) {
+        return extractDir;
+    }
+    let entries;
+    try {
+        entries = await fs.promises.readdir(extractDir, { withFileTypes: true });
+    }
+    catch {
+        return extractDir;
+    }
+    if (entries.length !== 1 || !entries[0].isDirectory() || entries[0].name === discovery_js_1.EXTENSIONS_DIR) {
+        return extractDir;
+    }
+    return path.join(extractDir, entries[0].name);
+}
+/**
+ * Narrow a list, but never to nothing.
+ *
+ * The primary-host and `.quartoignore` rules both express a preference rather than a hard
+ * requirement: a repository that keeps its only extension in an ignored location must still
+ * be installable.
+ */
+function narrowKeepingNonEmpty(items, keep) {
+    const narrowed = items.filter(keep);
+    return narrowed.length > 0 ? narrowed : items;
+}
+/**
+ * Read the extensions an extracted archive offers, and the repository root they came from.
  *
  * Unlike findExtensionRoot which returns the first match, this function
  * finds all extensions in the archive, useful for repositories that
  * contain multiple extensions.
  *
+ * The repository's own `_extensions/` is the primary host: when it holds at least one
+ * extension, extensions found elsewhere in the archive are ignored, so a vendored copy
+ * under `docs/_extensions/` is not offered for installation. Paths matched by the
+ * repository's `.quartoignore` are dropped as well. Neither rule is allowed to empty the
+ * result, so an archive that only ships extensions in ignored locations still installs.
+ * `discoverQuartoProjectRoots` in the extension host applies the same two rules to a
+ * workspace folder; it checks the host first so it can skip scanning entirely, which is an
+ * ordering the fallback below makes immaterial.
+ *
  * @param extractDir - Extraction directory
- * @returns Array of discovered extensions
+ * @returns The repository root and the extensions on offer
  */
-async function findAllExtensionRoots(extractDir) {
+async function readArchiveExtensions(extractDir) {
     const results = [];
     async function searchDirectory(dir, depth = 0) {
         if (depth > MAX_FIND_DEPTH) {
             return;
         }
         // Check for manifest in current directory
-        for (const name of manifest_js_1.MANIFEST_FILENAMES) {
-            const manifestPath = path.join(dir, name);
-            if (await fileExists(manifestPath)) {
-                // Found an extension, derive its ID from path
-                const id = deriveExtensionIdFromPath(dir, extractDir);
-                const relativePath = path.relative(extractDir, dir);
-                results.push({ path: dir, relativePath, id });
-                // Don't search subdirectories of an extension
-                return;
-            }
+        if (await hasManifestFile(dir)) {
+            // Found an extension, derive its ID from path
+            const id = deriveExtensionIdFromPath(dir, extractDir);
+            const relativePath = path.relative(extractDir, dir);
+            results.push({ path: dir, relativePath, id });
+            // Don't search subdirectories of an extension
+            return;
         }
         // Search subdirectories
         const entries = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -1062,7 +1114,14 @@ async function findAllExtensionRoots(extractDir) {
         }
     }
     await searchDirectory(extractDir);
-    return results;
+    const root = await resolveArchiveRoot(extractDir);
+    if (results.length === 0) {
+        return { root, extensions: [] };
+    }
+    const ignorePatterns = (0, quartoignore_js_1.readQuartoIgnore)(root);
+    const hostDir = (0, discovery_js_1.getExtensionsDir)(root);
+    const kept = narrowKeepingNonEmpty(results, (ext) => !(0, quartoignore_js_1.isQuartoIgnored)(ignorePatterns, (0, walk_js_1.toRelativePosixPath)(root, ext.path)));
+    return { root, extensions: narrowKeepingNonEmpty(kept, (ext) => (0, walk_js_1.isInside)(hostDir, ext.path)) };
 }
 /**
  * Clean up a temporary extraction directory.
@@ -1091,7 +1150,7 @@ async function cleanupExtraction(extractDir) {
  * Archive module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.cleanupExtraction = exports.findAllExtensionRoots = exports.findExtensionRoot = exports.extractArchive = exports.detectArchiveFormat = exports.extractTar = exports.extractZip = exports.validateUrlProtocol = exports.formatSize = exports.checkPathTraversal = void 0;
+exports.cleanupExtraction = exports.readArchiveExtensions = exports.findExtensionRoot = exports.extractArchive = exports.detectArchiveFormat = exports.extractTar = exports.extractZip = exports.validateUrlProtocol = exports.formatSize = exports.checkPathTraversal = void 0;
 var security_js_1 = __nccwpck_require__(5118);
 Object.defineProperty(exports, "checkPathTraversal", ({ enumerable: true, get: function () { return security_js_1.checkPathTraversal; } }));
 Object.defineProperty(exports, "formatSize", ({ enumerable: true, get: function () { return security_js_1.formatSize; } }));
@@ -1104,7 +1163,7 @@ var extract_js_1 = __nccwpck_require__(927);
 Object.defineProperty(exports, "detectArchiveFormat", ({ enumerable: true, get: function () { return extract_js_1.detectArchiveFormat; } }));
 Object.defineProperty(exports, "extractArchive", ({ enumerable: true, get: function () { return extract_js_1.extractArchive; } }));
 Object.defineProperty(exports, "findExtensionRoot", ({ enumerable: true, get: function () { return extract_js_1.findExtensionRoot; } }));
-Object.defineProperty(exports, "findAllExtensionRoots", ({ enumerable: true, get: function () { return extract_js_1.findAllExtensionRoots; } }));
+Object.defineProperty(exports, "readArchiveExtensions", ({ enumerable: true, get: function () { return extract_js_1.readArchiveExtensions; } }));
 Object.defineProperty(exports, "cleanupExtraction", ({ enumerable: true, get: function () { return extract_js_1.cleanupExtraction; } }));
 //# sourceMappingURL=index.js.map
 
@@ -1953,7 +2012,7 @@ function getExtensionInstallPath(projectDir, extensionId) {
  * Filesystem module exports.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.pathExists = exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.EXTENSIONS_DIR = exports.updateManifestSource = exports.writeManifest = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = exports.MANIFEST_FILENAMES = void 0;
+exports.quartoIgnoreGlobs = exports.isQuartoIgnored = exports.readQuartoIgnore = exports.QUARTOIGNORE_FILENAME = exports.isInside = exports.toRelativePosixPath = exports.pathExists = exports.copyDirectory = exports.collectFiles = exports.walkDirectory = exports.getExtensionInstallPath = exports.findInstalledExtension = exports.discoverInstalledExtensionsSync = exports.discoverInstalledExtensions = exports.hasExtensionsDir = exports.getExtensionsDir = exports.EXTENSIONS_DIR = exports.updateManifestSource = exports.hasManifest = exports.readManifest = exports.parseManifestContent = exports.parseManifestFile = exports.findManifestFile = exports.MANIFEST_FILENAMES = void 0;
 var manifest_js_1 = __nccwpck_require__(4222);
 Object.defineProperty(exports, "MANIFEST_FILENAMES", ({ enumerable: true, get: function () { return manifest_js_1.MANIFEST_FILENAMES; } }));
 Object.defineProperty(exports, "findManifestFile", ({ enumerable: true, get: function () { return manifest_js_1.findManifestFile; } }));
@@ -1961,7 +2020,6 @@ Object.defineProperty(exports, "parseManifestFile", ({ enumerable: true, get: fu
 Object.defineProperty(exports, "parseManifestContent", ({ enumerable: true, get: function () { return manifest_js_1.parseManifestContent; } }));
 Object.defineProperty(exports, "readManifest", ({ enumerable: true, get: function () { return manifest_js_1.readManifest; } }));
 Object.defineProperty(exports, "hasManifest", ({ enumerable: true, get: function () { return manifest_js_1.hasManifest; } }));
-Object.defineProperty(exports, "writeManifest", ({ enumerable: true, get: function () { return manifest_js_1.writeManifest; } }));
 Object.defineProperty(exports, "updateManifestSource", ({ enumerable: true, get: function () { return manifest_js_1.updateManifestSource; } }));
 var discovery_js_1 = __nccwpck_require__(9757);
 Object.defineProperty(exports, "EXTENSIONS_DIR", ({ enumerable: true, get: function () { return discovery_js_1.EXTENSIONS_DIR; } }));
@@ -1976,6 +2034,13 @@ Object.defineProperty(exports, "walkDirectory", ({ enumerable: true, get: functi
 Object.defineProperty(exports, "collectFiles", ({ enumerable: true, get: function () { return walk_js_1.collectFiles; } }));
 Object.defineProperty(exports, "copyDirectory", ({ enumerable: true, get: function () { return walk_js_1.copyDirectory; } }));
 Object.defineProperty(exports, "pathExists", ({ enumerable: true, get: function () { return walk_js_1.pathExists; } }));
+Object.defineProperty(exports, "toRelativePosixPath", ({ enumerable: true, get: function () { return walk_js_1.toRelativePosixPath; } }));
+Object.defineProperty(exports, "isInside", ({ enumerable: true, get: function () { return walk_js_1.isInside; } }));
+var quartoignore_js_1 = __nccwpck_require__(7005);
+Object.defineProperty(exports, "QUARTOIGNORE_FILENAME", ({ enumerable: true, get: function () { return quartoignore_js_1.QUARTOIGNORE_FILENAME; } }));
+Object.defineProperty(exports, "readQuartoIgnore", ({ enumerable: true, get: function () { return quartoignore_js_1.readQuartoIgnore; } }));
+Object.defineProperty(exports, "isQuartoIgnored", ({ enumerable: true, get: function () { return quartoignore_js_1.isQuartoIgnored; } }));
+Object.defineProperty(exports, "quartoIgnoreGlobs", ({ enumerable: true, get: function () { return quartoignore_js_1.quartoIgnoreGlobs; } }));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -2032,7 +2097,6 @@ exports.parseManifestFile = parseManifestFile;
 exports.parseManifestContent = parseManifestContent;
 exports.readManifest = readManifest;
 exports.hasManifest = hasManifest;
-exports.writeManifest = writeManifest;
 exports.updateManifestSource = updateManifestSource;
 const fs = __importStar(__nccwpck_require__(3024));
 const path = __importStar(__nccwpck_require__(6760));
@@ -2057,6 +2121,24 @@ function findManifestFile(directory) {
     return null;
 }
 /**
+ * Read a manifest file as text.
+ *
+ * @param manifestPath - Full path to the manifest file
+ * @returns File content
+ * @throws ManifestError if the file cannot be read
+ */
+function readManifestContent(manifestPath) {
+    try {
+        return fs.readFileSync(manifestPath, "utf-8");
+    }
+    catch (error) {
+        throw new errors_js_1.ManifestError(`Failed to read manifest file: ${(0, errors_js_1.getErrorMessage)(error)}`, {
+            manifestPath,
+            cause: error,
+        });
+    }
+}
+/**
  * Parse a manifest file from a path.
  *
  * @param manifestPath - Full path to the manifest file
@@ -2064,19 +2146,7 @@ function findManifestFile(directory) {
  * @throws ManifestError if parsing fails
  */
 function parseManifestFile(manifestPath) {
-    try {
-        const content = fs.readFileSync(manifestPath, "utf-8");
-        return parseManifestContent(content, manifestPath);
-    }
-    catch (error) {
-        if (error instanceof errors_js_1.ManifestError) {
-            throw error;
-        }
-        throw new errors_js_1.ManifestError(`Failed to read manifest file: ${(0, errors_js_1.getErrorMessage)(error)}`, {
-            manifestPath,
-            cause: error,
-        });
-    }
+    return parseManifestContent(readManifestContent(manifestPath), manifestPath);
 }
 /**
  * Parse manifest content from a YAML string.
@@ -2134,72 +2204,303 @@ function hasManifest(directory) {
     return findManifestFile(directory) !== null;
 }
 /**
- * Write a manifest to a file.
- *
- * @param manifestPath - Path to write the manifest
- * @param manifest - Manifest data to write
+ * Split content into lines, keeping each line's own terminator so that mixed
+ * or non-native line endings survive a round trip.
  */
-function writeManifest(manifestPath, manifest) {
-    const raw = {
-        title: manifest.title,
-        author: manifest.author,
-        version: manifest.version,
-    };
-    if (manifest.quartoRequired) {
-        raw["quarto-required"] = manifest.quartoRequired;
-    }
-    if (manifest.source) {
-        raw.source = manifest.source;
-    }
-    if (manifest.sourceType) {
-        raw["source-type"] = manifest.sourceType;
-    }
-    const contributes = {};
-    if (manifest.contributes.filter?.length) {
-        contributes.filters = manifest.contributes.filter;
-    }
-    if (manifest.contributes.shortcode?.length) {
-        contributes.shortcodes = manifest.contributes.shortcode;
-    }
-    if (manifest.contributes.format && Object.keys(manifest.contributes.format).length) {
-        contributes.formats = manifest.contributes.format;
-    }
-    if (manifest.contributes.project) {
-        contributes.project = manifest.contributes.project;
-    }
-    if (manifest.contributes.revealjsPlugin?.length) {
-        contributes["revealjs-plugins"] = manifest.contributes.revealjsPlugin;
-    }
-    if (manifest.contributes.metadata) {
-        contributes.metadata = manifest.contributes.metadata;
-    }
-    if (Object.keys(contributes).length > 0) {
-        raw.contributes = contributes;
-    }
-    const content = yaml.dump(raw, {
-        indent: 2,
-        lineWidth: 120,
-        noRefs: true,
-        sortKeys: false,
+function splitLines(content) {
+    return content.split(/(?<=\n)/).map((part) => {
+        const match = /\r?\n$/.exec(part);
+        return match ? { text: part.slice(0, match.index), eol: match[0] } : { text: part, eol: "" };
     });
-    fs.writeFileSync(manifestPath, content, "utf-8");
+}
+function joinLines(lines) {
+    return lines.map((line) => line.text + line.eol).join("");
+}
+/** Blank lines, comments, and directives carry no mapping content. */
+function isIgnorableLine(text) {
+    const trimmed = text.trim();
+    return trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("%");
 }
 /**
- * Update the source field in an existing manifest file.
+ * Whether a line is the given document marker, `---` or `...`, on its own or
+ * followed by a comment.
+ */
+function isDocumentMarker(text, marker) {
+    return text === marker || text.startsWith(`${marker} `) || text.startsWith(`${marker}\t`);
+}
+/**
+ * Serialise a scalar with js-yaml so that values needing quotes get them,
+ * and plain values such as `owner/repo@v1.2.3` stay unquoted.
+ */
+function formatScalar(value) {
+    return yaml.dump(value, { lineWidth: -1 }).replace(/\n$/, "");
+}
+/**
+ * Index of the first line of the first document's root mapping.
+ * Skips leading comments, directives, and an opening document separator.
+ * A Quarto manifest holds none of those, but this patcher edits a file it
+ * does not own, so they are read rather than assumed away.
+ */
+function findRootStart(lines) {
+    let index = 0;
+    while (index < lines.length && isIgnorableLine(lines[index].text)) {
+        index++;
+    }
+    if (index < lines.length && isDocumentMarker(lines[index].text, "---")) {
+        index++;
+        while (index < lines.length && isIgnorableLine(lines[index].text)) {
+            index++;
+        }
+    }
+    return index;
+}
+/**
+ * Exclusive index of the end of the first document, so that a second document
+ * in the same file is never patched.
+ */
+function findRootEnd(lines, start) {
+    for (let index = start; index < lines.length; index++) {
+        const { text } = lines[index];
+        if (isDocumentMarker(text, "---") || isDocumentMarker(text, "...")) {
+            return index;
+        }
+    }
+    return lines.length;
+}
+/**
+ * Exclusive index of the last line belonging to the value that starts at
+ * `from`, covering block scalars and multi-line plain scalars.
+ */
+function findValueEnd(lines, from, end) {
+    let last = from;
+    for (let index = from; index < end; index++) {
+        const { text } = lines[index];
+        if (text.trim() === "") {
+            continue;
+        }
+        if (/^\s/.test(text)) {
+            last = index + 1;
+            continue;
+        }
+        break;
+    }
+    return last;
+}
+/**
+ * Upsert a top-level scalar key, leaving every other byte of the document
+ * untouched. A missing key is appended at the end of the first document; an
+ * existing one is replaced where it stands.
+ *
+ * Zero indentation is a safe anchor for the key: nested mappings and block
+ * scalar bodies must be indented past their parent, so a `source:` under
+ * `contributes:` is never mistaken for the root key.
+ *
+ * @param content - Current manifest content
+ * @param key - Top-level key to set
+ * @param value - Scalar value to record
+ * @param manifestPath - Manifest path, used for error reporting
+ * @returns Updated manifest content
+ * @throws ManifestError if the document root is a flow collection
+ */
+function setTopLevelScalar(content, key, value, manifestPath) {
+    const lines = splitLines(content);
+    const start = findRootStart(lines);
+    if (start < lines.length && /^[{[]/.test(lines[start].text)) {
+        throw new errors_js_1.ManifestError(`Cannot record "${key}": the manifest root is a flow collection, which requires a block mapping with one key per line.`, { manifestPath });
+    }
+    const end = findRootEnd(lines, start);
+    const defaultEol = lines.find((line) => line.eol !== "")?.eol ?? "\n";
+    const newText = `${key}: ${formatScalar(value)}`;
+    const keyPattern = new RegExp(`^${key}\\s*:(\\s|$)`);
+    const keyIndex = lines.findIndex((line, index) => index >= start && index < end && keyPattern.test(line.text));
+    if (keyIndex !== -1) {
+        const valueEnd = findValueEnd(lines, keyIndex + 1, end);
+        lines.splice(keyIndex, valueEnd - keyIndex, { text: newText, eol: lines[keyIndex].eol || defaultEol });
+        return joinLines(lines);
+    }
+    const previous = end > 0 ? lines[end - 1] : undefined;
+    if (previous && previous.eol === "") {
+        previous.eol = defaultEol;
+    }
+    lines.splice(end, 0, { text: newText, eol: defaultEol });
+    return joinLines(lines);
+}
+/**
+ * Record the source of an installed extension in its manifest.
+ *
+ * Patches the `source` and `source-type` lines in place instead of
+ * re-serialising the document, so comments, key order, quoting style, and any
+ * keys the extension author added are preserved. A file without a trailing
+ * newline gains one when a key is appended.
  *
  * @param manifestPath - Path to the manifest file
  * @param source - New source value
  * @param sourceType - Type of source (github, url, local, registry)
+ * @throws ManifestError if the manifest cannot be read or patched
  */
 function updateManifestSource(manifestPath, source, sourceType) {
-    const manifest = parseManifestFile(manifestPath);
-    manifest.source = source;
+    let updated = setTopLevelScalar(readManifestContent(manifestPath), "source", source, manifestPath);
     if (sourceType) {
-        manifest.sourceType = sourceType;
+        updated = setTopLevelScalar(updated, "source-type", sourceType, manifestPath);
     }
-    writeManifest(manifestPath, manifest);
+    fs.writeFileSync(manifestPath, updated, "utf-8");
 }
 //# sourceMappingURL=manifest.js.map
+
+/***/ }),
+
+/***/ 7005:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+
+/**
+ * @title Quarto Ignore Module
+ * @description Reading and matching `.quartoignore` patterns.
+ *
+ * `.quartoignore` lists paths a repository keeps out of Quarto's view, most commonly a
+ * documentation website that ships its own `_quarto.yml` and `_extensions/`. Tooling that
+ * scans a repository for Quarto projects should skip those paths.
+ *
+ * @module filesystem
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.QUARTOIGNORE_FILENAME = void 0;
+exports.readQuartoIgnore = readQuartoIgnore;
+exports.isQuartoIgnored = isQuartoIgnored;
+exports.quartoIgnoreGlobs = quartoIgnoreGlobs;
+const fs = __importStar(__nccwpck_require__(3024));
+const path = __importStar(__nccwpck_require__(6760));
+const minimatch_1 = __nccwpck_require__(6507);
+/** Name of the ignore file. */
+exports.QUARTOIGNORE_FILENAME = ".quartoignore";
+/**
+ * Read and normalise the patterns declared in a directory's `.quartoignore`.
+ *
+ * Comments (`#`), blank lines, and surrounding whitespace are stripped, as are leading
+ * `./` and `/` and trailing `/`, so `docs/`, `/docs` and `docs` are equivalent.
+ * Negation (`!`) is not part of Quarto's format and such lines are dropped.
+ *
+ * @param dir - Directory holding the `.quartoignore` file
+ * @returns Normalised patterns, or an empty array when the file is absent or unreadable
+ *
+ * @example
+ * ```typescript
+ * const patterns = readQuartoIgnore("./my-extension");
+ * // [".scratch", "docs"]
+ * ```
+ */
+function readQuartoIgnore(dir) {
+    let content;
+    try {
+        content = fs.readFileSync(path.join(dir, exports.QUARTOIGNORE_FILENAME), "utf8");
+    }
+    catch {
+        // Missing or unreadable ignore file: nothing is ignored.
+        return [];
+    }
+    const patterns = [];
+    for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("!")) {
+            continue;
+        }
+        const normalised = trimmed.replace(/^\.?\/+/, "").replace(/\/+$/, "");
+        if (normalised !== "") {
+            patterns.push(normalised);
+        }
+    }
+    return patterns;
+}
+/**
+ * Check whether a path is covered by `.quartoignore` patterns.
+ *
+ * Every ancestor of `relativePath` is tested, so an ignored directory also hides everything
+ * below it. Patterns containing no separator are additionally matched against each individual
+ * segment, so `_site` matches at any depth; patterns containing a separator stay anchored to
+ * the directory holding the `.quartoignore`.
+ *
+ * @param patterns - Normalised patterns from {@link readQuartoIgnore}
+ * @param relativePath - POSIX-separated path relative to the directory holding the ignore file
+ * @returns True when the path is ignored
+ *
+ * @example
+ * ```typescript
+ * isQuartoIgnored(["docs"], "docs/_extensions/mcanouil/gitlink"); // true
+ * ```
+ */
+function isQuartoIgnored(patterns, relativePath) {
+    // An empty path is the directory holding the ignore file, which cannot ignore itself.
+    const segments = relativePath.split("/").filter((segment) => segment !== "" && segment !== ".");
+    const prefixes = segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+    return patterns.some((pattern) => {
+        // An anchored pattern is matched against whole prefixes only; an unanchored one is
+        // matched against each segment, which is what makes it apply at any depth.
+        const candidates = pattern.includes("/") ? prefixes : segments;
+        return candidates.some((candidate) => (0, minimatch_1.minimatch)(candidate, pattern, { dot: true }));
+    });
+}
+/**
+ * Convert `.quartoignore` patterns into globs matching the ignored paths and their contents.
+ *
+ * {@link isQuartoIgnored} is a predicate over one path; consumers that hand patterns to a
+ * glob matcher need the same semantics expressed as globs instead. Each pattern yields the
+ * path itself and everything below it, plus depth-independent variants for unanchored
+ * patterns.
+ *
+ * @param patterns - Normalised patterns from {@link readQuartoIgnore}
+ * @returns Glob patterns covering the ignored paths and their descendants
+ *
+ * @example
+ * ```typescript
+ * quartoIgnoreGlobs(["docs"]); // ["docs", "docs/**", "**\/docs", "**\/docs/**"]
+ * ```
+ */
+function quartoIgnoreGlobs(patterns) {
+    const globs = new Set();
+    for (const pattern of patterns) {
+        globs.add(pattern);
+        globs.add(`${pattern}/**`);
+        if (!pattern.includes("/")) {
+            globs.add(`**/${pattern}`);
+            globs.add(`**/${pattern}/**`);
+        }
+    }
+    return [...globs];
+}
+//# sourceMappingURL=quartoignore.js.map
 
 /***/ }),
 
@@ -2253,6 +2554,8 @@ exports.walkDirectory = walkDirectory;
 exports.collectFiles = collectFiles;
 exports.pathExists = pathExists;
 exports.copyDirectory = copyDirectory;
+exports.toRelativePosixPath = toRelativePosixPath;
+exports.isInside = isInside;
 const fs = __importStar(__nccwpck_require__(3024));
 const path = __importStar(__nccwpck_require__(6760));
 /**
@@ -2331,6 +2634,33 @@ async function copyDirectory(sourceDir, targetDir) {
         }
     });
     return filesCreated;
+}
+/**
+ * Express `fsPath` relative to `basePath` using POSIX separators.
+ *
+ * Path comparison and pattern matching both work on forward slashes, so callers on Windows
+ * need this normalisation before handing a path to a matcher or to a display label.
+ *
+ * @param basePath - Directory the result is relative to
+ * @param fsPath - Path to express relatively
+ * @returns POSIX-separated relative path, empty when the two paths are equal
+ */
+function toRelativePosixPath(basePath, fsPath) {
+    return path.relative(basePath, fsPath).split(path.sep).join(path.posix.sep);
+}
+/**
+ * Check whether a path is `parent` itself or lives below it.
+ *
+ * @param parent - Ancestor directory
+ * @param child - Path to test
+ * @returns True when `child` is `parent` or is contained by it
+ */
+function isInside(parent, child) {
+    const relative = path.relative(parent, child);
+    if (relative === "") {
+        return true;
+    }
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 //# sourceMappingURL=walk.js.map
 
@@ -3956,6 +4286,9 @@ async function install(source, options) {
     const { projectDir, auth, onProgress, force = false, keepSourceDir = false, dryRun = false, sourceDisplay, signal, } = options;
     let archivePath;
     let extractDir;
+    // Set only when the extraction directory is a temporary one this call created, so a
+    // local directory source is never mistaken for something safe to delete.
+    let temporaryDir;
     let tagName;
     let repoRoot;
     let commitSha;
@@ -4008,9 +4341,10 @@ async function install(source, options) {
         else {
             const extracted = await (0, extract_js_1.extractArchive)(archivePath);
             extractDir = extracted.extractDir;
+            temporaryDir = extracted.extractDir;
         }
         // Find all extensions in the archive
-        const allExtensions = await (0, extract_js_1.findAllExtensionRoots)(extractDir);
+        const { root: archiveRoot, extensions: allExtensions } = await (0, extract_js_1.readArchiveExtensions)(extractDir);
         if (allExtensions.length === 0) {
             throw new errors_js_1.ExtensionError("No _extension.yml found in archive", {
                 suggestion: "Ensure the archive contains a valid Quarto extension",
@@ -4035,18 +4369,12 @@ async function install(source, options) {
         }
         // Use the first selected extension as the primary one
         const extensionRoot = selectedExtensions[0].path;
-        // Compute repo root from extensionRoot
-        // extensionRoot is like /tmp/xxx/owner-repo-tag/_extensions/owner/name
-        // Repo root is the parent of _extensions (e.g., /tmp/xxx/owner-repo-tag)
-        const extensionRootParts = extensionRoot.split(path.sep);
-        const extensionsIndex = extensionRootParts.lastIndexOf("_extensions");
-        if (extensionsIndex >= 0) {
-            repoRoot = extensionRootParts.slice(0, extensionsIndex).join(path.sep) || "/";
-        }
-        else {
-            // No _extensions in path, extension is at repo root level
-            repoRoot = path.dirname(extensionRoot);
-        }
+        // `readArchiveExtensions` already resolved the repository root, wrapper directory and
+        // all, so take its answer rather than deriving a second one from the extension path.
+        // Splitting on `_extensions` used to fall back to the parent directory for a
+        // repository that is itself an extension, which pointed `sourceRoot` outside the
+        // source and made template copying sweep up the parent's contents.
+        repoRoot = archiveRoot;
         const manifestResult = (0, manifest_js_1.readManifest)(extensionRoot);
         if (!manifestResult) {
             throw new errors_js_1.ExtensionError("Failed to read extension manifest");
@@ -4096,6 +4424,7 @@ async function install(source, options) {
                 filesCreated: [],
                 source: sourceString,
                 sourceRoot: keepSourceDir ? repoRoot : undefined,
+                temporaryDir: keepSourceDir ? temporaryDir : undefined,
                 dryRun: true,
                 wouldCreate,
                 alreadyExists,
@@ -4169,6 +4498,7 @@ async function install(source, options) {
             source: sourceString,
             sourceType: effectiveSourceType,
             sourceRoot: keepSourceDir ? repoRoot : undefined,
+            temporaryDir: keepSourceDir ? temporaryDir : undefined,
             additionalInstalls: additionalInstalls.length > 0 ? additionalInstalls : undefined,
             additionalInstallFailures: additionalInstallFailures.length > 0 ? additionalInstallFailures : undefined,
         };
@@ -4180,9 +4510,10 @@ async function install(source, options) {
             // eslint-disable-next-line @typescript-eslint/no-empty-function
             await fs.promises.unlink(archivePath).catch(() => { });
         }
-        // Only cleanup extraction directory if keepSourceDir is false
-        if (extractDir && source.type !== "local" && !keepSourceDir) {
-            await (0, extract_js_1.cleanupExtraction)(extractDir);
+        // Only the temporary directory is ours to remove, and only when the caller is not
+        // going to keep reading from it.
+        if (temporaryDir && !keepSourceDir) {
+            await (0, extract_js_1.cleanupExtraction)(temporaryDir);
         }
     }
 }
@@ -4952,6 +5283,7 @@ const walk_js_1 = __nccwpck_require__(1898);
 const install_js_1 = __nccwpck_require__(3869);
 const extract_js_1 = __nccwpck_require__(927);
 const discovery_js_1 = __nccwpck_require__(9757);
+const quartoignore_js_1 = __nccwpck_require__(7005);
 /**
  * Glob all files in a directory with sensible defaults.
  *
@@ -5028,6 +5360,24 @@ const DEFAULT_EXCLUDE_PATTERNS = [
     // LLM
     ".claude/**",
 ];
+/**
+ * Patterns the file-selection UI starts with unticked.
+ *
+ * `_extensions/**` is dropped from the defaults because the extension itself is installed
+ * separately and its files are offered on purpose. On top of the defaults, the repository's
+ * own `.quartoignore` declares what a project created from this template should not receive,
+ * so those paths start unselected too. They stay selectable: the ignore file states an
+ * intent, not a prohibition.
+ *
+ * @param sourceRoot - Root of the extracted template source
+ * @returns Glob patterns to leave unselected
+ */
+function defaultUnselectedPatterns(sourceRoot) {
+    return [
+        ...DEFAULT_EXCLUDE_PATTERNS.filter((pattern) => pattern !== "_extensions/**"),
+        ...(0, quartoignore_js_1.quartoIgnoreGlobs)((0, quartoignore_js_1.readQuartoIgnore)(sourceRoot)),
+    ];
+}
 /**
  * Two-phase use: show file selection before installing.
  *
@@ -5115,7 +5465,7 @@ async function twoPhaseUse(source, options) {
             }
         }
         onProgress?.({ phase: "selecting", message: "Awaiting file selection..." });
-        const selectionResult = await selectFiles(allFiles, existingFiles, DEFAULT_EXCLUDE_PATTERNS.filter((p) => p !== "_extensions/**"));
+        const selectionResult = await selectFiles(allFiles, existingFiles, defaultUnselectedPatterns(sourceRoot));
         if (!selectionResult) {
             // User cancelled file selection. Cleanup is handled by the finally block.
             return {
@@ -5132,7 +5482,7 @@ async function twoPhaseUse(source, options) {
         }
         // STEP 3: Extension selection
         // Find all extensions in the extracted source
-        const allExtensions = await (0, extract_js_1.findAllExtensionRoots)(sourceRoot);
+        const { extensions: allExtensions } = await (0, extract_js_1.readArchiveExtensions)(sourceRoot);
         if (allExtensions.length === 0) {
             throw new errors_js_1.ExtensionError("No extensions found in source", {
                 suggestion: "Ensure the source contains a valid Quarto extension with _extension.yml",
@@ -5231,9 +5581,10 @@ async function twoPhaseUse(source, options) {
         };
     }
     finally {
-        // Clean up the extracted source
-        if (dryRunResult?.sourceRoot) {
-            await (0, extract_js_1.cleanupExtraction)(dryRunResult.sourceRoot);
+        // Only the temporary extraction directory is ours to remove. A local directory
+        // source is the user's own folder and `temporaryDir` is unset for it.
+        if (dryRunResult?.temporaryDir) {
+            await (0, extract_js_1.cleanupExtraction)(dryRunResult.temporaryDir);
         }
     }
 }
@@ -5311,7 +5662,7 @@ async function use(source, options) {
                 }
             }
             // Call the selection callback
-            const selectionResult = await selectFiles(allFiles, existingFiles, DEFAULT_EXCLUDE_PATTERNS.filter((p) => p !== "_extensions/**"));
+            const selectionResult = await selectFiles(allFiles, existingFiles, defaultUnselectedPatterns(sourceRoot));
             if (!selectionResult) {
                 // User cancelled
                 return {
@@ -5325,8 +5676,10 @@ async function use(source, options) {
         }
         else {
             // Legacy mode: use include/exclude patterns
+            // No UI to unselect in, so the repository's `.quartoignore` excludes outright here,
+            // matching what `quarto use template` does.
             filesToCopy = await globFiles(sourceRoot, {
-                ignore: [...DEFAULT_EXCLUDE_PATTERNS, ...exclude],
+                ignore: [...DEFAULT_EXCLUDE_PATTERNS, ...(0, quartoignore_js_1.quartoIgnoreGlobs)((0, quartoignore_js_1.readQuartoIgnore)(sourceRoot)), ...exclude],
             });
             if (include && include.length > 0) {
                 filesToCopy = filesToCopy.filter((f) => include.some((pattern) => (0, minimatch_1.minimatch)(f, pattern)));
@@ -5369,9 +5722,10 @@ async function use(source, options) {
         };
     }
     finally {
-        // Clean up the source directory after template copying
-        if (installResult.sourceRoot) {
-            await (0, extract_js_1.cleanupExtraction)(installResult.sourceRoot);
+        // Only the temporary extraction directory is ours to remove. A local directory
+        // source is the user's own folder and `temporaryDir` is unset for it.
+        if (installResult.temporaryDir) {
+            await (0, extract_js_1.cleanupExtraction)(installResult.temporaryDir);
         }
     }
 }
