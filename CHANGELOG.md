@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- ci: run the action from the checked-out working tree in `quarto-extensions-updater.yml` instead of a pinned release, so every scheduled run exercises the code on `main`.
+- chore(deps): update `@quarto-wizard/core` to 3.2.0 (#68).
+- chore(deps): bump `typescript` from 5 to 6 and `@types/node` to 26.1.2 (#67).
+- ci: schedule Dependabot on the first of the month, with `github-actions` and `npm` updates grouped into a single pull request each.
+- chore(deps): update the documentation extensions `mcanouil/gitlink` to 1.9.1 and `mcanouil/atelier` to 0.10.1 (#62, #63).
+
 ## 2.2.0 (2026-07-31)
 
 - docs: add a documentation website at <https://m.canouil.dev/quarto-extensions-updater>, built with Quarto and deployed to GitHub Pages; the inputs and outputs reference is generated from `action.yml` at render time.
