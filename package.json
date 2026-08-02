@@ -32,7 +32,7 @@
 	"dependencies": {
 		"@actions/core": "^3.0.1",
 		"@actions/github": "^9.1.1",
-		"@quarto-wizard/core": "https://github.com/mcanouil/quarto-wizard/releases/download/3.1.3/quarto-wizard-core-3.1.3.tgz",
+		"@quarto-wizard/core": "https://github.com/mcanouil/quarto-wizard/releases/download/3.2.0/quarto-wizard-core-3.2.0.tgz",
 		"js-yaml": "^5.2.2",
 		"semver": "^7.8.5"
 	},
