@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.1 (2026-08-02)
 
 - ci: run the action from the checked-out working tree in `quarto-extensions-updater.yml` rather than a pinned release, so each scheduled run exercises the code on `main`; the reference no longer trails the latest tag by a release, and Dependabot no longer has to bump it (#66).
 - ci: schedule Dependabot on the first of the month, grouping the `github-actions` and `npm` ecosystems into one pull request each.
