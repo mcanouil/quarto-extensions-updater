@@ -10,6 +10,7 @@ on:
       - "action.yml"
       - ".github/workflows/deploy.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "docs/**"
       - "action.yml"
@@ -29,6 +30,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.draft != true }}
+    timeout-minutes: 30
     name: Build - Documentation website
 
     steps:
@@ -88,6 +91,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     name: Deploy - Documentation website
 
     needs:
