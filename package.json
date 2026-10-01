@@ -33,20 +33,20 @@
 		"@actions/core": "^3.0.1",
 		"@actions/github": "^9.1.1",
 		"@quarto-wizard/core": "https://github.com/mcanouil/quarto-wizard/releases/download/3.2.0/quarto-wizard-core-3.2.0.tgz",
-		"js-yaml": "^5.2.2",
+		"js-yaml": "^5.4.2",
 		"semver": "^7.8.5"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@types/jest": "^30.0.0",
-		"@types/node": "^26.1.2",
-		"@types/semver": "^7.7.1",
-		"@vercel/ncc": "^0.44.1",
-		"eslint": "^10.8.0",
-		"jest": "^30.4.2",
-		"prettier": "^3.9.6",
-		"ts-jest": "^29.4.12",
+		"@types/node": "^26.6.3",
+		"@types/semver": "^7.8.0",
+		"@vercel/ncc": "^0.45.0",
+		"eslint": "^10.11.0",
+		"jest": "^30.5.2",
+		"prettier": "^3.9.9",
+		"ts-jest": "^29.4.14",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.65.0"
+		"typescript-eslint": "^8.70.1"
 	}
 }
