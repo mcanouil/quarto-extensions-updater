@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- ci: run the release on the shared release-actions, which also keeps the major pins of the README, the discussion template and the documentation in step, and land the core dependency update with them (#73).
+
 ## 2.2.1 (2026-08-02)
 
 - ci: run the action from the checked-out working tree in `quarto-extensions-updater.yml` rather than a pinned release, so each scheduled run exercises the code on `main`; the reference no longer trails the latest tag by a release, and Dependabot no longer has to bump it (#66).
