@@ -63,6 +63,7 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           app-key: ${{ secrets.APP_KEY }}
+          require-app: true
 
       - name: Checkout repository
         uses: actions/checkout@v7
