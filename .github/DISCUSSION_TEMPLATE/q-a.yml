@@ -47,7 +47,7 @@ body:
               - name: Setup Quarto
                 uses: quarto-dev/quarto-actions/setup@v2
 
-              - uses: mcanouil/quarto-extensions-updater@v0
+              - uses: mcanouil/quarto-extensions-updater@v2
                 with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
         ````

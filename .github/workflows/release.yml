@@ -35,33 +35,36 @@ on:
           - minor
           - patch
 
+# A release bumps a version, pushes a branch, and creates a tag, so two at once
+# would race over all three. Queue rather than cancel: a cancelled release
+# leaves the bump branch and its pull request behind.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  bump-version:
+  release:
     runs-on: ubuntu-latest
-
-    env:
-      BRANCH: ci/bump-version
-      COMMIT: "ci: bump version for release :rocket:"
-      BUMP_TYPE: ${{ inputs.version }}
-
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      bump_type: ${{ steps.version.outputs.bump_type }}
-
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
+      # A push made with the default token triggers no workflow, which leaves
+      # the bump pull request without the checks its auto-merge waits for.
+      - name: Get the token
+        id: token
+        uses: mcanouil/release-actions/token@v1
+        with:
+          app-id: ${{ vars.APP_ID }}
+          app-key: ${{ secrets.APP_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          token: ${{ steps.token.outputs.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -72,155 +75,61 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build action
-        run: npm run build
+      # The pins in the examples follow the major, so a major release rewrites
+      # them. Most documentation pages hold no pin, hence required: false on
+      # the globs. The rebuilt dist/ ships with the version that names it.
+      - name: Bump the version
+        id: bump
+        uses: mcanouil/release-actions/bump@v1
+        with:
+          bump: ${{ inputs.version }}
+          tag-prefix: v
+          token: ${{ steps.token.outputs.token }}
+          targets: |
+            - file: package.json
+              pattern: '"version": "{version}",'
+              source: true
+            - file: CITATION.cff
+              pattern: '^version: {version}$'
+            - file: CITATION.cff
+              pattern: '^date-released: "{date}"$'
+            - file: README.md
+              pattern: 'mcanouil/quarto-extensions-updater@v{major}'
+            - file: .github/DISCUSSION_TEMPLATE/q-a.yml
+              pattern: 'mcanouil/quarto-extensions-updater@v{major}'
+            - file: docs/*.qmd
+              pattern: 'mcanouil/quarto-extensions-updater@v{major}'
+              required: false
+            - file: docs/*/*.qmd
+              pattern: 'mcanouil/quarto-extensions-updater@v{major}'
+              required: false
+          after-bump: npm version "${VERSION}" --no-git-tag-version --allow-same-version && npm run build
 
-      - name: Determine version bump
-        id: version
-        run: |
-          CURRENT_VERSION=$(grep '"version":' package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
-          echo "Current version: ${CURRENT_VERSION}"
+      - name: Land the bump
+        id: land
+        uses: mcanouil/release-actions/land@v1
+        with:
+          mode: pull-request
+          files: ${{ steps.bump.outputs.files }}
+          version: ${{ steps.bump.outputs.version }}
+          tag-prefix: v
+          message: "ci: bump version for release :rocket:"
+          branch: ci/bump-version
+          token: ${{ steps.token.outputs.token }}
 
-          MAJOR=$(echo ${CURRENT_VERSION} | cut -d. -f1)
-          MINOR=$(echo ${CURRENT_VERSION} | cut -d. -f2)
-          PATCH=$(echo ${CURRENT_VERSION} | cut -d. -f3)
+      - name: Compose the release body
+        id: notes
+        uses: mcanouil/release-actions/notes@v1
+        with:
+          notes-file: ${{ steps.bump.outputs.notes-file }}
+          section-heading: ""
 
-          case "${BUMP_TYPE}" in
-            "major")
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            "minor")
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            *)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          echo "New version: ${NEW_VERSION}"
-          echo "current_version=${CURRENT_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "version=${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "bump_type=${BUMP_TYPE}" >> "${GITHUB_OUTPUT}"
-
-      - name: Update version files
-        id: update-version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT_VERSION: ${{ steps.version.outputs.current_version }}
-          NEW_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if git show-ref --quiet refs/heads/${BRANCH}; then
-            echo "Branch ${BRANCH} already exists."
-            git branch -D "${BRANCH}"
-            git push origin --delete "${BRANCH}"
-          fi
-          git checkout -b "${BRANCH}"
-
-          DATE=$(date +%Y-%m-%d)
-
-          if ! grep -q "^## Unreleased$" CHANGELOG.md; then
-            echo "Error: No '## Unreleased' section found in CHANGELOG.md"
-            exit 1
-          fi
-
-          # Update package.json
-          npm version ${NEW_VERSION} --no-git-tag-version
-
-          # Update CITATION.cff
-          sed -i "s/^version:.*/version: ${NEW_VERSION}/" CITATION.cff
-          sed -i "s/^date-released:.*/date-released: \"${DATE}\"/" CITATION.cff
-
-          # Update CHANGELOG.md: replace "Unreleased" with version and date
-          sed -i "s/^## Unreleased$/## ${NEW_VERSION} (${DATE})/" CHANGELOG.md
-
-          # Update example version references on major bump
-          if [ "${BUMP_TYPE}" = "major" ]; then
-            OLD_MAJOR=$(echo ${CURRENT_VERSION} | cut -d. -f1)
-            NEW_MAJOR=$(echo ${NEW_VERSION} | cut -d. -f1)
-            sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" README.md
-            sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" .github/DISCUSSION_TEMPLATE/q-a.yml
-            # The documentation website generates its prose references from
-            # package.json, but the example workflows are literal YAML.
-            find docs -name "*.qmd" -exec sed -i "s|mcanouil/quarto-extensions-updater@v${OLD_MAJOR}|mcanouil/quarto-extensions-updater@v${NEW_MAJOR}|g" {} +
-          fi
-
-          git add package.json package-lock.json CITATION.cff CHANGELOG.md dist/ README.md .github/DISCUSSION_TEMPLATE/q-a.yml docs/
-          git commit -m "${COMMIT}" || echo "No changes to commit"
-          git push --force origin ${BRANCH} || echo "No changes to push"
-
-          sleep 5
-          gh pr create --fill-first --base "${GITHUB_REF_NAME}" --head "${BRANCH}" --label "Type: CI/CD :robot:"
-          sleep 5
-          gh pr merge --auto --squash --delete-branch
-          sleep 5
-
-  release:
-    runs-on: ubuntu-latest
-
-    needs: bump-version
-
-    permissions:
-      contents: write
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Update branch
-        run: |
-          git fetch --all
-          git checkout "${GITHUB_REF_NAME}"
-          git pull origin "${GITHUB_REF_NAME}"
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEW_VERSION: ${{ needs.bump-version.outputs.version }}
-        run: |
-          awk -v version="^## ${NEW_VERSION}.*" '
-            $0 ~ version {flag=1; next}
-            /^## / && flag {flag=0}
-            flag
-          ' CHANGELOG.md >"CHANGELOG-${NEW_VERSION}.md"
-
-          gh release create "v${NEW_VERSION}" \
-            --title "v${NEW_VERSION}" \
-            --notes-file "CHANGELOG-${NEW_VERSION}.md"
-
-      - name: Update major version tag
-        env:
-          NEW_VERSION: ${{ needs.bump-version.outputs.version }}
-        run: |
-          MAJOR_VERSION=$(echo ${NEW_VERSION} | cut -d. -f1)
-          git tag -f "v${MAJOR_VERSION}"
-          git push -f origin "v${MAJOR_VERSION}"
-
-      - name: Summary
-        env:
-          NEW_VERSION: ${{ needs.bump-version.outputs.version }}
-          BUMP_TYPE: ${{ needs.bump-version.outputs.bump_type }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          MAJOR_VERSION=$(echo ${NEW_VERSION} | cut -d. -f1)
-          cat >> "${GITHUB_STEP_SUMMARY}" <<EOF
-          # Release Summary
-
-          **Version:** v${NEW_VERSION}
-          **Bump Type:** ${BUMP_TYPE}
-          **Major Tag:** v${MAJOR_VERSION}
-
-          ## Changes
-
-          - Updated \`package.json\` and \`package-lock.json\` to version ${NEW_VERSION}
-          - Updated \`CITATION.cff\` with new version and release date
-          - Updated \`CHANGELOG.md\` to reflect version ${NEW_VERSION}
-          - Created GitHub release: [v${NEW_VERSION}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${NEW_VERSION})
-          - Updated major version tag: v${MAJOR_VERSION}
-          - Updated example version references in \`README.md\`, \`.github/DISCUSSION_TEMPLATE/q-a.yml\`, and \`docs/\` (major bump only)
-          EOF
+      - name: Release on GitHub
+        uses: mcanouil/release-actions/release@v1
+        with:
+          version: ${{ steps.bump.outputs.version }}
+          tag-prefix: v
+          body-file: ${{ steps.notes.outputs.body-file }}
+          target: ${{ steps.land.outputs.sha }}
+          rolling: true
+          token: ${{ steps.token.outputs.token }}
