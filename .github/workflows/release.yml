@@ -86,14 +86,8 @@ jobs:
           bump: ${{ inputs.version }}
           tag-prefix: v
           token: ${{ steps.token.outputs.token }}
+          ecosystems: npm, citation
           targets: |
-            - file: package.json
-              pattern: '"version": "{version}",'
-              source: true
-            - file: CITATION.cff
-              pattern: '^version: {version}$'
-            - file: CITATION.cff
-              pattern: '^date-released: "{date}"$'
             - file: README.md
               pattern: 'mcanouil/quarto-extensions-updater@v{major}'
             - file: .github/DISCUSSION_TEMPLATE/q-a.yml
@@ -104,7 +98,7 @@ jobs:
             - file: docs/*/*.qmd
               pattern: 'mcanouil/quarto-extensions-updater@v{major}'
               required: false
-          after-bump: npm version "${VERSION}" --no-git-tag-version --allow-same-version && npm run build
+          after-bump: npm run build
 
       - name: Land the bump
         id: land
