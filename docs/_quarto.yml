@@ -6,6 +6,10 @@ project:
     - reference/
     - contributing.qmd
     - 404.qmd
+  # A full render fails when the action reference comes out without its
+  # inputs and outputs tables; see the script for why a render alone passes.
+  post-render:
+    - bash _scripts/check-action-reference.sh
   # Quarto copies nothing to the output directory by convention: only these
   # globs, plus files it finds behind an `href` or `src` in the rendered HTML.
   # The manifest names its icons in JSON, which is not scanned, so they are
