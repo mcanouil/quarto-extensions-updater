@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.2.2 (2026-10-19)
+
 - ci: run the release on the shared release-actions, which also keeps the major pins of the README, the discussion template and the documentation in step, and land the core dependency update with them (#73).
 
 ## 2.2.1 (2026-08-02)
