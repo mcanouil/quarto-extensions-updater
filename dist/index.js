@@ -107964,14 +107964,15 @@ function readExtensionManifest(manifestPath) {
     }
 }
 /**
- * Extracts owner and extension name from a manifest path
+ * Extracts owner and extension name from a manifest path.
+ * Uses the last `_extensions` segment, so an extension embedded inside another resolves to itself.
  * @param manifestPath Path to the manifest file
  * @returns Object with owner and name, or null if invalid path
  */
 function extractExtensionInfo(manifestPath) {
     try {
         const parts = manifestPath.split(external_path_.sep);
-        const extensionsIndex = parts.indexOf("_extensions");
+        const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
         if (extensionsIndex === -1 || extensionsIndex + 2 >= parts.length) {
             return null;
         }
@@ -108940,6 +108941,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
 
 
 
+
 /**
  * Gets the installed Quarto CLI version
  * @returns The Quarto version string or null if unavailable
@@ -109035,14 +109037,14 @@ function requireQuartoVersion() {
 }
 /**
  * Derives the working directory for running `quarto add` based on the manifest path.
- * Returns the parent directory of `_extensions` so that `quarto add` installs
- * the extension in the correct location.
+ * Returns the parent directory of the last `_extensions` segment so that `quarto add`
+ * replaces the extension in place, including one embedded inside another extension.
  * @param manifestPath Absolute path to the extension manifest file
  * @returns The directory to use as cwd for `quarto add`
  */
 function deriveQuartoAddCwd(manifestPath) {
     const parts = manifestPath.split(external_path_.sep);
-    const extensionsIndex = parts.indexOf("_extensions");
+    const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
     if (extensionsIndex <= 0) {
         return process.cwd();
     }

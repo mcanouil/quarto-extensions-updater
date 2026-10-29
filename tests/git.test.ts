@@ -321,6 +321,12 @@ describe("git.ts", () => {
 			expect(result).toBe("/workspace");
 		});
 
+		it("should return the extension directory that embeds a nested extension", () => {
+			const result = deriveQuartoAddCwd("/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml");
+
+			expect(result).toBe("/workspace/_extensions/atelier");
+		});
+
 		it("should return process.cwd() when path has no _extensions segment", () => {
 			const result = deriveQuartoAddCwd("/path/to/ext/_extension.yml");
 

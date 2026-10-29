@@ -5,6 +5,7 @@ import { execSync } from "child_process";
 import * as semver from "semver";
 import type { ExtensionUpdate, ApplyUpdatesResult } from "./types.js";
 import { updateManifestSource, readExtensionManifest } from "./extensions.js";
+import { QUARTO_EXTENSIONS_DIR } from "./constants.js";
 
 /**
  * Gets the installed Quarto CLI version
@@ -114,14 +115,14 @@ function requireQuartoVersion(): string {
 
 /**
  * Derives the working directory for running `quarto add` based on the manifest path.
- * Returns the parent directory of `_extensions` so that `quarto add` installs
- * the extension in the correct location.
+ * Returns the parent directory of the last `_extensions` segment so that `quarto add`
+ * replaces the extension in place, including one embedded inside another extension.
  * @param manifestPath Absolute path to the extension manifest file
  * @returns The directory to use as cwd for `quarto add`
  */
 export function deriveQuartoAddCwd(manifestPath: string): string {
 	const parts = manifestPath.split(path.sep);
-	const extensionsIndex = parts.indexOf("_extensions");
+	const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
 	if (extensionsIndex <= 0) {
 		return process.cwd();
 	}

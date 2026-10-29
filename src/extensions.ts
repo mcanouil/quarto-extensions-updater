@@ -4,7 +4,7 @@ import * as yaml from "js-yaml";
 import * as core from "@actions/core";
 import type { InstalledExtension, ExtensionManifest } from "@quarto-wizard/core";
 import type { ExtensionData } from "./types.js";
-import { QUARTO_MANIFEST_FILENAMES } from "./constants.js";
+import { QUARTO_EXTENSIONS_DIR, QUARTO_MANIFEST_FILENAMES } from "./constants.js";
 
 // Re-export core types for use in other modules
 export type { InstalledExtension, ExtensionManifest };
@@ -101,7 +101,8 @@ export function readExtensionManifest(manifestPath: string): ExtensionData | nul
 }
 
 /**
- * Extracts owner and extension name from a manifest path
+ * Extracts owner and extension name from a manifest path.
+ * Uses the last `_extensions` segment, so an extension embedded inside another resolves to itself.
  * @param manifestPath Path to the manifest file
  * @returns Object with owner and name, or null if invalid path
  */
@@ -111,7 +112,7 @@ export function extractExtensionInfo(manifestPath: string): {
 } | null {
 	try {
 		const parts = manifestPath.split(path.sep);
-		const extensionsIndex = parts.indexOf("_extensions");
+		const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
 
 		if (extensionsIndex === -1 || extensionsIndex + 2 >= parts.length) {
 			return null;

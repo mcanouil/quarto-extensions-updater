@@ -385,6 +385,17 @@ describe("extractExtensionInfo", () => {
 		});
 	});
 
+	it("should use the innermost _extensions for an extension embedded in another", () => {
+		const manifestPath = "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml";
+
+		const result = extractExtensionInfo(manifestPath);
+
+		expect(result).toEqual({
+			owner: "mcanouil",
+			name: "gitlink",
+		});
+	});
+
 	it("should handle errors during path processing", () => {
 		// Force an error by passing invalid input
 		const invalidPath = null as unknown as string;
