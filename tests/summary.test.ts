@@ -118,6 +118,42 @@ describe("generateDryRunMarkdown", () => {
 		expect(markdown).toContain("| owner/ext2 | 1.0.0 | 2.0.0 | ✗ No |");
 	});
 
+	it("should count one PR per extension and name each copy's location", () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = { ...topLevel, location: "_extensions/atelier/_extensions/mcanouil/gitlink" };
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown([topLevel, embedded], false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("Would create **1 PR** (one per extension)");
+		expect(markdown).toContain("| mcanouil/gitlink in `_extensions/mcanouil/gitlink` |");
+		expect(markdown).toContain("| mcanouil/gitlink in `_extensions/atelier/_extensions/mcanouil/gitlink` |");
+	});
+
+	it("should count distinct extensions in the grouped PR sentence", () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = { ...topLevel, location: "_extensions/atelier/_extensions/mcanouil/gitlink" };
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown([topLevel, embedded], true, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("Would create **1 PR** with 1 extension update\n");
+	});
+
+	it("should mark auto-merge per extension, requiring every copy to qualify", () => {
+		const patchCopy = createUpdate("mcanouil/gitlink", "1.9.0", "1.9.2");
+		const minorCopy = { ...createUpdate("mcanouil/gitlink", "1.8.0", "1.9.2"), location: "_extensions/atelier" };
+		mockShouldAutoMerge.mockImplementation((update) => update.currentVersion === "1.9.0");
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown([patchCopy, minorCopy], false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).not.toContain("✓ Yes");
+	});
+
 	it("should include next steps section", () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
@@ -301,6 +337,28 @@ describe("generateCompletedSummary", () => {
 		// Second update to second PR
 		expect(updatesTableCall[2][3]).toEqual({
 			data: '<a href="https://github.com/owner/repo/pull/124">#124</a>',
+			header: false,
+		});
+	});
+
+	it("should name each copy's location in the updates and skipped tables", async () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = { ...topLevel, location: "_extensions/atelier/_extensions/mcanouil/gitlink" };
+		const createdPRs = [
+			{ number: 123, url: "https://github.com/owner/repo/pull/123", extensions: ["mcanouil/gitlink"] },
+		];
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		await generateCompletedSummary([topLevel], createdPRs, false, "all", filterConfig, autoMergeConfig, [
+			{ update: embedded, reason: "Needs a newer Quarto" },
+		]);
+
+		const updatesTableCall = mockSummary.addTable.mock.calls[1][0];
+		const skippedTableCall = mockSummary.addTable.mock.calls[2][0];
+		expect(updatesTableCall[1][0]).toEqual({ data: "mcanouil/gitlink in _extensions/mcanouil/gitlink", header: false });
+		expect(skippedTableCall[1][0]).toEqual({
+			data: "mcanouil/gitlink in _extensions/atelier/_extensions/mcanouil/gitlink",
 			header: false,
 		});
 	});

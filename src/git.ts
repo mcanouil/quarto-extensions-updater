@@ -6,6 +6,7 @@ import * as semver from "semver";
 import type { ExtensionUpdate, ApplyUpdatesResult } from "./types.js";
 import { updateManifestSource, readExtensionManifest } from "./extensions.js";
 import { QUARTO_EXTENSIONS_DIR } from "./constants.js";
+import { groupCopies } from "./updates.js";
 
 /**
  * Gets the installed Quarto CLI version
@@ -212,8 +213,9 @@ export function createBranchName(updates: ExtensionUpdate[], branchPrefix = "cho
 	const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
 	const prefix = branchPrefix.length === 0 ? "chore/quarto-extensions" : branchPrefix;
 
-	if (updates.length === 1) {
-		const update = updates[0];
+	const extensions = groupCopies(updates);
+	if (extensions.length === 1) {
+		const update = extensions[0][0];
 		const safeName = update.nameWithOwner.replace(/\//g, "-");
 		return `${prefix}/update-${safeName}-${update.latestVersion}`;
 	}
@@ -228,19 +230,30 @@ export function createBranchName(updates: ExtensionUpdate[], branchPrefix = "cho
  * @returns Commit message
  */
 export function createCommitMessage(updates: ExtensionUpdate[], prefix = "chore(deps):"): string {
-	if (updates.length === 1) {
-		const update = updates[0];
+	const extensions = groupCopies(updates);
+	if (extensions.length === 1) {
+		const copies = extensions[0];
+		const update = copies[0];
 		return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}
 
-Updates ${update.nameWithOwner} from ${update.currentVersion} to ${update.latestVersion}.
+Updates ${update.nameWithOwner} from ${currentVersions(copies)} to ${update.latestVersion}.
 
 Release notes: ${update.releaseUrl}`;
 	}
 
-	const title = `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
-	const body = updates.map((u) => `- ${u.nameWithOwner}: ${u.currentVersion} → ${u.latestVersion}`).join("\n");
+	const title = `${prefix} update ${extensions.length} Quarto extensions`;
+	const body = extensions
+		.map((copies) => `- ${copies[0].nameWithOwner}: ${currentVersions(copies)} → ${copies[0].latestVersion}`)
+		.join("\n");
 
 	return `${title}\n\n${body}`;
+}
+
+/**
+ * Lists the distinct current versions of an extension's copies
+ */
+function currentVersions(copies: ExtensionUpdate[]): string {
+	return [...new Set(copies.map((copy) => copy.currentVersion))].join(", ");
 }
 
 /**

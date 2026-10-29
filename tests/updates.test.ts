@@ -40,6 +40,22 @@ describe("checkForUpdates", () => {
 		jest.clearAllMocks();
 	});
 
+	it("should record the extension folder relative to the workspace", () => {
+		(extensions.findExtensionManifests as jest.Mock).mockReturnValue([
+			"/workspace/_extensions/atelier/_extensions/mcanouil/iconify/_extension.yml",
+		]);
+		(extensions.readExtensionManifest as jest.Mock).mockReturnValue({
+			version: "1.0.0",
+			source: "mcanouil/quarto-iconify@1.0.0",
+			repository: "https://github.com/mcanouil/quarto-iconify",
+		});
+		(extensions.extractExtensionInfo as jest.Mock).mockReturnValue({ owner: "mcanouil", name: "iconify" });
+
+		const updates = checkForUpdates("/workspace", mockRegistry);
+
+		expect(updates[0].location).toBe("_extensions/atelier/_extensions/mcanouil/iconify");
+	});
+
 	it("should skip extension without source field", () => {
 		const mockManifests = ["/workspace/_extensions/mcanouil/iconify/_extension.yml"];
 

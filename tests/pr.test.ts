@@ -17,6 +17,19 @@ const mockOctokit = {
 	},
 } as unknown as ReturnType<typeof github.getOctokit>;
 
+const gitlinkCopy = (location: string, currentVersion = "1.9.0"): ExtensionUpdate => ({
+	name: "gitlink",
+	owner: "mcanouil",
+	nameWithOwner: "mcanouil/gitlink",
+	repositoryName: "mcanouil/quarto-gitlink",
+	currentVersion,
+	latestVersion: "1.9.2",
+	manifestPath: `/workspace/${location}/_extension.yml`,
+	location,
+	url: "https://github.com/mcanouil/quarto-gitlink",
+	releaseUrl: "https://github.com/mcanouil/quarto-gitlink/releases/tag/1.9.2",
+});
+
 describe("generatePRTitle", () => {
 	it("should generate title for single update", () => {
 		const updates: ExtensionUpdate[] = [
@@ -37,6 +50,17 @@ describe("generatePRTitle", () => {
 		const title = generatePRTitle(updates);
 
 		expect(title).toBe("chore(deps): update mcanouil/iconify extension to 1.1.0");
+	});
+
+	it("should use the single-extension title for copies of one extension", () => {
+		const updates = [
+			gitlinkCopy("_extensions/mcanouil/gitlink"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink"),
+		];
+
+		const title = generatePRTitle(updates);
+
+		expect(title).toBe("chore(deps): update mcanouil/gitlink extension to 1.9.2");
 	});
 
 	it("should generate title for multiple updates", () => {
@@ -127,6 +151,37 @@ describe("generatePRBody", () => {
 		expect(body).toContain("> ## What's Changed");
 		expect(body).toContain("**About**: Iconify extension for Quarto");
 		expect(body).toContain("quarto-extensions-updater");
+	});
+
+	it("should show release notes once and list each location for copies of one extension", async () => {
+		const updates = [
+			gitlinkCopy("_extensions/mcanouil/gitlink", "1.9.0"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink", "1.8.0"),
+		];
+		(mockOctokit.rest.repos.getReleaseByTag as jest.Mock).mockClear();
+		(mockOctokit.rest.repos.getReleaseByTag as jest.Mock).mockResolvedValue({ data: { body: "Notes" } });
+
+		const body = await generatePRBody(updates, mockOctokit);
+
+		expect(mockOctokit.rest.repos.getReleaseByTag).toHaveBeenCalledTimes(1);
+		expect(body).toContain("### Release Notes");
+		expect(body).not.toContain("### mcanouil/gitlink");
+		expect(body).toContain("`1.9.0` → `1.9.2` in `_extensions/mcanouil/gitlink`");
+		expect(body).toContain("`1.8.0` → `1.9.2` in `_extensions/atelier/_extensions/mcanouil/gitlink`");
+	});
+
+	it("should name the location of a skipped copy", async () => {
+		const topLevel = gitlinkCopy("_extensions/mcanouil/gitlink");
+		const embedded = gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink");
+		(mockOctokit.rest.repos.getReleaseByTag as jest.Mock).mockResolvedValue({ data: { body: "Notes" } });
+
+		const body = await generatePRBody([topLevel, embedded], mockOctokit, [
+			{ update: embedded, reason: "Needs a newer Quarto" },
+		]);
+
+		expect(body).toContain(
+			"- **mcanouil/gitlink** in `_extensions/atelier/_extensions/mcanouil/gitlink` (`1.9.0` → `1.9.2`): Needs a newer Quarto",
+		);
 	});
 
 	it("should handle missing release notes", async () => {
@@ -243,6 +298,27 @@ describe("generatePRLabels", () => {
 describe("logUpdateSummary", () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+	});
+
+	it("should name each copy's location in the update lines", () => {
+		logUpdateSummary([
+			gitlinkCopy("_extensions/mcanouil/gitlink"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink"),
+		]);
+
+		expect(core.info).toHaveBeenCalledWith("   mcanouil/gitlink in `_extensions/mcanouil/gitlink`: 1.9.0 → 1.9.2");
+		expect(core.info).toHaveBeenCalledWith(
+			"   mcanouil/gitlink in `_extensions/atelier/_extensions/mcanouil/gitlink`: 1.9.0 → 1.9.2",
+		);
+	});
+
+	it("should count copies of one extension once in the total", () => {
+		logUpdateSummary([
+			gitlinkCopy("_extensions/mcanouil/gitlink"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink"),
+		]);
+
+		expect(core.info).toHaveBeenCalledWith("Total: 1 extension(s) to update");
 	});
 
 	it("should log summary for mixed updates", () => {

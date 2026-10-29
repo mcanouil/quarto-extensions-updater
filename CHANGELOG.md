@@ -3,6 +3,7 @@
 ## Unreleased
 
 - fix: Handle extensions embedded in another extension, such as `_extensions/atelier/_extensions/mcanouil/gitlink/`, when their parent is listed in `scan-directories`. The update is reported under the embedded extension's own name, and `quarto add` runs in the parent extension's folder, so the embedded copy is the one that gets replaced. A parent extension is now updated before the extensions it embeds. (#77)
+- fix: Update every copy of an extension installed in more than one place, such as top-level and embedded in another extension, in one pull request. Reports name each copy's folder so the copies can be told apart, and the `updates` output gains a `location` field. (#78)
 
 ## 2.2.2 (2026-10-19)
 

@@ -122,10 +122,10 @@ outputs:
     description: "Whether updates are available (true/false)"
 
   update-count:
-    description: "Number of updates available"
+    description: "Number of updates available, one per installed copy of an extension"
 
   updates:
-    description: "JSON array of updates (name, currentVersion, latestVersion)"
+    description: "JSON array of updates (name, location, currentVersion, latestVersion), one entry per installed copy"
 
   pr-number:
     description: "Pull request number (if created)"

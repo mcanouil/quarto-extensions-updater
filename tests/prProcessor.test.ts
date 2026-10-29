@@ -213,6 +213,80 @@ describe("processPRForUpdateGroup", () => {
 		);
 	});
 
+	it("should name the extension and require every copy to qualify for auto-merge", async () => {
+		const patchCopy = createUpdate("mcanouil/gitlink", "1.9.0", "1.9.2");
+		const minorCopy = {
+			...createUpdate("mcanouil/gitlink", "1.8.0", "1.9.2"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		const config: PRProcessingConfig = {
+			...baseConfig,
+			autoMergeConfig: { enabled: true, strategy: "patch", mergeMethod: "squash" },
+		};
+		mockShouldAutoMerge.mockImplementation((update) => update.currentVersion === "1.9.0");
+
+		const result = await processPRForUpdateGroup(mockOctokit, "owner", "repo", [patchCopy, minorCopy], config);
+
+		expect(mockEnableAutoMerge).not.toHaveBeenCalled();
+		expect(mockCore.info).toHaveBeenCalledWith(
+			expect.stringContaining("Auto-merge not applicable for mcanouil/gitlink (strategy: patch)"),
+		);
+		expect(result.extensions).toEqual(["mcanouil/gitlink"]);
+	});
+
+	it("should judge auto-merge on the copies that were applied", async () => {
+		const patchCopy = createUpdate("mcanouil/gitlink", "1.9.0", "1.9.2");
+		const minorCopy = {
+			...createUpdate("mcanouil/gitlink", "1.8.0", "1.9.2"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/mcanouil/gitlink/_extension.yml"],
+			skippedUpdates: [{ update: minorCopy, reason: "Needs a newer Quarto" }],
+		});
+		const config: PRProcessingConfig = {
+			...baseConfig,
+			autoMergeConfig: { enabled: true, strategy: "patch", mergeMethod: "squash" },
+		};
+		mockShouldAutoMerge.mockImplementation((update) => update.currentVersion === "1.9.0");
+		mockIsAutoMergeEnabled.mockResolvedValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [patchCopy, minorCopy], config);
+
+		expect(mockEnableAutoMerge).toHaveBeenCalledWith(mockOctokit, "owner", "repo", 123, "squash");
+	});
+
+	it("should not enable auto-merge when no update was applied", async () => {
+		const update = createUpdate("owner/ext1", "1.0.0", "1.0.1");
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [{ update, reason: "Needs a newer Quarto" }],
+		});
+		const config: PRProcessingConfig = {
+			...baseConfig,
+			autoMergeConfig: { enabled: true, strategy: "patch", mergeMethod: "squash" },
+		};
+		mockShouldAutoMerge.mockReturnValue(true);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [update], config);
+
+		expect(mockEnableAutoMerge).not.toHaveBeenCalled();
+	});
+
+	it("should name the extension when a PR for its copies already exists", async () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = {
+			...topLevel,
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		mockCheckExistingPR.mockResolvedValue({ exists: true, prNumber: 7, prUrl: "https://github.com/owner/repo/pull/7" });
+
+		const result = await processPRForUpdateGroup(mockOctokit, "owner", "repo", [topLevel, embedded], baseConfig);
+
+		expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining("already exists for mcanouil/gitlink@1.1.0"));
+		expect(result.extensions).toEqual(["mcanouil/gitlink"]);
+	});
+
 	it("should enable auto-merge for grouped updates when all qualify", async () => {
 		const updates = [createUpdate("owner/ext1", "1.0.0", "1.0.1"), createUpdate("owner/ext2", "2.0.0", "2.0.1")];
 
@@ -425,6 +499,20 @@ describe("processAllPRs", () => {
 
 		expect(mockCore.endGroup).toHaveBeenCalled();
 		expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining("Failed to process owner/ext1"));
+	});
+
+	it("should put every copy of one extension in the same pull request when not grouped", async () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", [topLevel, embedded], false, baseConfig);
+
+		expect(createdPRs).toHaveLength(1);
+		expect(mockApplyUpdates).toHaveBeenCalledTimes(1);
+		expect(mockApplyUpdates).toHaveBeenCalledWith([topLevel, embedded]);
 	});
 
 	it("should process empty updates array", async () => {

@@ -141,6 +141,7 @@ export function checkForUpdates(
 				currentVersion: extensionData.version,
 				latestVersion,
 				manifestPath,
+				location: path.relative(workspacePath, path.dirname(manifestPath)),
 				url: registryEntry.htmlUrl,
 				releaseUrl: registryEntry.latestReleaseUrl || "",
 				description: registryEntry.description || "",
@@ -189,6 +190,52 @@ export function normaliseVersion(version: string): string {
 	}
 
 	return normalised;
+}
+
+/**
+ * Groups the copies of each extension, such as a top-level copy and one embedded in another extension
+ * @param updates Array of extension updates
+ * @returns One array per distinct extension, in order of first appearance
+ */
+export function groupCopies(updates: ExtensionUpdate[]): ExtensionUpdate[][] {
+	const copies = new Map<string, ExtensionUpdate[]>();
+	for (const update of updates) {
+		const group = copies.get(update.nameWithOwner) ?? [];
+		group.push(update);
+		copies.set(update.nameWithOwner, group);
+	}
+	return [...copies.values()];
+}
+
+/**
+ * Lists the distinct extensions among updates, counting copies of one extension once
+ * @param updates Array of extension updates
+ * @returns Distinct `owner/name` values, in order of first appearance
+ */
+export function extensionNames(updates: ExtensionUpdate[]): string[] {
+	return [...new Set(updates.map((update) => update.nameWithOwner))];
+}
+
+/**
+ * Gives the location of an update when its extension is installed more than once, so reports can tell the copies apart
+ * @param update The update to describe
+ * @param updates Every update in the same report
+ * @returns The update's location, or undefined when the extension is installed once
+ */
+export function copyLocation(update: ExtensionUpdate, updates: ExtensionUpdate[]): string | undefined {
+	const copies = updates.filter((other) => other.nameWithOwner === update.nameWithOwner);
+	return copies.length > 1 ? update.location : undefined;
+}
+
+/**
+ * Formats the location of an update for markdown when its extension is installed more than once
+ * @param update The update to describe
+ * @param updates Every update in the same report
+ * @returns A suffix such as `` in `_extensions/atelier/_extensions/mcanouil/gitlink` ``, or an empty string
+ */
+export function copyLocationSuffix(update: ExtensionUpdate, updates: ExtensionUpdate[]): string {
+	const location = copyLocation(update, updates);
+	return location ? ` in \`${location}\`` : "";
 }
 
 /**

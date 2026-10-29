@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge.js";
+import { copyLocation, copyLocationSuffix, extensionNames, groupCopies } from "./updates.js";
 import type {
 	ExtensionUpdate,
 	AutoMergeConfig,
@@ -68,6 +69,18 @@ function getConfigRows(
 }
 
 /**
+ * Decides auto-merge per extension, as a pull request is merged only when every copy of its extension qualifies
+ */
+function autoMergeByExtension(updates: ExtensionUpdate[], autoMergeConfig: AutoMergeConfig): Map<string, boolean> {
+	return new Map(
+		groupCopies(updates).map((copies) => [
+			copies[0].nameWithOwner,
+			copies.every((copy) => shouldAutoMerge(copy, autoMergeConfig)),
+		]),
+	);
+}
+
+/**
  * Generates markdown content for dry-run summary
  * @param updates Array of extension updates that would be applied
  * @param groupUpdates Whether updates are grouped in a single PR
@@ -104,19 +117,21 @@ export function generateDryRunMarkdown(
 
 	// Planned actions section
 	markdown += "### Planned Actions\n\n";
+	const extensionCount = extensionNames(updates).length;
 	if (groupUpdates) {
-		markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
+		markdown += `Would create **1 PR** with ${extensionCount} extension update${extensionCount > 1 ? "s" : ""}\n\n`;
 	} else {
-		markdown += `Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)\n\n`;
+		markdown += `Would create **${extensionCount} PR${extensionCount > 1 ? "s" : ""}** (one per extension)\n\n`;
 	}
 
 	// Updates table
 	markdown += "### Available Updates\n\n";
 	markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
 
+	const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
 	for (const update of updates) {
-		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
-		markdown += `| ${update.nameWithOwner} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+		const wouldAutoMerge = autoMerge.get(update.nameWithOwner);
+		markdown += `| ${update.nameWithOwner}${copyLocationSuffix(update, updates)} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
 	}
 
 	markdown += "\n";
@@ -239,13 +254,20 @@ export async function generateCompletedSummary(
 		],
 	];
 
+	const reportedUpdates = [...updates, ...skippedUpdates.map((skipped) => skipped.update)];
+	const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
+	const describe = (update: ExtensionUpdate): string => {
+		const location = copyLocation(update, reportedUpdates);
+		return location ? `${update.nameWithOwner} in ${location}` : update.nameWithOwner;
+	};
+
 	for (const update of updates) {
 		const pr = updateToPR.get(update.nameWithOwner);
 		const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
-		const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
+		const autoMergeStatus = autoMerge.get(update.nameWithOwner) ? "✓ Yes" : "✗ No";
 
 		updatesTable.push([
-			{ data: update.nameWithOwner, header: false },
+			{ data: describe(update), header: false },
 			{ data: update.currentVersion, header: false },
 			{ data: update.latestVersion, header: false },
 			{ data: prLink, header: false },
@@ -271,7 +293,7 @@ export async function generateCompletedSummary(
 
 		for (const skipped of skippedUpdates) {
 			skippedTable.push([
-				{ data: skipped.update.nameWithOwner, header: false },
+				{ data: describe(skipped.update), header: false },
 				{ data: skipped.update.currentVersion, header: false },
 				{ data: skipped.update.latestVersion, header: false },
 				{ data: skipped.reason, header: false },

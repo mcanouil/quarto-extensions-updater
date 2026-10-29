@@ -41,6 +41,8 @@ export interface ExtensionUpdate {
 	currentVersion: string;
 	latestVersion: string;
 	manifestPath: string;
+	/** Extension folder relative to the workspace, which tells copies of one extension apart */
+	location: string;
 	url: string;
 	releaseUrl: string;
 	description: string;
