@@ -2,7 +2,13 @@ import * as core from "@actions/core";
 import type { OctokitClient } from "./github.js";
 import type { ExtensionUpdate, SkippedUpdate } from "./types.js";
 import { copyLocationSuffix, extensionNames, groupCopies, groupUpdatesByType } from "./updates.js";
-import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants.js";
+import {
+	PR_FOOTER_TEXT,
+	DEFAULT_PR_LABELS,
+	LOG_SEPARATOR_CHAR,
+	LOG_SEPARATOR_LENGTH,
+	MAX_REMOVED_FILES_LISTED,
+} from "./constants.js";
 
 /**
  * Fetches release notes for a specific release
@@ -100,8 +106,11 @@ export async function generatePRBody(
 		sections.push("The new releases no longer ship these files, so this pull request deletes them:");
 		sections.push("");
 		for (const [extension, files] of removedFiles) {
-			for (const file of files) {
+			for (const file of files.slice(0, MAX_REMOVED_FILES_LISTED)) {
 				sections.push(`- **${extension}**: \`${file}\``);
+			}
+			if (files.length > MAX_REMOVED_FILES_LISTED) {
+				sections.push(`- **${extension}**: and ${files.length - MAX_REMOVED_FILES_LISTED} more file(s)`);
 			}
 		}
 		sections.push("");

@@ -209,6 +209,18 @@ describe("generatePRBody", () => {
 		expect(body).toContain("- **mcanouil/gitlink**: `_extensions/atelier/_extensions/mcanouil/gitlink/old.lua`");
 	});
 
+	it("should cap the removed files listed for each extension", async () => {
+		const update = gitlinkCopy("_extensions/mcanouil/gitlink");
+		const files = Array.from({ length: 25 }, (_, i) => `_extensions/mcanouil/gitlink/file${i}.lua`);
+		(mockOctokit.rest.repos.getReleaseByTag as jest.Mock).mockResolvedValue({ data: { body: "Notes" } });
+
+		const body = await generatePRBody([update], mockOctokit, [], new Map([["mcanouil/gitlink", files]]));
+
+		expect(body).toContain("`_extensions/mcanouil/gitlink/file19.lua`");
+		expect(body).not.toContain("`_extensions/mcanouil/gitlink/file20.lua`");
+		expect(body).toContain("- **mcanouil/gitlink**: and 5 more file(s)");
+	});
+
 	it("should handle missing release notes", async () => {
 		const updates: ExtensionUpdate[] = [
 			{
