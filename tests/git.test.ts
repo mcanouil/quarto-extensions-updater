@@ -275,6 +275,59 @@ describe("git.ts", () => {
 			expect(core.info).toHaveBeenCalledWith(expect.stringContaining("Tracked 3 file(s)"));
 		});
 
+		it("should list files after every update so an embedded reinstall leaves no stale or duplicate paths", () => {
+			const parent: ExtensionUpdate = { ...createUpdate("atelier"), manifestPath: "/path/to/atelier/_extension.yml" };
+			const embedded: ExtensionUpdate = {
+				...createUpdate("gitlink"),
+				manifestPath: "/path/to/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			};
+			let embeddedReinstalled = false;
+			mockExecSync.mockImplementation((command: string) => {
+				if (command.includes("gitlink@")) {
+					embeddedReinstalled = true;
+				}
+				return "1.4.0\n" as unknown as Buffer;
+			});
+			const file = (name: string): DirEntry => ({ name, isFile: () => true, isDirectory: () => false });
+			const dir = (name: string): DirEntry => ({ name, isFile: () => false, isDirectory: () => true });
+			const tree: Record<string, () => DirEntry[]> = {
+				"/path/to/atelier": () => [file("_extension.yml"), dir("_extensions")],
+				"/path/to/atelier/_extensions": () => [dir("test-owner")],
+				"/path/to/atelier/_extensions/test-owner": () => [dir("gitlink")],
+				"/path/to/atelier/_extensions/test-owner/gitlink": () =>
+					embeddedReinstalled ? [file("_extension.yml")] : [file("_extension.yml"), file("dropped.lua")],
+			};
+			mockFs.readdirSync.mockImplementation(((dirPath: string) => tree[dirPath]()) as unknown as typeof fs.readdirSync);
+
+			const result = applyUpdates([parent, embedded]);
+
+			expect(result.modifiedFiles).toEqual([
+				"/path/to/atelier/_extension.yml",
+				"/path/to/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			]);
+		});
+
+		it("should apply a parent extension before an extension embedded in it", () => {
+			const embedded: ExtensionUpdate = {
+				...createUpdate("gitlink"),
+				manifestPath: "/path/to/_extensions/test-owner/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			};
+			const parent: ExtensionUpdate = {
+				...createUpdate("atelier"),
+				manifestPath: "/path/to/_extensions/test-owner/atelier/_extension.yml",
+			};
+
+			applyUpdates([embedded, parent]);
+
+			const addCommands = mockExecSync.mock.calls
+				.map(([command]) => command)
+				.filter((command) => command.startsWith("quarto add"));
+			expect(addCommands).toEqual([
+				"quarto add test-owner/test-atelier@1.1.0 --no-prompt",
+				"quarto add test-owner/test-gitlink@1.1.0 --no-prompt",
+			]);
+		});
+
 		it("should return empty modified files for non-existent directory", () => {
 			mockFs.existsSync.mockReturnValue(false);
 
@@ -319,6 +372,12 @@ describe("git.ts", () => {
 			const result = deriveQuartoAddCwd("/workspace/_extensions/owner/ext/_extension.yml");
 
 			expect(result).toBe("/workspace");
+		});
+
+		it("should return the extension directory that embeds a nested extension", () => {
+			const result = deriveQuartoAddCwd("/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml");
+
+			expect(result).toBe("/workspace/_extensions/atelier");
 		});
 
 		it("should return process.cwd() when path has no _extensions segment", () => {

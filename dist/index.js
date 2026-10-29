@@ -107900,7 +107900,7 @@ function eventsToAst(events, options) {
  * @returns Array of paths to extension manifest files
  */
 function findExtensionManifests(workspacePath) {
-    const extensionsDir = external_path_.join(workspacePath, "_extensions");
+    const extensionsDir = external_path_.join(workspacePath, QUARTO_EXTENSIONS_DIR);
     if (!external_fs_.existsSync(extensionsDir)) {
         info("No _extensions directory found");
         return [];
@@ -107964,14 +107964,15 @@ function readExtensionManifest(manifestPath) {
     }
 }
 /**
- * Extracts owner and extension name from a manifest path
+ * Extracts owner and extension name from a manifest path.
+ * Uses the last `_extensions` segment, so an extension embedded inside another resolves to itself.
  * @param manifestPath Path to the manifest file
  * @returns Object with owner and name, or null if invalid path
  */
 function extractExtensionInfo(manifestPath) {
     try {
         const parts = manifestPath.split(external_path_.sep);
-        const extensionsIndex = parts.indexOf("_extensions");
+        const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
         if (extensionsIndex === -1 || extensionsIndex + 2 >= parts.length) {
             return null;
         }
@@ -108940,6 +108941,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
 
 
 
+
 /**
  * Gets the installed Quarto CLI version
  * @returns The Quarto version string or null if unavailable
@@ -109035,18 +109037,24 @@ function requireQuartoVersion() {
 }
 /**
  * Derives the working directory for running `quarto add` based on the manifest path.
- * Returns the parent directory of `_extensions` so that `quarto add` installs
- * the extension in the correct location.
+ * Returns the parent directory of the last `_extensions` segment so that `quarto add`
+ * replaces the extension in place, including one embedded inside another extension.
  * @param manifestPath Absolute path to the extension manifest file
  * @returns The directory to use as cwd for `quarto add`
  */
 function deriveQuartoAddCwd(manifestPath) {
     const parts = manifestPath.split(external_path_.sep);
-    const extensionsIndex = parts.indexOf("_extensions");
+    const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
     if (extensionsIndex <= 0) {
         return process.cwd();
     }
     return parts.slice(0, extensionsIndex).join(external_path_.sep);
+}
+/**
+ * Counts how many extensions a manifest is nested in, so a parent sorts before what it embeds
+ */
+function nestingDepth(update) {
+    return update.manifestPath.split(external_path_.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
 }
 /**
  * Applies extension updates using Quarto CLI
@@ -109055,9 +109063,11 @@ function deriveQuartoAddCwd(manifestPath) {
  */
 function applyUpdates(updates) {
     const quartoVersion = requireQuartoVersion();
-    const modifiedFiles = [];
+    const updatedDirs = [];
     const skippedUpdates = [];
-    for (const update of updates) {
+    // Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
+    const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
+    for (const update of orderedUpdates) {
         try {
             const source = `${update.repositoryName}@${update.latestVersion}`;
             const quartoAddCwd = deriveQuartoAddCwd(update.manifestPath);
@@ -109083,10 +109093,7 @@ function applyUpdates(updates) {
                 }
             }
             updateManifestSource(update.manifestPath, source);
-            const extensionDir = external_path_.dirname(update.manifestPath);
-            const extensionFiles = getAllFilesInDirectory(extensionDir);
-            modifiedFiles.push(...extensionFiles);
-            info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+            updatedDirs.push(external_path_.dirname(update.manifestPath));
         }
         catch (error) {
             const reason = `Failed to update: ${extractExecError(error)}`;
@@ -109094,7 +109101,14 @@ function applyUpdates(updates) {
             skippedUpdates.push({ update, reason });
         }
     }
-    return { modifiedFiles, skippedUpdates };
+    // List files only once every update has run, as a later `quarto add` can replace an earlier extension's embedded copy
+    const modifiedFiles = new Set();
+    for (const extensionDir of updatedDirs) {
+        const extensionFiles = getAllFilesInDirectory(extensionDir);
+        extensionFiles.forEach((file) => modifiedFiles.add(file));
+        info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+    }
+    return { modifiedFiles: [...modifiedFiles], skippedUpdates };
 }
 /**
  * Creates a branch name for the update PR
@@ -109669,8 +109683,8 @@ async function run() {
             assignmentConfig: config.assignmentConfig,
         });
         // Filter updates to only those that were successfully applied
-        const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
-        const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
+        const skippedManifests = new Set(allSkippedUpdates.map((s) => s.update.manifestPath));
+        const appliedUpdates = updates.filter((u) => !skippedManifests.has(u.manifestPath));
         // Set outputs and generate summary
         if (createdPRs.length > 0) {
             setPROutputs(createdPRs);

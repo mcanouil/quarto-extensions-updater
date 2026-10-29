@@ -5,6 +5,7 @@ import { execSync } from "child_process";
 import * as semver from "semver";
 import type { ExtensionUpdate, ApplyUpdatesResult } from "./types.js";
 import { updateManifestSource, readExtensionManifest } from "./extensions.js";
+import { QUARTO_EXTENSIONS_DIR } from "./constants.js";
 
 /**
  * Gets the installed Quarto CLI version
@@ -114,18 +115,25 @@ function requireQuartoVersion(): string {
 
 /**
  * Derives the working directory for running `quarto add` based on the manifest path.
- * Returns the parent directory of `_extensions` so that `quarto add` installs
- * the extension in the correct location.
+ * Returns the parent directory of the last `_extensions` segment so that `quarto add`
+ * replaces the extension in place, including one embedded inside another extension.
  * @param manifestPath Absolute path to the extension manifest file
  * @returns The directory to use as cwd for `quarto add`
  */
 export function deriveQuartoAddCwd(manifestPath: string): string {
 	const parts = manifestPath.split(path.sep);
-	const extensionsIndex = parts.indexOf("_extensions");
+	const extensionsIndex = parts.lastIndexOf(QUARTO_EXTENSIONS_DIR);
 	if (extensionsIndex <= 0) {
 		return process.cwd();
 	}
 	return parts.slice(0, extensionsIndex).join(path.sep);
+}
+
+/**
+ * Counts how many extensions a manifest is nested in, so a parent sorts before what it embeds
+ */
+function nestingDepth(update: ExtensionUpdate): number {
+	return update.manifestPath.split(path.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
 }
 
 /**
@@ -136,10 +144,13 @@ export function deriveQuartoAddCwd(manifestPath: string): string {
 export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 	const quartoVersion = requireQuartoVersion();
 
-	const modifiedFiles: string[] = [];
+	const updatedDirs: string[] = [];
 	const skippedUpdates: ApplyUpdatesResult["skippedUpdates"] = [];
 
-	for (const update of updates) {
+	// Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
+	const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
+
+	for (const update of orderedUpdates) {
 		try {
 			const source = `${update.repositoryName}@${update.latestVersion}`;
 			const quartoAddCwd = deriveQuartoAddCwd(update.manifestPath);
@@ -172,11 +183,7 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 
 			updateManifestSource(update.manifestPath, source);
 
-			const extensionDir = path.dirname(update.manifestPath);
-			const extensionFiles = getAllFilesInDirectory(extensionDir);
-			modifiedFiles.push(...extensionFiles);
-
-			core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+			updatedDirs.push(path.dirname(update.manifestPath));
 		} catch (error) {
 			const reason = `Failed to update: ${extractExecError(error)}`;
 			core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
@@ -184,7 +191,15 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 		}
 	}
 
-	return { modifiedFiles, skippedUpdates };
+	// List files only once every update has run, as a later `quarto add` can replace an earlier extension's embedded copy
+	const modifiedFiles = new Set<string>();
+	for (const extensionDir of updatedDirs) {
+		const extensionFiles = getAllFilesInDirectory(extensionDir);
+		extensionFiles.forEach((file) => modifiedFiles.add(file));
+		core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+	}
+
+	return { modifiedFiles: [...modifiedFiles], skippedUpdates };
 }
 
 /**
