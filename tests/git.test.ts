@@ -307,6 +307,27 @@ describe("git.ts", () => {
 			]);
 		});
 
+		it("should apply a parent extension before an extension embedded in it", () => {
+			const embedded: ExtensionUpdate = {
+				...createUpdate("gitlink"),
+				manifestPath: "/path/to/_extensions/test-owner/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			};
+			const parent: ExtensionUpdate = {
+				...createUpdate("atelier"),
+				manifestPath: "/path/to/_extensions/test-owner/atelier/_extension.yml",
+			};
+
+			applyUpdates([embedded, parent]);
+
+			const addCommands = mockExecSync.mock.calls
+				.map(([command]) => command)
+				.filter((command) => command.startsWith("quarto add"));
+			expect(addCommands).toEqual([
+				"quarto add test-owner/test-atelier@1.1.0 --no-prompt",
+				"quarto add test-owner/test-gitlink@1.1.0 --no-prompt",
+			]);
+		});
+
 		it("should return empty modified files for non-existent directory", () => {
 			mockFs.existsSync.mockReturnValue(false);
 

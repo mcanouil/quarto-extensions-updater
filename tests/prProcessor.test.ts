@@ -427,31 +427,6 @@ describe("processAllPRs", () => {
 		expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining("Failed to process owner/ext1"));
 	});
 
-	it("should apply a parent extension before an extension embedded in it", async () => {
-		const embedded = {
-			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
-			manifestPath: "/workspace/_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/_extension.yml",
-		};
-		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
-
-		await processAllPRs(mockOctokit, "owner", "repo", [embedded, parent], true, baseConfig);
-
-		expect(mockApplyUpdates).toHaveBeenCalledWith([parent, embedded]);
-	});
-
-	it("should process a parent extension's pull request before an embedded one when not grouped", async () => {
-		const embedded = {
-			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
-			manifestPath: "/workspace/_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/_extension.yml",
-		};
-		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
-
-		await processAllPRs(mockOctokit, "owner", "repo", [embedded, parent], false, baseConfig);
-
-		expect(mockApplyUpdates).toHaveBeenNthCalledWith(1, [parent]);
-		expect(mockApplyUpdates).toHaveBeenNthCalledWith(2, [embedded]);
-	});
-
 	it("should process empty updates array", async () => {
 		const updates: ExtensionUpdate[] = [];
 

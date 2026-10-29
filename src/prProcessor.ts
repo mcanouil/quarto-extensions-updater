@@ -5,7 +5,6 @@ import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFi
 import { generatePRTitle, generatePRBody } from "./pr.js";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github.js";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge.js";
-import { QUARTO_EXTENSIONS_DIR } from "./constants.js";
 import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types.js";
 
 /**
@@ -197,13 +196,6 @@ export async function processPRForUpdateGroup(
 }
 
 /**
- * Counts how many extensions a manifest is nested in, so a parent sorts before what it embeds
- */
-function nestingDepth(update: ExtensionUpdate): number {
-	return update.manifestPath.split(path.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
-}
-
-/**
  * Processes all update groups and returns results
  */
 export async function processAllPRs(
@@ -217,11 +209,8 @@ export async function processAllPRs(
 	const createdPRs: PRProcessingResult[] = [];
 	const allSkippedUpdates: SkippedUpdate[] = [];
 
-	// Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
-	const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
-
 	// Determine whether to create one PR for all updates or one PR per extension
-	const updateGroups = groupUpdates ? [orderedUpdates] : orderedUpdates.map((u) => [u]);
+	const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
 
 	for (const updateGroup of updateGroups) {
 		const groupDescription =

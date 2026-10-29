@@ -130,6 +130,13 @@ export function deriveQuartoAddCwd(manifestPath: string): string {
 }
 
 /**
+ * Counts how many extensions a manifest is nested in, so a parent sorts before what it embeds
+ */
+function nestingDepth(update: ExtensionUpdate): number {
+	return update.manifestPath.split(path.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
+}
+
+/**
  * Applies extension updates using Quarto CLI
  * @param updates Array of updates to apply
  * @returns Result containing modified files and any skipped updates
@@ -140,7 +147,10 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 	const updatedDirs: string[] = [];
 	const skippedUpdates: ApplyUpdatesResult["skippedUpdates"] = [];
 
-	for (const update of updates) {
+	// Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
+	const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
+
+	for (const update of orderedUpdates) {
 		try {
 			const source = `${update.repositoryName}@${update.latestVersion}`;
 			const quartoAddCwd = deriveQuartoAddCwd(update.manifestPath);
