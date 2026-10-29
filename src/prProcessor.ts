@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git.js";
 import { generatePRTitle, generatePRBody } from "./pr.js";
-import { groupCopies } from "./updates.js";
+import { extensionNames, groupCopies } from "./updates.js";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github.js";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge.js";
 import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types.js";
@@ -56,9 +56,9 @@ async function handleAutoMerge(
 		return;
 	}
 
-	// For single extension updates
-	if (updateGroup.length === 1) {
-		if (shouldAutoMerge(updateGroup[0], autoMergeConfig)) {
+	// For single extension updates, every copy of the extension must qualify
+	if (extensionNames(updateGroup).length === 1) {
+		if (updateGroup.every((u) => shouldAutoMerge(u, autoMergeConfig))) {
 			core.info(`🤖 Auto-merge enabled for ${updateGroup[0].nameWithOwner}`);
 
 			const alreadyEnabled = await isAutoMergeEnabled(octokit, owner, repo, prNumber);
@@ -95,7 +95,7 @@ async function handleAutoMerge(
  * Returns a human-readable description of an update group
  */
 function describeUpdateGroup(updateGroup: ExtensionUpdate[]): string {
-	return groupCopies(updateGroup).length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+	return extensionNames(updateGroup).length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 }
 
 /**
@@ -126,7 +126,7 @@ export async function processPRForUpdateGroup(
 	// Check for existing PR
 	const existingPR = await checkExistingPR(octokit, owner, repo, branchName, prTitle);
 	if (existingPR.exists && existingPR.prNumber && existingPR.prUrl) {
-		if (updateGroup.length === 1) {
+		if (extensionNames(updateGroup).length === 1) {
 			core.info(
 				`ℹ️ PR #${existingPR.prNumber} already exists for ${updateGroup[0].nameWithOwner}@${updateGroup[0].latestVersion}, skipping...`,
 			);
@@ -134,7 +134,7 @@ export async function processPRForUpdateGroup(
 			core.info(`ℹ️ PR #${existingPR.prNumber} already exists for grouped updates, skipping...`);
 		}
 		core.info(`   URL: ${existingPR.prUrl}`);
-		return { number: existingPR.prNumber, url: existingPR.prUrl, extensions: updateGroup.map((u) => u.nameWithOwner) };
+		return { number: existingPR.prNumber, url: existingPR.prUrl, extensions: extensionNames(updateGroup) };
 	}
 
 	// Apply updates and validate
@@ -149,7 +149,7 @@ export async function processPRForUpdateGroup(
 
 	if (modifiedFiles.length === 0) {
 		core.warning(`No files modified for ${groupDesc}, all extensions may have been skipped`);
-		return { number: 0, url: "", extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
+		return { number: 0, url: "", extensions: extensionNames(updateGroup), skippedUpdates };
 	}
 
 	if (!validateModifiedFiles(modifiedFiles)) {
@@ -189,7 +189,7 @@ export async function processPRForUpdateGroup(
 		// Handle auto-merge
 		await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
 
-		return { ...pr, extensions: updateGroup.map((u) => u.nameWithOwner), skippedUpdates };
+		return { ...pr, extensions: extensionNames(updateGroup), skippedUpdates };
 	} catch (error) {
 		core.error(`Failed to create/update PR for ${groupDesc}: ${error}`);
 		throw error;
@@ -214,7 +214,7 @@ export async function processAllPRs(
 	const updateGroups = groupUpdates ? [updates] : groupCopies(updates);
 
 	for (const updateGroup of updateGroups) {
-		const extensionCount = groupCopies(updateGroup).length;
+		const extensionCount = extensionNames(updateGroup).length;
 		const groupDescription = extensionCount === 1 ? updateGroup[0].nameWithOwner : `${extensionCount} extensions`;
 		core.startGroup(`📝 Processing ${groupDescription}`);
 

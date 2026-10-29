@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import type { OctokitClient } from "./github.js";
 import type { ExtensionUpdate, SkippedUpdate } from "./types.js";
-import { copyLocation, groupCopies, groupUpdatesByType } from "./updates.js";
+import { copyLocationSuffix, groupCopies, groupUpdatesByType } from "./updates.js";
 import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants.js";
 
 /**
@@ -164,9 +164,8 @@ export async function generatePRBody(
 		sections.push("The following extension(s) were skipped during this update:");
 		sections.push("");
 		for (const skipped of skippedUpdates) {
-			const location = copyLocation(skipped.update, updates);
 			sections.push(
-				`- **${skipped.update.nameWithOwner}**${location ? ` in \`${location}\`` : ""} (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
+				`- **${skipped.update.nameWithOwner}**${copyLocationSuffix(skipped.update, updates)} (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
 			);
 		}
 		sections.push("");
@@ -189,9 +188,8 @@ function formatUpdateList(updates: ExtensionUpdate[], allUpdates: ExtensionUpdat
 	const lines: string[] = [];
 
 	for (const update of updates) {
-		const location = copyLocation(update, allUpdates);
 		lines.push(
-			`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\`${location ? ` in \`${location}\`` : ""}`,
+			`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\`${copyLocationSuffix(update, allUpdates)}`,
 		);
 	}
 

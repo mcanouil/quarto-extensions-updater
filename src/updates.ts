@@ -208,6 +208,15 @@ export function groupCopies(updates: ExtensionUpdate[]): ExtensionUpdate[][] {
 }
 
 /**
+ * Lists the distinct extensions among updates, counting copies of one extension once
+ * @param updates Array of extension updates
+ * @returns Distinct `owner/name` values, in order of first appearance
+ */
+export function extensionNames(updates: ExtensionUpdate[]): string[] {
+	return [...new Set(updates.map((update) => update.nameWithOwner))];
+}
+
+/**
  * Gives the location of an update when its extension is installed more than once, so reports can tell the copies apart
  * @param update The update to describe
  * @param updates Every update in the same report
@@ -216,6 +225,17 @@ export function groupCopies(updates: ExtensionUpdate[]): ExtensionUpdate[][] {
 export function copyLocation(update: ExtensionUpdate, updates: ExtensionUpdate[]): string | undefined {
 	const copies = updates.filter((other) => other.nameWithOwner === update.nameWithOwner);
 	return copies.length > 1 ? update.location : undefined;
+}
+
+/**
+ * Formats the location of an update for markdown when its extension is installed more than once
+ * @param update The update to describe
+ * @param updates Every update in the same report
+ * @returns A suffix such as `` in `_extensions/atelier/_extensions/mcanouil/gitlink` ``, or an empty string
+ */
+export function copyLocationSuffix(update: ExtensionUpdate, updates: ExtensionUpdate[]): string {
+	const location = copyLocation(update, updates);
+	return location ? ` in \`${location}\`` : "";
 }
 
 /**

@@ -34,6 +34,7 @@ function setUpdateOutputs(updates: ExtensionUpdate[]): void {
 		JSON.stringify(
 			updates.map((u) => ({
 				name: u.nameWithOwner,
+				location: u.location,
 				currentVersion: u.currentVersion,
 				latestVersion: u.latestVersion,
 			})),

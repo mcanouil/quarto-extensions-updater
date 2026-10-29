@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge.js";
-import { copyLocation, groupCopies } from "./updates.js";
+import { copyLocation, copyLocationSuffix, extensionNames } from "./updates.js";
 import type {
 	ExtensionUpdate,
 	AutoMergeConfig,
@@ -108,7 +108,7 @@ export function generateDryRunMarkdown(
 	if (groupUpdates) {
 		markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
 	} else {
-		const prCount = groupCopies(updates).length;
+		const prCount = extensionNames(updates).length;
 		markdown += `Would create **${prCount} PR${prCount > 1 ? "s" : ""}** (one per extension)\n\n`;
 	}
 
@@ -118,9 +118,7 @@ export function generateDryRunMarkdown(
 
 	for (const update of updates) {
 		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
-		const location = copyLocation(update, updates);
-		const name = location ? `${update.nameWithOwner} in \`${location}\`` : update.nameWithOwner;
-		markdown += `| ${name} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+		markdown += `| ${update.nameWithOwner}${copyLocationSuffix(update, updates)} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
 	}
 
 	markdown += "\n";
