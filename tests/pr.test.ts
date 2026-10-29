@@ -300,6 +300,15 @@ describe("logUpdateSummary", () => {
 		jest.clearAllMocks();
 	});
 
+	it("should count copies of one extension once in the total", () => {
+		logUpdateSummary([
+			gitlinkCopy("_extensions/mcanouil/gitlink"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink"),
+		]);
+
+		expect(core.info).toHaveBeenCalledWith("Total: 1 extension(s) to update");
+	});
+
 	it("should log summary for mixed updates", () => {
 		const updates: ExtensionUpdate[] = [
 			{

@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import type { OctokitClient } from "./github.js";
 import type { ExtensionUpdate, SkippedUpdate } from "./types.js";
-import { copyLocationSuffix, groupCopies, groupUpdatesByType } from "./updates.js";
+import { copyLocationSuffix, extensionNames, groupCopies, groupUpdatesByType } from "./updates.js";
 import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants.js";
 
 /**
@@ -240,5 +240,5 @@ export function logUpdateSummary(updates: ExtensionUpdate[]): void {
 	}
 
 	core.info(LOG_SEPARATOR_CHAR.repeat(LOG_SEPARATOR_LENGTH));
-	core.info(`Total: ${updates.length} extension(s) to update`);
+	core.info(`Total: ${extensionNames(updates).length} extension(s) to update`);
 }

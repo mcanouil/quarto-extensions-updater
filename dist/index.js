@@ -108552,7 +108552,7 @@ function logUpdateSummary(updates) {
         }
     }
     info(LOG_SEPARATOR_CHAR.repeat(LOG_SEPARATOR_LENGTH));
-    info(`Total: ${updates.length} extension(s) to update`);
+    info(`Total: ${extensionNames(updates).length} extension(s) to update`);
 }
 
 ;// CONCATENATED MODULE: ./src/validation.ts
