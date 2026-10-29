@@ -221,21 +221,27 @@ export function logUpdateSummary(updates: ExtensionUpdate[]): void {
 	if (grouped.major.length > 0) {
 		core.warning(`⚠️  Major updates (${grouped.major.length}):`);
 		for (const update of grouped.major) {
-			core.warning(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+			core.warning(
+				`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`,
+			);
 		}
 	}
 
 	if (grouped.minor.length > 0) {
 		core.info(`✨ Minor updates (${grouped.minor.length}):`);
 		for (const update of grouped.minor) {
-			core.info(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+			core.info(
+				`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`,
+			);
 		}
 	}
 
 	if (grouped.patch.length > 0) {
 		core.info(`🐛 Patch updates (${grouped.patch.length}):`);
 		for (const update of grouped.patch) {
-			core.info(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+			core.info(
+				`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`,
+			);
 		}
 	}
 

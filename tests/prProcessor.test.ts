@@ -234,6 +234,28 @@ describe("processPRForUpdateGroup", () => {
 		expect(result.extensions).toEqual(["mcanouil/gitlink"]);
 	});
 
+	it("should judge auto-merge on the copies that were applied", async () => {
+		const patchCopy = createUpdate("mcanouil/gitlink", "1.9.0", "1.9.2");
+		const minorCopy = {
+			...createUpdate("mcanouil/gitlink", "1.8.0", "1.9.2"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/mcanouil/gitlink/_extension.yml"],
+			skippedUpdates: [{ update: minorCopy, reason: "Needs a newer Quarto" }],
+		});
+		const config: PRProcessingConfig = {
+			...baseConfig,
+			autoMergeConfig: { enabled: true, strategy: "patch", mergeMethod: "squash" },
+		};
+		mockShouldAutoMerge.mockImplementation((update) => update.currentVersion === "1.9.0");
+		mockIsAutoMergeEnabled.mockResolvedValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [patchCopy, minorCopy], config);
+
+		expect(mockEnableAutoMerge).toHaveBeenCalledWith(mockOctokit, "owner", "repo", 123, "squash");
+	});
+
 	it("should name the extension when a PR for its copies already exists", async () => {
 		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
 		const embedded = {

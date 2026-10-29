@@ -300,6 +300,18 @@ describe("logUpdateSummary", () => {
 		jest.clearAllMocks();
 	});
 
+	it("should name each copy's location in the update lines", () => {
+		logUpdateSummary([
+			gitlinkCopy("_extensions/mcanouil/gitlink"),
+			gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink"),
+		]);
+
+		expect(core.info).toHaveBeenCalledWith("   mcanouil/gitlink in `_extensions/mcanouil/gitlink`: 1.9.0 → 1.9.2");
+		expect(core.info).toHaveBeenCalledWith(
+			"   mcanouil/gitlink in `_extensions/atelier/_extensions/mcanouil/gitlink`: 1.9.0 → 1.9.2",
+		);
+	});
+
 	it("should count copies of one extension once in the total", () => {
 		logUpdateSummary([
 			gitlinkCopy("_extensions/mcanouil/gitlink"),

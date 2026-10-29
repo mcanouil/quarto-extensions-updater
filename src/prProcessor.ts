@@ -186,8 +186,10 @@ export async function processPRForUpdateGroup(
 			config.assignmentConfig,
 		);
 
-		// Handle auto-merge
-		await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
+		// Handle auto-merge, judged on the updates that were applied
+		const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
+		const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
+		await handleAutoMerge(octokit, owner, repo, pr.number, appliedUpdates, config.autoMergeConfig);
 
 		return { ...pr, extensions: extensionNames(updateGroup), skippedUpdates };
 	} catch (error) {

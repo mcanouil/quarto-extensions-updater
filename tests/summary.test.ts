@@ -131,6 +131,17 @@ describe("generateDryRunMarkdown", () => {
 		expect(markdown).toContain("| mcanouil/gitlink in `_extensions/atelier/_extensions/mcanouil/gitlink` |");
 	});
 
+	it("should count distinct extensions in the grouped PR sentence", () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = { ...topLevel, location: "_extensions/atelier/_extensions/mcanouil/gitlink" };
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: false, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown([topLevel, embedded], true, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).toContain("Would create **1 PR** with 1 extension update\n");
+	});
+
 	it("should include next steps section", () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };

@@ -108536,19 +108536,19 @@ function logUpdateSummary(updates) {
     if (grouped.major.length > 0) {
         warning(`⚠️  Major updates (${grouped.major.length}):`);
         for (const update of grouped.major) {
-            warning(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+            warning(`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`);
         }
     }
     if (grouped.minor.length > 0) {
         info(`✨ Minor updates (${grouped.minor.length}):`);
         for (const update of grouped.minor) {
-            info(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+            info(`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`);
         }
     }
     if (grouped.patch.length > 0) {
         info(`🐛 Patch updates (${grouped.patch.length}):`);
         for (const update of grouped.patch) {
-            info(`   ${update.nameWithOwner}: ${update.currentVersion} → ${update.latestVersion}`);
+            info(`   ${update.nameWithOwner}${copyLocationSuffix(update, updates)}: ${update.currentVersion} → ${update.latestVersion}`);
         }
     }
     info(LOG_SEPARATOR_CHAR.repeat(LOG_SEPARATOR_LENGTH));
@@ -108838,12 +108838,12 @@ function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterCon
     markdown += "\n";
     // Planned actions section
     markdown += "### Planned Actions\n\n";
+    const extensionCount = extensionNames(updates).length;
     if (groupUpdates) {
-        markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
+        markdown += `Would create **1 PR** with ${extensionCount} extension update${extensionCount > 1 ? "s" : ""}\n\n`;
     }
     else {
-        const prCount = extensionNames(updates).length;
-        markdown += `Would create **${prCount} PR${prCount > 1 ? "s" : ""}** (one per extension)\n\n`;
+        markdown += `Would create **${extensionCount} PR${extensionCount > 1 ? "s" : ""}** (one per extension)\n\n`;
     }
     // Updates table
     markdown += "### Available Updates\n\n";
@@ -109589,8 +109589,10 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates);
     try {
         const pr = await createOrUpdatePR(octokit, owner, repo, branchName, config.baseBranch, prTitle, prBody, config.prLabels, config.assignmentConfig);
-        // Handle auto-merge
-        await handleAutoMerge(octokit, owner, repo, pr.number, updateGroup, config.autoMergeConfig);
+        // Handle auto-merge, judged on the updates that were applied
+        const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
+        const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
+        await handleAutoMerge(octokit, owner, repo, pr.number, appliedUpdates, config.autoMergeConfig);
         return { ...pr, extensions: extensionNames(updateGroup), skippedUpdates };
     }
     catch (error) {

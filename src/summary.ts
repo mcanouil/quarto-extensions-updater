@@ -105,11 +105,11 @@ export function generateDryRunMarkdown(
 
 	// Planned actions section
 	markdown += "### Planned Actions\n\n";
+	const extensionCount = extensionNames(updates).length;
 	if (groupUpdates) {
-		markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
+		markdown += `Would create **1 PR** with ${extensionCount} extension update${extensionCount > 1 ? "s" : ""}\n\n`;
 	} else {
-		const prCount = extensionNames(updates).length;
-		markdown += `Would create **${prCount} PR${prCount > 1 ? "s" : ""}** (one per extension)\n\n`;
+		markdown += `Would create **${extensionCount} PR${extensionCount > 1 ? "s" : ""}** (one per extension)\n\n`;
 	}
 
 	// Updates table
