@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import type { OctokitClient } from "./github.js";
 import type { ExtensionUpdate, SkippedUpdate } from "./types.js";
-import { groupUpdatesByType } from "./updates.js";
+import { copyLocation, groupCopies, groupUpdatesByType } from "./updates.js";
 import { PR_FOOTER_TEXT, DEFAULT_PR_LABELS, LOG_SEPARATOR_CHAR, LOG_SEPARATOR_LENGTH } from "./constants.js";
 
 /**
@@ -43,12 +43,13 @@ async function fetchReleaseNotes(
  * @returns PR title
  */
 export function generatePRTitle(updates: ExtensionUpdate[], prefix = "chore(deps):"): string {
-	if (updates.length === 1) {
-		const update = updates[0];
+	const extensions = groupCopies(updates);
+	if (extensions.length === 1) {
+		const update = extensions[0][0];
 		return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}`;
 	}
 
-	return `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
+	return `${prefix} update ${extensions.length} Quarto extensions`;
 }
 
 /**
@@ -72,30 +73,32 @@ export async function generatePRBody(
 	if (grouped.major.length > 0) {
 		sections.push("## ⚠️ Major Updates");
 		sections.push("");
-		sections.push(...formatUpdateList(grouped.major));
+		sections.push(...formatUpdateList(grouped.major, updates));
 		sections.push("");
 	}
 
 	if (grouped.minor.length > 0) {
 		sections.push("## ✨ Minor Updates");
 		sections.push("");
-		sections.push(...formatUpdateList(grouped.minor));
+		sections.push(...formatUpdateList(grouped.minor, updates));
 		sections.push("");
 	}
 
 	if (grouped.patch.length > 0) {
 		sections.push("## 🐛 Patch Updates");
 		sections.push("");
-		sections.push(...formatUpdateList(grouped.patch));
+		sections.push(...formatUpdateList(grouped.patch, updates));
 		sections.push("");
 	}
 
 	sections.push("---");
 	sections.push("");
 
+	const extensions = groupCopies(updates).map((copies) => copies[0]);
+
 	// Fetch all release notes in parallel
 	const releaseNotesMap = new Map<string, string | null>();
-	const releaseNotesEntries = updates
+	const releaseNotesEntries = extensions
 		.map((update) => {
 			const parts = update.repositoryName.split("/");
 			if (parts.length !== 2) {
@@ -115,8 +118,8 @@ export async function generatePRBody(
 		releaseNotesMap.set(releaseNotesEntries[i].key, releaseNotesResults[i]);
 	}
 
-	for (const update of updates) {
-		if (updates.length > 1) {
+	for (const update of extensions) {
+		if (extensions.length > 1) {
 			sections.push(`### ${update.nameWithOwner}`);
 			sections.push("");
 		} else {
@@ -161,8 +164,9 @@ export async function generatePRBody(
 		sections.push("The following extension(s) were skipped during this update:");
 		sections.push("");
 		for (const skipped of skippedUpdates) {
+			const location = copyLocation(skipped.update, updates);
 			sections.push(
-				`- **${skipped.update.nameWithOwner}** (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
+				`- **${skipped.update.nameWithOwner}**${location ? ` in \`${location}\`` : ""} (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`,
 			);
 		}
 		sections.push("");
@@ -176,16 +180,18 @@ export async function generatePRBody(
 }
 
 /**
- * Formats a list of updates as markdown
- * @param updates Array of extension updates
+ * Formats a list of updates as markdown, naming the location of each copy of an extension installed more than once
+ * @param updates Array of extension updates to list
+ * @param allUpdates Every update in the pull request, used to find extensions installed more than once
  * @returns Array of markdown lines
  */
-function formatUpdateList(updates: ExtensionUpdate[]): string[] {
+function formatUpdateList(updates: ExtensionUpdate[], allUpdates: ExtensionUpdate[]): string[] {
 	const lines: string[] = [];
 
 	for (const update of updates) {
+		const location = copyLocation(update, allUpdates);
 		lines.push(
-			`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\``,
+			`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\`${location ? ` in \`${location}\`` : ""}`,
 		);
 	}
 

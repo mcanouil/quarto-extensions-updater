@@ -421,6 +421,18 @@ describe("git.ts", () => {
 			expect(result).toBe("chore/quarto-extensions/update-mcanouil-iconify-1.2.3");
 		});
 
+		it("should use the single-extension branch name for copies of one extension", () => {
+			const topLevel = createUpdate("mcanouil", "gitlink", "1.9.2");
+			const embedded = {
+				...createUpdate("mcanouil", "gitlink", "1.9.2"),
+				manifestPath: "/path/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+			};
+
+			const result = createBranchName([topLevel, embedded]);
+
+			expect(result).toBe("chore/quarto-extensions/update-mcanouil-gitlink-1.9.2");
+		});
+
 		it("should use custom branch prefix", () => {
 			const updates = [createUpdate("mcanouil", "iconify", "1.2.3")];
 
@@ -477,6 +489,33 @@ describe("git.ts", () => {
 			expect(result).toContain("chore(deps): update mcanouil/iconify extension to 1.2.3");
 			expect(result).toContain("Updates mcanouil/iconify from 1.0.0 to 1.2.3");
 			expect(result).toContain("Release notes: https://github.com/mcanouil/iconify/releases/tag/v1.2.3");
+		});
+
+		it("should describe copies of one extension as a single extension", () => {
+			const topLevel = createUpdate("mcanouil", "gitlink", "1.0.0", "1.2.0");
+			const embedded = {
+				...createUpdate("mcanouil", "gitlink", "1.1.0", "1.2.0"),
+				manifestPath: "/path/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+			};
+
+			const result = createCommitMessage([topLevel, embedded]);
+
+			expect(result).toContain("chore(deps): update mcanouil/gitlink extension to 1.2.0");
+			expect(result).toContain("Updates mcanouil/gitlink from 1.0.0, 1.1.0 to 1.2.0");
+		});
+
+		it("should count distinct extensions when copies are grouped with others", () => {
+			const topLevel = createUpdate("mcanouil", "gitlink", "1.0.0", "1.2.0");
+			const embedded = {
+				...createUpdate("mcanouil", "gitlink", "1.0.0", "1.2.0"),
+				manifestPath: "/path/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+			};
+
+			const result = createCommitMessage([topLevel, embedded, createUpdate("mcanouil", "iconify", "1.0.0", "1.1.0")]);
+
+			expect(result).toContain("chore(deps): update 2 Quarto extensions");
+			expect(result).toContain("- mcanouil/gitlink: 1.0.0 → 1.2.0");
+			expect(result.match(/mcanouil\/gitlink/g)).toHaveLength(1);
 		});
 
 		it("should use custom prefix", () => {

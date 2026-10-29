@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge.js";
+import { copyLocation, groupCopies } from "./updates.js";
 import type {
 	ExtensionUpdate,
 	AutoMergeConfig,
@@ -107,7 +108,8 @@ export function generateDryRunMarkdown(
 	if (groupUpdates) {
 		markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
 	} else {
-		markdown += `Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)\n\n`;
+		const prCount = groupCopies(updates).length;
+		markdown += `Would create **${prCount} PR${prCount > 1 ? "s" : ""}** (one per extension)\n\n`;
 	}
 
 	// Updates table
@@ -116,7 +118,9 @@ export function generateDryRunMarkdown(
 
 	for (const update of updates) {
 		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
-		markdown += `| ${update.nameWithOwner} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+		const location = copyLocation(update, updates);
+		const name = location ? `${update.nameWithOwner} in \`${location}\`` : update.nameWithOwner;
+		markdown += `| ${name} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
 	}
 
 	markdown += "\n";
@@ -239,13 +243,19 @@ export async function generateCompletedSummary(
 		],
 	];
 
+	const reportedUpdates = [...updates, ...skippedUpdates.map((skipped) => skipped.update)];
+	const describe = (update: ExtensionUpdate): string => {
+		const location = copyLocation(update, reportedUpdates);
+		return location ? `${update.nameWithOwner} in ${location}` : update.nameWithOwner;
+	};
+
 	for (const update of updates) {
 		const pr = updateToPR.get(update.nameWithOwner);
 		const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
 		const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
 
 		updatesTable.push([
-			{ data: update.nameWithOwner, header: false },
+			{ data: describe(update), header: false },
 			{ data: update.currentVersion, header: false },
 			{ data: update.latestVersion, header: false },
 			{ data: prLink, header: false },
@@ -271,7 +281,7 @@ export async function generateCompletedSummary(
 
 		for (const skipped of skippedUpdates) {
 			skippedTable.push([
-				{ data: skipped.update.nameWithOwner, header: false },
+				{ data: describe(skipped.update), header: false },
 				{ data: skipped.update.currentVersion, header: false },
 				{ data: skipped.update.latestVersion, header: false },
 				{ data: skipped.reason, header: false },

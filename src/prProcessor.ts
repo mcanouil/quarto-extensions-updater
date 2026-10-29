@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git.js";
 import { generatePRTitle, generatePRBody } from "./pr.js";
+import { groupCopies } from "./updates.js";
 import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github.js";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge.js";
 import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types.js";
@@ -94,7 +95,7 @@ async function handleAutoMerge(
  * Returns a human-readable description of an update group
  */
 function describeUpdateGroup(updateGroup: ExtensionUpdate[]): string {
-	return updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+	return groupCopies(updateGroup).length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 }
 
 /**
@@ -210,11 +211,11 @@ export async function processAllPRs(
 	const allSkippedUpdates: SkippedUpdate[] = [];
 
 	// Determine whether to create one PR for all updates or one PR per extension
-	const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
+	const updateGroups = groupUpdates ? [updates] : groupCopies(updates);
 
 	for (const updateGroup of updateGroups) {
-		const groupDescription =
-			updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
+		const extensionCount = groupCopies(updateGroup).length;
+		const groupDescription = extensionCount === 1 ? updateGroup[0].nameWithOwner : `${extensionCount} extensions`;
 		core.startGroup(`📝 Processing ${groupDescription}`);
 
 		try {

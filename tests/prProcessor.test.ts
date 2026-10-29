@@ -427,6 +427,20 @@ describe("processAllPRs", () => {
 		expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining("Failed to process owner/ext1"));
 	});
 
+	it("should put every copy of one extension in the same pull request when not grouped", async () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", [topLevel, embedded], false, baseConfig);
+
+		expect(createdPRs).toHaveLength(1);
+		expect(mockApplyUpdates).toHaveBeenCalledTimes(1);
+		expect(mockApplyUpdates).toHaveBeenCalledWith([topLevel, embedded]);
+	});
+
 	it("should process empty updates array", async () => {
 		const updates: ExtensionUpdate[] = [];
 

@@ -108244,6 +108244,7 @@ function checkForUpdates(workspacePath, registry, filterConfig, updateStrategy =
                 currentVersion: extensionData.version,
                 latestVersion,
                 manifestPath,
+                location: external_path_.relative(workspacePath, external_path_.dirname(manifestPath)),
                 url: registryEntry.htmlUrl,
                 releaseUrl: registryEntry.latestReleaseUrl || "",
                 description: registryEntry.description || "",
@@ -108286,6 +108287,30 @@ function normaliseVersion(version) {
         normalised = normalised.substring(1);
     }
     return normalised;
+}
+/**
+ * Groups the copies of each extension, such as a top-level copy and one embedded in another extension
+ * @param updates Array of extension updates
+ * @returns One array per distinct extension, in order of first appearance
+ */
+function groupCopies(updates) {
+    const copies = new Map();
+    for (const update of updates) {
+        const group = copies.get(update.nameWithOwner) ?? [];
+        group.push(update);
+        copies.set(update.nameWithOwner, group);
+    }
+    return [...copies.values()];
+}
+/**
+ * Gives the location of an update when its extension is installed more than once, so reports can tell the copies apart
+ * @param update The update to describe
+ * @param updates Every update in the same report
+ * @returns The update's location, or undefined when the extension is installed once
+ */
+function copyLocation(update, updates) {
+    const copies = updates.filter((other) => other.nameWithOwner === update.nameWithOwner);
+    return copies.length > 1 ? update.location : undefined;
 }
 /**
  * Groups updates by type for better PR organisation
@@ -108349,11 +108374,12 @@ async function fetchReleaseNotes(octokit, owner, repo, version) {
  * @returns PR title
  */
 function generatePRTitle(updates, prefix = "chore(deps):") {
-    if (updates.length === 1) {
-        const update = updates[0];
+    const extensions = groupCopies(updates);
+    if (extensions.length === 1) {
+        const update = extensions[0][0];
         return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}`;
     }
-    return `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
+    return `${prefix} update ${extensions.length} Quarto extensions`;
 }
 /**
  * Generates a detailed Pull Request body similar to Dependabot
@@ -108369,26 +108395,27 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
     if (grouped.major.length > 0) {
         sections.push("## ⚠️ Major Updates");
         sections.push("");
-        sections.push(...formatUpdateList(grouped.major));
+        sections.push(...formatUpdateList(grouped.major, updates));
         sections.push("");
     }
     if (grouped.minor.length > 0) {
         sections.push("## ✨ Minor Updates");
         sections.push("");
-        sections.push(...formatUpdateList(grouped.minor));
+        sections.push(...formatUpdateList(grouped.minor, updates));
         sections.push("");
     }
     if (grouped.patch.length > 0) {
         sections.push("## 🐛 Patch Updates");
         sections.push("");
-        sections.push(...formatUpdateList(grouped.patch));
+        sections.push(...formatUpdateList(grouped.patch, updates));
         sections.push("");
     }
     sections.push("---");
     sections.push("");
+    const extensions = groupCopies(updates).map((copies) => copies[0]);
     // Fetch all release notes in parallel
     const releaseNotesMap = new Map();
-    const releaseNotesEntries = updates
+    const releaseNotesEntries = extensions
         .map((update) => {
         const parts = update.repositoryName.split("/");
         if (parts.length !== 2) {
@@ -108406,8 +108433,8 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
     for (let i = 0; i < releaseNotesEntries.length; i++) {
         releaseNotesMap.set(releaseNotesEntries[i].key, releaseNotesResults[i]);
     }
-    for (const update of updates) {
-        if (updates.length > 1) {
+    for (const update of extensions) {
+        if (extensions.length > 1) {
             sections.push(`### ${update.nameWithOwner}`);
             sections.push("");
         }
@@ -108447,7 +108474,8 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
         sections.push("The following extension(s) were skipped during this update:");
         sections.push("");
         for (const skipped of skippedUpdates) {
-            sections.push(`- **${skipped.update.nameWithOwner}** (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`);
+            const location = copyLocation(skipped.update, updates);
+            sections.push(`- **${skipped.update.nameWithOwner}**${location ? ` in \`${location}\`` : ""} (\`${skipped.update.currentVersion}\` → \`${skipped.update.latestVersion}\`): ${skipped.reason}`);
         }
         sections.push("");
     }
@@ -108457,14 +108485,16 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
     return sections.join("\n");
 }
 /**
- * Formats a list of updates as markdown
- * @param updates Array of extension updates
+ * Formats a list of updates as markdown, naming the location of each copy of an extension installed more than once
+ * @param updates Array of extension updates to list
+ * @param allUpdates Every update in the pull request, used to find extensions installed more than once
  * @returns Array of markdown lines
  */
-function formatUpdateList(updates) {
+function formatUpdateList(updates, allUpdates) {
     const lines = [];
     for (const update of updates) {
-        lines.push(`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\``);
+        const location = copyLocation(update, allUpdates);
+        lines.push(`- **[${update.nameWithOwner}](${update.url})**: \`${update.currentVersion}\` → \`${update.latestVersion}\`${location ? ` in \`${location}\`` : ""}`);
     }
     return lines;
 }
@@ -108730,6 +108760,7 @@ function parseInputs() {
 ;// CONCATENATED MODULE: ./src/summary.ts
 
 
+
 /**
  * Builds a normalised list of configuration rows from the current settings
  */
@@ -108795,14 +108826,17 @@ function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterCon
         markdown += `Would create **1 PR** with ${updates.length} extension update${updates.length > 1 ? "s" : ""}\n\n`;
     }
     else {
-        markdown += `Would create **${updates.length} PR${updates.length > 1 ? "s" : ""}** (one per extension)\n\n`;
+        const prCount = groupCopies(updates).length;
+        markdown += `Would create **${prCount} PR${prCount > 1 ? "s" : ""}** (one per extension)\n\n`;
     }
     // Updates table
     markdown += "### Available Updates\n\n";
     markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
     for (const update of updates) {
         const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
-        markdown += `| ${update.nameWithOwner} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
+        const location = copyLocation(update, updates);
+        const name = location ? `${update.nameWithOwner} in \`${location}\`` : update.nameWithOwner;
+        markdown += `| ${name} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
     }
     markdown += "\n";
     // Next steps
@@ -108895,12 +108929,17 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
             { data: "Auto-Merge", header: true },
         ],
     ];
+    const reportedUpdates = [...updates, ...skippedUpdates.map((skipped) => skipped.update)];
+    const describe = (update) => {
+        const location = copyLocation(update, reportedUpdates);
+        return location ? `${update.nameWithOwner} in ${location}` : update.nameWithOwner;
+    };
     for (const update of updates) {
         const pr = updateToPR.get(update.nameWithOwner);
         const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
         const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
         updatesTable.push([
-            { data: update.nameWithOwner, header: false },
+            { data: describe(update), header: false },
             { data: update.currentVersion, header: false },
             { data: update.latestVersion, header: false },
             { data: prLink, header: false },
@@ -108922,7 +108961,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
         ];
         for (const skipped of skippedUpdates) {
             skippedTable.push([
-                { data: skipped.update.nameWithOwner, header: false },
+                { data: describe(skipped.update), header: false },
                 { data: skipped.update.currentVersion, header: false },
                 { data: skipped.update.latestVersion, header: false },
                 { data: skipped.reason, header: false },
@@ -108935,6 +108974,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
 }
 
 ;// CONCATENATED MODULE: ./src/git.ts
+
 
 
 
@@ -109119,8 +109159,9 @@ function applyUpdates(updates) {
 function createBranchName(updates, branchPrefix = "chore/quarto-extensions") {
     const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const prefix = branchPrefix.length === 0 ? "chore/quarto-extensions" : branchPrefix;
-    if (updates.length === 1) {
-        const update = updates[0];
+    const extensions = groupCopies(updates);
+    if (extensions.length === 1) {
+        const update = extensions[0][0];
         const safeName = update.nameWithOwner.replace(/\//g, "-");
         return `${prefix}/update-${safeName}-${update.latestVersion}`;
     }
@@ -109133,17 +109174,27 @@ function createBranchName(updates, branchPrefix = "chore/quarto-extensions") {
  * @returns Commit message
  */
 function createCommitMessage(updates, prefix = "chore(deps):") {
-    if (updates.length === 1) {
-        const update = updates[0];
+    const extensions = groupCopies(updates);
+    if (extensions.length === 1) {
+        const copies = extensions[0];
+        const update = copies[0];
         return `${prefix} update ${update.nameWithOwner} extension to ${update.latestVersion}
 
-Updates ${update.nameWithOwner} from ${update.currentVersion} to ${update.latestVersion}.
+Updates ${update.nameWithOwner} from ${currentVersions(copies)} to ${update.latestVersion}.
 
 Release notes: ${update.releaseUrl}`;
     }
-    const title = `${prefix} update ${updates.length} Quarto extension${updates.length > 1 ? "s" : ""}`;
-    const body = updates.map((u) => `- ${u.nameWithOwner}: ${u.currentVersion} → ${u.latestVersion}`).join("\n");
+    const title = `${prefix} update ${extensions.length} Quarto extensions`;
+    const body = extensions
+        .map((copies) => `- ${copies[0].nameWithOwner}: ${currentVersions(copies)} → ${copies[0].latestVersion}`)
+        .join("\n");
     return `${title}\n\n${body}`;
+}
+/**
+ * Lists the distinct current versions of an extension's copies
+ */
+function currentVersions(copies) {
+    return [...new Set(copies.map((copy) => copy.currentVersion))].join(", ");
 }
 /**
  * Validates that files were actually modified
@@ -109423,6 +109474,7 @@ async function createIssueForUpdates(octokit, owner, repo, updates, groupUpdates
 
 
 
+
 /**
  * Handles auto-merge logic for a PR
  */
@@ -109464,7 +109516,7 @@ async function handleAutoMerge(octokit, owner, repo, prNumber, updateGroup, auto
  * Returns a human-readable description of an update group
  */
 function describeUpdateGroup(updateGroup) {
-    return updateGroup.length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
+    return groupCopies(updateGroup).length === 1 ? updateGroup[0].nameWithOwner : "grouped updates";
 }
 /**
  * Prepares files for a Git commit by stripping the workspace prefix and reading contents
@@ -109539,9 +109591,10 @@ async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config
     const createdPRs = [];
     const allSkippedUpdates = [];
     // Determine whether to create one PR for all updates or one PR per extension
-    const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
+    const updateGroups = groupUpdates ? [updates] : groupCopies(updates);
     for (const updateGroup of updateGroups) {
-        const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
+        const extensionCount = groupCopies(updateGroup).length;
+        const groupDescription = extensionCount === 1 ? updateGroup[0].nameWithOwner : `${extensionCount} extensions`;
         startGroup(`📝 Processing ${groupDescription}`);
         try {
             const result = await processPRForUpdateGroup(octokit, owner, repo, updateGroup, config);

@@ -141,6 +141,7 @@ export function checkForUpdates(
 				currentVersion: extensionData.version,
 				latestVersion,
 				manifestPath,
+				location: path.relative(workspacePath, path.dirname(manifestPath)),
 				url: registryEntry.htmlUrl,
 				releaseUrl: registryEntry.latestReleaseUrl || "",
 				description: registryEntry.description || "",
@@ -189,6 +190,32 @@ export function normaliseVersion(version: string): string {
 	}
 
 	return normalised;
+}
+
+/**
+ * Groups the copies of each extension, such as a top-level copy and one embedded in another extension
+ * @param updates Array of extension updates
+ * @returns One array per distinct extension, in order of first appearance
+ */
+export function groupCopies(updates: ExtensionUpdate[]): ExtensionUpdate[][] {
+	const copies = new Map<string, ExtensionUpdate[]>();
+	for (const update of updates) {
+		const group = copies.get(update.nameWithOwner) ?? [];
+		group.push(update);
+		copies.set(update.nameWithOwner, group);
+	}
+	return [...copies.values()];
+}
+
+/**
+ * Gives the location of an update when its extension is installed more than once, so reports can tell the copies apart
+ * @param update The update to describe
+ * @param updates Every update in the same report
+ * @returns The update's location, or undefined when the extension is installed once
+ */
+export function copyLocation(update: ExtensionUpdate, updates: ExtensionUpdate[]): string | undefined {
+	const copies = updates.filter((other) => other.nameWithOwner === update.nameWithOwner);
+	return copies.length > 1 ? update.location : undefined;
 }
 
 /**

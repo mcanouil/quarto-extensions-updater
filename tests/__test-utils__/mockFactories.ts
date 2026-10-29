@@ -31,6 +31,7 @@ export function createMockUpdate(
 		currentVersion,
 		latestVersion,
 		manifestPath: `/workspace/_extensions/${nameWithOwner}/_extension.yml`,
+		location: `_extensions/${nameWithOwner}`,
 		url: `https://github.com/${nameWithOwner}`,
 		releaseUrl: `https://github.com/${nameWithOwner}/releases/tag/${latestVersion}`,
 		description,
