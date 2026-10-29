@@ -254,6 +254,7 @@ export async function createOrUpdatePR(
  * @param baseSha Base commit SHA
  * @param message Commit message
  * @param files Array of files with path and content
+ * @param deletedPaths Paths to delete from the base tree
  * @returns Commit SHA
  */
 export async function createCommit(
@@ -264,8 +265,9 @@ export async function createCommit(
 	baseSha: string,
 	message: string,
 	files: { path: string; content: Buffer }[],
+	deletedPaths: string[] = [],
 ): Promise<string> {
-	const tree = await Promise.all(
+	const writtenFiles = await Promise.all(
 		files.map(async (file) => {
 			const { data: blob } = await octokit.rest.git.createBlob({
 				owner,
@@ -282,6 +284,14 @@ export async function createCommit(
 			};
 		}),
 	);
+
+	const deletedFiles = deletedPaths.map((deletedPath) => ({
+		path: deletedPath,
+		mode: GIT_FILE_MODE_REGULAR,
+		type: "blob" as const,
+		sha: null,
+	}));
+	const tree = [...writtenFiles, ...deletedFiles];
 
 	const { data: newTree } = await octokit.rest.git.createTree({
 		owner,
@@ -306,6 +316,27 @@ export async function createCommit(
 	});
 
 	return commit.sha;
+}
+
+/**
+ * Lists every file in a commit's tree
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param sha Commit or tree SHA
+ * @returns File paths, or null when GitHub truncates the tree because the repository is too large
+ */
+export async function listBaseFiles(
+	octokit: OctokitClient,
+	owner: string,
+	repo: string,
+	sha: string,
+): Promise<string[] | null> {
+	const { data } = await octokit.rest.git.getTree({ owner, repo, tree_sha: sha, recursive: "true" });
+	if (data.truncated) {
+		return null;
+	}
+	return data.tree.flatMap((entry) => (entry.type === "blob" && entry.path ? [entry.path] : []));
 }
 
 /**

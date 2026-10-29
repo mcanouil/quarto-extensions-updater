@@ -13,6 +13,7 @@ jest.unstable_mockModule("fs", createMockFs);
 jest.unstable_mockModule("../src/git.js", () => ({
 	getQuartoVersion: jest.fn(),
 	deriveQuartoAddCwd: jest.fn(),
+	getCheckedOutSha: jest.fn(),
 	applyUpdates: jest.fn(),
 	createBranchName: jest.fn(),
 	createCommitMessage: jest.fn(),
@@ -30,6 +31,7 @@ jest.unstable_mockModule("../src/github.js", () => ({
 	requestReviewersAndAssignees: jest.fn(),
 	createOrUpdatePR: jest.fn(),
 	createCommit: jest.fn(),
+	listBaseFiles: jest.fn(),
 	createIssueForUpdates: jest.fn(),
 }));
 jest.unstable_mockModule("../src/automerge.js", () => ({
@@ -41,9 +43,11 @@ jest.unstable_mockModule("../src/automerge.js", () => ({
 
 const core = await import("@actions/core");
 const fs = await import("fs");
-const { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } = await import("../src/git.js");
+const { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles, getCheckedOutSha } =
+	await import("../src/git.js");
 const { generatePRTitle, generatePRBody } = await import("../src/pr.js");
-const { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit } = await import("../src/github.js");
+const { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, listBaseFiles } =
+	await import("../src/github.js");
 const { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } = await import("../src/automerge.js");
 const { processPRForUpdateGroup, processAllPRs } = await import("../src/prProcessor.js");
 
@@ -59,6 +63,8 @@ const mockCheckExistingPR = jest.mocked(checkExistingPR);
 const mockCreateOrUpdateBranch = jest.mocked(createOrUpdateBranch);
 const mockCreateOrUpdatePR = jest.mocked(createOrUpdatePR);
 const mockCreateCommit = jest.mocked(createCommit);
+const mockListBaseFiles = jest.mocked(listBaseFiles);
+const mockGetCheckedOutSha = jest.mocked(getCheckedOutSha);
 const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 const mockEnableAutoMerge = jest.mocked(enableAutoMerge);
 const mockIsAutoMergeEnabled = jest.mocked(isAutoMergeEnabled);
@@ -96,9 +102,149 @@ describe("processPRForUpdateGroup", () => {
 		mockCreateOrUpdateBranch.mockResolvedValue(undefined);
 		mockFs.readFileSync.mockReturnValue(Buffer.from("file content"));
 		mockCreateCommit.mockResolvedValue("commit123");
+		mockListBaseFiles.mockResolvedValue([]);
+		mockGetCheckedOutSha.mockReturnValue("abc123");
 		mockGeneratePRBody.mockResolvedValue("PR body");
 		mockCreateOrUpdatePR.mockResolvedValue({ number: 123, url: "https://github.com/owner/repo/pull/123" });
 		mockShouldAutoMerge.mockReturnValue(false);
+	});
+
+	it("should delete files that the new release no longer ships, only in applied extension folders", async () => {
+		const applied = createUpdate("owner/ext1", "1.0.0", "1.1.0");
+		const skipped = createUpdate("owner/ext2", "1.0.0", "1.1.0");
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [{ update: skipped, reason: "Needs a newer Quarto" }],
+		});
+		mockListBaseFiles.mockResolvedValue([
+			"_extensions/owner/ext1/_extension.yml",
+			"_extensions/owner/ext1/old.lua",
+			"_extensions/owner/ext10/kept.lua",
+			"_extensions/owner/ext2/gone.lua",
+			"README.md",
+		]);
+		mockFs.existsSync.mockImplementation((file) => String(file).endsWith("_extension.yml"));
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [applied, skipped], baseConfig);
+
+		expect(mockListBaseFiles).toHaveBeenCalledWith(mockOctokit, "owner", "repo", "abc123");
+		expect(mockCreateCommit).toHaveBeenCalledWith(
+			mockOctokit,
+			"owner",
+			"repo",
+			"chore/quarto-extensions/update",
+			"abc123",
+			expect.any(String),
+			expect.any(Array),
+			["_extensions/owner/ext1/old.lua"],
+		);
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([["owner/ext1", ["_extensions/owner/ext1/old.lua"]]]),
+		);
+	});
+
+	it("should credit a removed file to the innermost applied extension", async () => {
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			location: "_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink",
+		};
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/mcanouil/atelier/_extension.yml"],
+			skippedUpdates: [{ update: embedded, reason: "Needs a newer Quarto" }],
+		});
+		mockListBaseFiles.mockResolvedValue(["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [parent, embedded], baseConfig);
+
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([["mcanouil/atelier", ["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]]]),
+		);
+	});
+
+	it("should credit a removed file to the embedded extension when both are applied", async () => {
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			location: "_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink",
+		};
+		mockListBaseFiles.mockResolvedValue([
+			"_extensions/mcanouil/atelier/old.scss",
+			"_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua",
+		]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [embedded, parent], baseConfig);
+
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([
+				["mcanouil/atelier", ["_extensions/mcanouil/atelier/old.scss"]],
+				["mcanouil/gitlink", ["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]],
+			]),
+		);
+	});
+
+	it("should not list the base tree when every update was skipped", async () => {
+		const update = createUpdate("owner/ext1", "1.0.0", "1.1.0");
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [{ update, reason: "Needs a newer Quarto" }],
+		});
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [update], baseConfig);
+
+		expect(mockListBaseFiles).not.toHaveBeenCalled();
+	});
+
+	it("should keep dropped files and warn when the checkout is not the base commit", async () => {
+		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		mockGetCheckedOutSha.mockReturnValue("other-sha");
+		mockListBaseFiles.mockResolvedValue(["_extensions/owner/ext1/only-on-base.lua"]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
+
+		expect(mockListBaseFiles).not.toHaveBeenCalled();
+		expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("abc123"));
+		expect(mockCreateCommit).toHaveBeenCalledWith(
+			mockOctokit,
+			"owner",
+			"repo",
+			"chore/quarto-extensions/update",
+			"abc123",
+			expect.any(String),
+			expect.any(Array),
+			[],
+		);
+	});
+
+	it("should keep dropped files and warn when the base tree cannot be listed in full", async () => {
+		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		mockListBaseFiles.mockResolvedValue(null);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
+
+		expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("_extensions/owner/ext1"));
+		expect(mockCreateCommit).toHaveBeenCalledWith(
+			mockOctokit,
+			"owner",
+			"repo",
+			"chore/quarto-extensions/update",
+			"abc123",
+			expect.any(String),
+			expect.any(Array),
+			[],
+		);
 	});
 
 	it("should successfully process a single update", async () => {
@@ -366,6 +512,7 @@ describe("processPRForUpdateGroup", () => {
 					content: expect.any(Buffer),
 				},
 			],
+			[],
 		);
 	});
 

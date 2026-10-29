@@ -1,10 +1,17 @@
 import * as core from "@actions/core";
 import * as fs from "fs";
 import * as path from "path";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git.js";
+import { applyUpdates, createBranchName, createCommitMessage, getCheckedOutSha, validateModifiedFiles } from "./git.js";
 import { generatePRTitle, generatePRBody } from "./pr.js";
 import { extensionNames, groupCopies } from "./updates.js";
-import { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, type OctokitClient } from "./github.js";
+import {
+	checkExistingPR,
+	createOrUpdateBranch,
+	createOrUpdatePR,
+	createCommit,
+	listBaseFiles,
+	type OctokitClient,
+} from "./github.js";
 import { shouldAutoMerge, enableAutoMerge, isAutoMergeEnabled } from "./automerge.js";
 import type { ExtensionUpdate, AutoMergeConfig, PRAssignmentConfig, SkippedUpdate } from "./types.js";
 
@@ -110,6 +117,52 @@ function prepareCommitFiles(modifiedFiles: string[], workspacePath: string): { p
 }
 
 /**
+ * Finds files that the base commit has in an updated extension folder but that the new release no longer ships
+ * @returns The removed files of each extension, keyed by `owner/name`, each file credited to its innermost extension
+ */
+async function findRemovedFiles(
+	octokit: OctokitClient,
+	owner: string,
+	repo: string,
+	appliedUpdates: ExtensionUpdate[],
+	config: PRProcessingConfig,
+): Promise<Map<string, string[]>> {
+	const removedFiles = new Map<string, string[]>();
+	if (appliedUpdates.length === 0) {
+		return removedFiles;
+	}
+
+	// Files missing on disk only mean "dropped" when the workspace holds the base commit
+	const folders = appliedUpdates.map((update) => update.location).join(", ");
+	const checkedOutSha = getCheckedOutSha(config.workspacePath);
+	if (checkedOutSha !== config.baseSha) {
+		core.warning(
+			`The workspace is at ${checkedOutSha ?? "an unknown commit"}, not the base commit ${config.baseSha}, ` +
+				`so files dropped by new releases are kept in: ${folders}`,
+		);
+		return removedFiles;
+	}
+
+	const baseFiles = await listBaseFiles(octokit, owner, repo, config.baseSha);
+	if (baseFiles === null) {
+		core.warning(
+			`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders}`,
+		);
+		return removedFiles;
+	}
+
+	for (const file of baseFiles) {
+		const owners = appliedUpdates.filter((update) => file.startsWith(`${update.location}/`));
+		if (owners.length === 0 || fs.existsSync(path.join(config.workspacePath, file))) {
+			continue;
+		}
+		const innermost = owners.reduce((a, b) => (b.location.length > a.location.length ? b : a));
+		removedFiles.set(innermost.nameWithOwner, [...(removedFiles.get(innermost.nameWithOwner) ?? []), file]);
+	}
+	return removedFiles;
+}
+
+/**
  * Processes a single update group (either a single extension or multiple grouped extensions)
  */
 export async function processPRForUpdateGroup(
@@ -158,6 +211,14 @@ export async function processPRForUpdateGroup(
 
 	core.info(`Modified ${modifiedFiles.length} file(s)`);
 
+	const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
+	const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
+	const removedFiles = await findRemovedFiles(octokit, owner, repo, appliedUpdates, config);
+	const removedPaths = [...removedFiles.values()].flat();
+	if (removedPaths.length > 0) {
+		core.info(`Removing ${removedPaths.length} file(s) that the new releases no longer ship`);
+	}
+
 	// Create commit
 	const commitMessage = createCommitMessage(updateGroup, config.commitMessagePrefix);
 	core.info(`Branch: ${branchName}`);
@@ -166,12 +227,21 @@ export async function processPRForUpdateGroup(
 	await createOrUpdateBranch(octokit, owner, repo, branchName, config.baseSha);
 
 	const files = prepareCommitFiles(modifiedFiles, config.workspacePath);
-	const commitSha = await createCommit(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
+	const commitSha = await createCommit(
+		octokit,
+		owner,
+		repo,
+		branchName,
+		config.baseSha,
+		commitMessage,
+		files,
+		removedPaths,
+	);
 
 	core.info(`✅ Created commit: ${commitSha}`);
 
 	// Create or update PR
-	const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates);
+	const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates, removedFiles);
 
 	try {
 		const pr = await createOrUpdatePR(
@@ -187,8 +257,6 @@ export async function processPRForUpdateGroup(
 		);
 
 		// Handle auto-merge, judged on the updates that were applied
-		const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
-		const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
 		await handleAutoMerge(octokit, owner, repo, pr.number, appliedUpdates, config.autoMergeConfig);
 
 		return { ...pr, extensions: extensionNames(updateGroup), skippedUpdates };
