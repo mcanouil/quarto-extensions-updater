@@ -109115,6 +109115,21 @@ function requireQuartoVersion() {
     return quartoVersion;
 }
 /**
+ * Reads the commit checked out in the workspace
+ * @param workspacePath The workspace root
+ * @returns The commit SHA, or null when the workspace is not a git checkout
+ */
+function getCheckedOutSha(workspacePath) {
+    try {
+        const output = (0,external_child_process_namespaceObject.execSync)("git rev-parse HEAD", { cwd: workspacePath, stdio: "pipe", encoding: "utf-8" });
+        return output.trim();
+    }
+    catch (error) {
+        core_debug(`Could not read the checked-out commit in ${workspacePath}: ${error}`);
+        return null;
+    }
+}
+/**
  * Derives the working directory for running `quarto add` based on the manifest path.
  * Returns the parent directory of the last `_extensions` segment so that `quarto add`
  * replaces the extension in place, including one embedded inside another extension.
@@ -109599,9 +109614,16 @@ async function findRemovedFiles(octokit, owner, repo, appliedUpdates, config) {
     if (appliedUpdates.length === 0) {
         return removedFiles;
     }
+    // Files missing on disk only mean "dropped" when the workspace holds the base commit
+    const folders = appliedUpdates.map((update) => update.location).join(", ");
+    const checkedOutSha = getCheckedOutSha(config.workspacePath);
+    if (checkedOutSha !== config.baseSha) {
+        warning(`The workspace is at ${checkedOutSha ?? "an unknown commit"}, not the base commit ${config.baseSha}, ` +
+            `so files dropped by new releases are kept in: ${folders}`);
+        return removedFiles;
+    }
     const baseFiles = await listBaseFiles(octokit, owner, repo, config.baseSha);
     if (baseFiles === null) {
-        const folders = appliedUpdates.map((update) => update.location).join(", ");
         warning(`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders}`);
         return removedFiles;
     }

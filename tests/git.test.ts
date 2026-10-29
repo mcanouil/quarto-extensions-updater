@@ -31,6 +31,7 @@ const {
 	createCommitMessage,
 	validateModifiedFiles,
 	deriveQuartoAddCwd,
+	getCheckedOutSha,
 } = await import("../src/git.js");
 
 const mockExecSync = execSync as jest.MockedFunction<typeof execSync>;
@@ -364,6 +365,27 @@ describe("git.ts", () => {
 				stdio: "pipe",
 				encoding: "utf-8",
 			});
+		});
+	});
+
+	describe("getCheckedOutSha", () => {
+		it("should return the commit checked out in the workspace", () => {
+			mockExecSync.mockReturnValue("abc123\n" as unknown as Buffer);
+
+			expect(getCheckedOutSha("/workspace")).toBe("abc123");
+			expect(mockExecSync).toHaveBeenCalledWith("git rev-parse HEAD", {
+				cwd: "/workspace",
+				stdio: "pipe",
+				encoding: "utf-8",
+			});
+		});
+
+		it("should return null when the workspace is not a git checkout", () => {
+			mockExecSync.mockImplementation(() => {
+				throw new Error("not a git repository");
+			});
+
+			expect(getCheckedOutSha("/workspace")).toBeNull();
 		});
 	});
 

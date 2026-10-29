@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import * as fs from "fs";
 import * as path from "path";
-import { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } from "./git.js";
+import { applyUpdates, createBranchName, createCommitMessage, getCheckedOutSha, validateModifiedFiles } from "./git.js";
 import { generatePRTitle, generatePRBody } from "./pr.js";
 import { extensionNames, groupCopies } from "./updates.js";
 import {
@@ -132,9 +132,19 @@ async function findRemovedFiles(
 		return removedFiles;
 	}
 
+	// Files missing on disk only mean "dropped" when the workspace holds the base commit
+	const folders = appliedUpdates.map((update) => update.location).join(", ");
+	const checkedOutSha = getCheckedOutSha(config.workspacePath);
+	if (checkedOutSha !== config.baseSha) {
+		core.warning(
+			`The workspace is at ${checkedOutSha ?? "an unknown commit"}, not the base commit ${config.baseSha}, ` +
+				`so files dropped by new releases are kept in: ${folders}`,
+		);
+		return removedFiles;
+	}
+
 	const baseFiles = await listBaseFiles(octokit, owner, repo, config.baseSha);
 	if (baseFiles === null) {
-		const folders = appliedUpdates.map((update) => update.location).join(", ");
 		core.warning(
 			`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders}`,
 		);

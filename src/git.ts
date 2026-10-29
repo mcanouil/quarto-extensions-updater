@@ -115,6 +115,21 @@ function requireQuartoVersion(): string {
 }
 
 /**
+ * Reads the commit checked out in the workspace
+ * @param workspacePath The workspace root
+ * @returns The commit SHA, or null when the workspace is not a git checkout
+ */
+export function getCheckedOutSha(workspacePath: string): string | null {
+	try {
+		const output = execSync("git rev-parse HEAD", { cwd: workspacePath, stdio: "pipe", encoding: "utf-8" });
+		return output.trim();
+	} catch (error) {
+		core.debug(`Could not read the checked-out commit in ${workspacePath}: ${error}`);
+		return null;
+	}
+}
+
+/**
  * Derives the working directory for running `quarto add` based on the manifest path.
  * Returns the parent directory of the last `_extensions` segment so that `quarto add`
  * replaces the extension in place, including one embedded inside another extension.

@@ -13,6 +13,7 @@ jest.unstable_mockModule("fs", createMockFs);
 jest.unstable_mockModule("../src/git.js", () => ({
 	getQuartoVersion: jest.fn(),
 	deriveQuartoAddCwd: jest.fn(),
+	getCheckedOutSha: jest.fn(),
 	applyUpdates: jest.fn(),
 	createBranchName: jest.fn(),
 	createCommitMessage: jest.fn(),
@@ -42,7 +43,8 @@ jest.unstable_mockModule("../src/automerge.js", () => ({
 
 const core = await import("@actions/core");
 const fs = await import("fs");
-const { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles } = await import("../src/git.js");
+const { applyUpdates, createBranchName, createCommitMessage, validateModifiedFiles, getCheckedOutSha } =
+	await import("../src/git.js");
 const { generatePRTitle, generatePRBody } = await import("../src/pr.js");
 const { checkExistingPR, createOrUpdateBranch, createOrUpdatePR, createCommit, listBaseFiles } =
 	await import("../src/github.js");
@@ -62,6 +64,7 @@ const mockCreateOrUpdateBranch = jest.mocked(createOrUpdateBranch);
 const mockCreateOrUpdatePR = jest.mocked(createOrUpdatePR);
 const mockCreateCommit = jest.mocked(createCommit);
 const mockListBaseFiles = jest.mocked(listBaseFiles);
+const mockGetCheckedOutSha = jest.mocked(getCheckedOutSha);
 const mockShouldAutoMerge = jest.mocked(shouldAutoMerge);
 const mockEnableAutoMerge = jest.mocked(enableAutoMerge);
 const mockIsAutoMergeEnabled = jest.mocked(isAutoMergeEnabled);
@@ -100,6 +103,7 @@ describe("processPRForUpdateGroup", () => {
 		mockFs.readFileSync.mockReturnValue(Buffer.from("file content"));
 		mockCreateCommit.mockResolvedValue("commit123");
 		mockListBaseFiles.mockResolvedValue([]);
+		mockGetCheckedOutSha.mockReturnValue("abc123");
 		mockGeneratePRBody.mockResolvedValue("PR body");
 		mockCreateOrUpdatePR.mockResolvedValue({ number: 123, url: "https://github.com/owner/repo/pull/123" });
 		mockShouldAutoMerge.mockReturnValue(false);
@@ -175,6 +179,28 @@ describe("processPRForUpdateGroup", () => {
 		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [update], baseConfig);
 
 		expect(mockListBaseFiles).not.toHaveBeenCalled();
+	});
+
+	it("should keep dropped files and warn when the checkout is not the base commit", async () => {
+		const updates = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
+		mockGetCheckedOutSha.mockReturnValue("other-sha");
+		mockListBaseFiles.mockResolvedValue(["_extensions/owner/ext1/only-on-base.lua"]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", updates, baseConfig);
+
+		expect(mockListBaseFiles).not.toHaveBeenCalled();
+		expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining("abc123"));
+		expect(mockCreateCommit).toHaveBeenCalledWith(
+			mockOctokit,
+			"owner",
+			"repo",
+			"chore/quarto-extensions/update",
+			"abc123",
+			expect.any(String),
+			expect.any(Array),
+			[],
+		);
 	});
 
 	it("should keep dropped files and warn when the base tree cannot be listed in full", async () => {
