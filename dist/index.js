@@ -107900,7 +107900,7 @@ function eventsToAst(events, options) {
  * @returns Array of paths to extension manifest files
  */
 function findExtensionManifests(workspacePath) {
-    const extensionsDir = external_path_.join(workspacePath, "_extensions");
+    const extensionsDir = external_path_.join(workspacePath, QUARTO_EXTENSIONS_DIR);
     if (!external_fs_.existsSync(extensionsDir)) {
         info("No _extensions directory found");
         return [];
@@ -109411,6 +109411,7 @@ async function createIssueForUpdates(octokit, owner, repo, updates, groupUpdates
 
 
 
+
 /**
  * Handles auto-merge logic for a PR
  */
@@ -109521,13 +109522,33 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
     }
 }
 /**
+ * Counts how many extensions a manifest is nested in, so a parent sorts before what it embeds
+ */
+function nestingDepth(update) {
+    return update.manifestPath.split(external_path_.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
+}
+/**
+ * Splits updates into one group per extension, keeping every copy of an extension in the same group
+ */
+function groupByExtension(updates) {
+    const groups = new Map();
+    for (const update of updates) {
+        const group = groups.get(update.nameWithOwner) ?? [];
+        group.push(update);
+        groups.set(update.nameWithOwner, group);
+    }
+    return [...groups.values()];
+}
+/**
  * Processes all update groups and returns results
  */
 async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config) {
     const createdPRs = [];
     const allSkippedUpdates = [];
+    // Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
+    const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
     // Determine whether to create one PR for all updates or one PR per extension
-    const updateGroups = groupUpdates ? [updates] : updates.map((u) => [u]);
+    const updateGroups = groupUpdates ? [orderedUpdates] : groupByExtension(orderedUpdates);
     for (const updateGroup of updateGroups) {
         const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
         startGroup(`📝 Processing ${groupDescription}`);
@@ -109671,8 +109692,8 @@ async function run() {
             assignmentConfig: config.assignmentConfig,
         });
         // Filter updates to only those that were successfully applied
-        const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
-        const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
+        const skippedManifests = new Set(allSkippedUpdates.map((s) => s.update.manifestPath));
+        const appliedUpdates = updates.filter((u) => !skippedManifests.has(u.manifestPath));
         // Set outputs and generate summary
         if (createdPRs.length > 0) {
             setPROutputs(createdPRs);

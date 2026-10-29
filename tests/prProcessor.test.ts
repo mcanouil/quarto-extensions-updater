@@ -427,6 +427,45 @@ describe("processAllPRs", () => {
 		expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining("Failed to process owner/ext1"));
 	});
 
+	it("should group copies of the same extension into one pull request when not grouped", async () => {
+		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			manifestPath: "/workspace/_extensions/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+
+		const { createdPRs } = await processAllPRs(mockOctokit, "owner", "repo", [topLevel, embedded], false, baseConfig);
+
+		expect(createdPRs).toHaveLength(1);
+		expect(mockApplyUpdates).toHaveBeenCalledTimes(1);
+		expect(mockApplyUpdates).toHaveBeenCalledWith([topLevel, embedded]);
+	});
+
+	it("should apply a parent extension before an extension embedded in it", async () => {
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			manifestPath: "/workspace/_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+
+		await processAllPRs(mockOctokit, "owner", "repo", [embedded, parent], true, baseConfig);
+
+		expect(mockApplyUpdates).toHaveBeenCalledWith([parent, embedded]);
+	});
+
+	it("should process a parent extension's pull request before an embedded one when not grouped", async () => {
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			manifestPath: "/workspace/_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/_extension.yml",
+		};
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+
+		await processAllPRs(mockOctokit, "owner", "repo", [embedded, parent], false, baseConfig);
+
+		expect(mockApplyUpdates).toHaveBeenNthCalledWith(1, [parent]);
+		expect(mockApplyUpdates).toHaveBeenNthCalledWith(2, [embedded]);
+	});
+
 	it("should process empty updates array", async () => {
 		const updates: ExtensionUpdate[] = [];
 

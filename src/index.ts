@@ -172,8 +172,8 @@ async function run(): Promise<void> {
 		);
 
 		// Filter updates to only those that were successfully applied
-		const skippedNames = new Set(allSkippedUpdates.map((s) => s.update.nameWithOwner));
-		const appliedUpdates = updates.filter((u) => !skippedNames.has(u.nameWithOwner));
+		const skippedManifests = new Set(allSkippedUpdates.map((s) => s.update.manifestPath));
+		const appliedUpdates = updates.filter((u) => !skippedManifests.has(u.manifestPath));
 
 		// Set outputs and generate summary
 		if (createdPRs.length > 0) {

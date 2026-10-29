@@ -26,7 +26,7 @@ interface ExtensionManifestYAML {
  * @returns Array of paths to extension manifest files
  */
 export function findExtensionManifests(workspacePath: string): string[] {
-	const extensionsDir = path.join(workspacePath, "_extensions");
+	const extensionsDir = path.join(workspacePath, QUARTO_EXTENSIONS_DIR);
 
 	if (!fs.existsSync(extensionsDir)) {
 		core.info("No _extensions directory found");
