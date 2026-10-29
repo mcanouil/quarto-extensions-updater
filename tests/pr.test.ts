@@ -198,7 +198,10 @@ describe("generatePRBody", () => {
 			[parent, embedded],
 			mockOctokit,
 			[],
-			["_extensions/atelier/old.scss", "_extensions/atelier/_extensions/mcanouil/gitlink/old.lua"],
+			new Map([
+				["mcanouil/atelier", ["_extensions/atelier/old.scss"]],
+				["mcanouil/gitlink", ["_extensions/atelier/_extensions/mcanouil/gitlink/old.lua"]],
+			]),
 		);
 
 		expect(body).toContain("## 🗑️ Removed Files");

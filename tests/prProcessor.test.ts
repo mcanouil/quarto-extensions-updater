@@ -134,9 +134,47 @@ describe("processPRForUpdateGroup", () => {
 			expect.any(Array),
 			["_extensions/owner/ext1/old.lua"],
 		);
-		expect(mockGeneratePRBody).toHaveBeenCalledWith(expect.any(Array), mockOctokit, expect.any(Array), [
-			"_extensions/owner/ext1/old.lua",
-		]);
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([["owner/ext1", ["_extensions/owner/ext1/old.lua"]]]),
+		);
+	});
+
+	it("should credit a removed file to the innermost applied extension", async () => {
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			location: "_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink",
+		};
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/mcanouil/atelier/_extension.yml"],
+			skippedUpdates: [{ update: embedded, reason: "Needs a newer Quarto" }],
+		});
+		mockListBaseFiles.mockResolvedValue(["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [parent, embedded], baseConfig);
+
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([["mcanouil/atelier", ["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]]]),
+		);
+	});
+
+	it("should not list the base tree when every update was skipped", async () => {
+		const update = createUpdate("owner/ext1", "1.0.0", "1.1.0");
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [{ update, reason: "Needs a newer Quarto" }],
+		});
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [update], baseConfig);
+
+		expect(mockListBaseFiles).not.toHaveBeenCalled();
 	});
 
 	it("should keep dropped files and warn when the base tree cannot be listed in full", async () => {

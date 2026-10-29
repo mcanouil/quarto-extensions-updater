@@ -336,7 +336,7 @@ export async function listBaseFiles(
 	if (data.truncated) {
 		return null;
 	}
-	return data.tree.filter((entry) => entry.type === "blob" && entry.path).map((entry) => entry.path as string);
+	return data.tree.flatMap((entry) => (entry.type === "blob" && entry.path ? [entry.path] : []));
 }
 
 /**

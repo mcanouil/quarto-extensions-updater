@@ -118,6 +118,7 @@ function prepareCommitFiles(modifiedFiles: string[], workspacePath: string): { p
 
 /**
  * Finds files that the base commit has in an updated extension folder but that the new release no longer ships
+ * @returns The removed files of each extension, keyed by `owner/name`, each file credited to its innermost extension
  */
 async function findRemovedFiles(
 	octokit: OctokitClient,
@@ -125,19 +126,30 @@ async function findRemovedFiles(
 	repo: string,
 	appliedUpdates: ExtensionUpdate[],
 	config: PRProcessingConfig,
-): Promise<string[]> {
-	const folders = appliedUpdates.map((update) => update.location);
+): Promise<Map<string, string[]>> {
+	const removedFiles = new Map<string, string[]>();
+	if (appliedUpdates.length === 0) {
+		return removedFiles;
+	}
+
 	const baseFiles = await listBaseFiles(octokit, owner, repo, config.baseSha);
 	if (baseFiles === null) {
+		const folders = appliedUpdates.map((update) => update.location).join(", ");
 		core.warning(
-			`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders.join(", ")}`,
+			`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders}`,
 		);
-		return [];
+		return removedFiles;
 	}
-	return baseFiles.filter(
-		(file) =>
-			folders.some((folder) => file.startsWith(`${folder}/`)) && !fs.existsSync(path.join(config.workspacePath, file)),
-	);
+
+	for (const file of baseFiles) {
+		const owners = appliedUpdates.filter((update) => file.startsWith(`${update.location}/`));
+		if (owners.length === 0 || fs.existsSync(path.join(config.workspacePath, file))) {
+			continue;
+		}
+		const innermost = owners.reduce((a, b) => (b.location.length > a.location.length ? b : a));
+		removedFiles.set(innermost.nameWithOwner, [...(removedFiles.get(innermost.nameWithOwner) ?? []), file]);
+	}
+	return removedFiles;
 }
 
 /**
@@ -192,8 +204,9 @@ export async function processPRForUpdateGroup(
 	const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
 	const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
 	const removedFiles = await findRemovedFiles(octokit, owner, repo, appliedUpdates, config);
-	if (removedFiles.length > 0) {
-		core.info(`Removing ${removedFiles.length} file(s) that the new releases no longer ship`);
+	const removedPaths = [...removedFiles.values()].flat();
+	if (removedPaths.length > 0) {
+		core.info(`Removing ${removedPaths.length} file(s) that the new releases no longer ship`);
 	}
 
 	// Create commit
@@ -212,7 +225,7 @@ export async function processPRForUpdateGroup(
 		config.baseSha,
 		commitMessage,
 		files,
-		removedFiles,
+		removedPaths,
 	);
 
 	core.info(`✅ Created commit: ${commitSha}`);
