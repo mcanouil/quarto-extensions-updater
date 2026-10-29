@@ -11,6 +11,7 @@ const {
 	createOrUpdateBranch,
 	createOrUpdatePR,
 	createCommit,
+	listBaseFiles,
 	requestReviewersAndAssignees,
 	createIssueForUpdates,
 } = await import("../src/github.js");
@@ -468,6 +469,41 @@ describe("github.ts", () => {
 		});
 	});
 
+	describe("listBaseFiles", () => {
+		it("should list the file paths of the base commit", async () => {
+			mockOctokit.rest.git.getTree.mockResolvedValue({
+				data: {
+					truncated: false,
+					tree: [
+						{ path: "_extensions", type: "tree" },
+						{ path: "_extensions/owner/ext/_extension.yml", type: "blob" },
+						{ path: "_extensions/owner/ext/old.lua", type: "blob" },
+					],
+				},
+			});
+
+			const files = await listBaseFiles(mockOctokit as any, "owner", "repo", "base-sha");
+
+			expect(files).toEqual(["_extensions/owner/ext/_extension.yml", "_extensions/owner/ext/old.lua"]);
+			expect(mockOctokit.rest.git.getTree).toHaveBeenCalledWith({
+				owner: "owner",
+				repo: "repo",
+				tree_sha: "base-sha",
+				recursive: "true",
+			});
+		});
+
+		it("should return null when the tree is truncated", async () => {
+			mockOctokit.rest.git.getTree.mockResolvedValue({
+				data: { truncated: true, tree: [{ path: "a.txt", type: "blob" }] },
+			});
+
+			const files = await listBaseFiles(mockOctokit as any, "owner", "repo", "base-sha");
+
+			expect(files).toBeNull();
+		});
+	});
+
 	describe("createCommit", () => {
 		it("should create commit with multiple files", async () => {
 			mockOctokit.rest.git.createBlob.mockResolvedValue({
@@ -503,6 +539,34 @@ describe("github.ts", () => {
 
 			expect(commitSha).toBe("commit-sha");
 			expect(mockOctokit.rest.git.createBlob).toHaveBeenCalledTimes(2);
+		});
+
+		it("should delete the given paths in the new tree", async () => {
+			mockOctokit.rest.git.createBlob.mockResolvedValue({ data: { sha: "blob-sha" } });
+			mockOctokit.rest.git.createTree.mockResolvedValue({ data: { sha: "new-tree-sha" } });
+			mockOctokit.rest.git.createCommit.mockResolvedValue({ data: { sha: "commit-sha" } });
+			mockOctokit.rest.git.updateRef.mockResolvedValue({ data: {} });
+
+			await createCommit(
+				mockOctokit as any,
+				"owner",
+				"repo",
+				"test-branch",
+				"base-sha",
+				"Test commit",
+				[{ path: "ext/_extension.yml", content: Buffer.from("content") }],
+				["ext/old.lua"],
+			);
+
+			expect(mockOctokit.rest.git.createTree).toHaveBeenCalledWith({
+				owner: "owner",
+				repo: "repo",
+				base_tree: "base-sha",
+				tree: [
+					{ path: "ext/_extension.yml", mode: "100644", type: "blob", sha: "blob-sha" },
+					{ path: "ext/old.lua", mode: "100644", type: "blob", sha: null },
+				],
+			});
 		});
 
 		it("should handle single file", async () => {

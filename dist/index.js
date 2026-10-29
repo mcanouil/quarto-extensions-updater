@@ -108403,9 +108403,11 @@ function generatePRTitle(updates, prefix = "chore(deps):") {
  * Generates a detailed Pull Request body similar to Dependabot
  * @param updates Array of extension updates
  * @param octokit GitHub API client
+ * @param skippedUpdates Updates skipped while applying the group
+ * @param removedFiles Files deleted because the new releases no longer ship them
  * @returns PR body in markdown format
  */
-async function generatePRBody(updates, octokit, skippedUpdates = []) {
+async function generatePRBody(updates, octokit, skippedUpdates = [], removedFiles = []) {
     const sections = [];
     sections.push("Updates the following Quarto extension(s):");
     sections.push("");
@@ -108426,6 +108428,16 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
         sections.push("## 🐛 Patch Updates");
         sections.push("");
         sections.push(...formatUpdateList(grouped.patch, updates));
+        sections.push("");
+    }
+    if (removedFiles.length > 0) {
+        sections.push("## 🗑️ Removed Files");
+        sections.push("");
+        sections.push("The new releases no longer ship these files, so this pull request deletes them:");
+        sections.push("");
+        for (const file of removedFiles) {
+            sections.push(`- **${ownerOfFile(file, updates)}**: \`${file}\``);
+        }
         sections.push("");
     }
     sections.push("---");
@@ -108500,6 +108512,14 @@ async function generatePRBody(updates, octokit, skippedUpdates = []) {
     sections.push("");
     sections.push(PR_FOOTER_TEXT);
     return sections.join("\n");
+}
+/**
+ * Names the extension a file belongs to, choosing the innermost folder when one extension embeds another
+ */
+function ownerOfFile(file, updates) {
+    const owners = updates.filter((update) => file.startsWith(`${update.location}/`));
+    owners.sort((a, b) => b.location.length - a.location.length);
+    return owners[0]?.nameWithOwner ?? "unknown extension";
 }
 /**
  * Formats a list of updates as markdown, naming the location of each copy of an extension installed more than once
@@ -109427,10 +109447,11 @@ async function createOrUpdatePR(octokit, owner, repo, branchName, baseBranch, pr
  * @param baseSha Base commit SHA
  * @param message Commit message
  * @param files Array of files with path and content
+ * @param deletedPaths Paths to delete from the base tree
  * @returns Commit SHA
  */
-async function createCommit(octokit, owner, repo, branchName, baseSha, message, files) {
-    const tree = await Promise.all(files.map(async (file) => {
+async function createCommit(octokit, owner, repo, branchName, baseSha, message, files, deletedPaths = []) {
+    const writtenFiles = await Promise.all(files.map(async (file) => {
         const { data: blob } = await octokit.rest.git.createBlob({
             owner,
             repo,
@@ -109444,6 +109465,13 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
             sha: blob.sha,
         };
     }));
+    const deletedFiles = deletedPaths.map((deletedPath) => ({
+        path: deletedPath,
+        mode: GIT_FILE_MODE_REGULAR,
+        type: "blob",
+        sha: null,
+    }));
+    const tree = [...writtenFiles, ...deletedFiles];
     const { data: newTree } = await octokit.rest.git.createTree({
         owner,
         repo,
@@ -109464,6 +109492,21 @@ async function createCommit(octokit, owner, repo, branchName, baseSha, message, 
         sha: commit.sha,
     });
     return commit.sha;
+}
+/**
+ * Lists every file in a commit's tree
+ * @param octokit GitHub API client
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @param sha Commit or tree SHA
+ * @returns File paths, or null when GitHub truncates the tree because the repository is too large
+ */
+async function listBaseFiles(octokit, owner, repo, sha) {
+    const { data } = await octokit.rest.git.getTree({ owner, repo, tree_sha: sha, recursive: "true" });
+    if (data.truncated) {
+        return null;
+    }
+    return data.tree.filter((entry) => entry.type === "blob" && entry.path).map((entry) => entry.path);
 }
 /**
  * Creates a GitHub issue with dry-run update summary
@@ -109554,6 +109597,18 @@ function prepareCommitFiles(modifiedFiles, workspacePath) {
     }));
 }
 /**
+ * Finds files that the base commit has in an updated extension folder but that the new release no longer ships
+ */
+async function findRemovedFiles(octokit, owner, repo, appliedUpdates, config) {
+    const folders = appliedUpdates.map((update) => update.location);
+    const baseFiles = await listBaseFiles(octokit, owner, repo, config.baseSha);
+    if (baseFiles === null) {
+        warning(`The base tree is too large to list in full, so files dropped by new releases are kept in: ${folders.join(", ")}`);
+        return [];
+    }
+    return baseFiles.filter((file) => folders.some((folder) => file.startsWith(`${folder}/`)) && !external_fs_.existsSync(external_path_.join(config.workspacePath, file)));
+}
+/**
  * Processes a single update group (either a single extension or multiple grouped extensions)
  */
 async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config) {
@@ -109588,21 +109643,25 @@ async function processPRForUpdateGroup(octokit, owner, repo, updateGroup, config
         throw new Error(`Failed to validate modified files for ${groupDesc}`);
     }
     info(`Modified ${modifiedFiles.length} file(s)`);
+    const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
+    const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
+    const removedFiles = await findRemovedFiles(octokit, owner, repo, appliedUpdates, config);
+    if (removedFiles.length > 0) {
+        info(`Removing ${removedFiles.length} file(s) that the new releases no longer ship`);
+    }
     // Create commit
     const commitMessage = createCommitMessage(updateGroup, config.commitMessagePrefix);
     info(`Branch: ${branchName}`);
     info(`Commit message: ${commitMessage.split("\n")[0]}`);
     await createOrUpdateBranch(octokit, owner, repo, branchName, config.baseSha);
     const files = prepareCommitFiles(modifiedFiles, config.workspacePath);
-    const commitSha = await createCommit(octokit, owner, repo, branchName, config.baseSha, commitMessage, files);
+    const commitSha = await createCommit(octokit, owner, repo, branchName, config.baseSha, commitMessage, files, removedFiles);
     info(`✅ Created commit: ${commitSha}`);
     // Create or update PR
-    const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates);
+    const prBody = await generatePRBody(updateGroup, octokit, skippedUpdates, removedFiles);
     try {
         const pr = await createOrUpdatePR(octokit, owner, repo, branchName, config.baseBranch, prTitle, prBody, config.prLabels, config.assignmentConfig);
         // Handle auto-merge, judged on the updates that were applied
-        const skippedManifests = new Set(skippedUpdates.map((skipped) => skipped.update.manifestPath));
-        const appliedUpdates = updateGroup.filter((update) => !skippedManifests.has(update.manifestPath));
         await handleAutoMerge(octokit, owner, repo, pr.number, appliedUpdates, config.autoMergeConfig);
         return { ...pr, extensions: extensionNames(updateGroup), skippedUpdates };
     }

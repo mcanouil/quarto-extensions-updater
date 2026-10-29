@@ -184,6 +184,28 @@ describe("generatePRBody", () => {
 		);
 	});
 
+	it("should list removed files under their extension", async () => {
+		const parent: ExtensionUpdate = {
+			...gitlinkCopy("_extensions/atelier"),
+			name: "atelier",
+			nameWithOwner: "mcanouil/atelier",
+			repositoryName: "mcanouil/quarto-atelier",
+		};
+		const embedded = gitlinkCopy("_extensions/atelier/_extensions/mcanouil/gitlink");
+		(mockOctokit.rest.repos.getReleaseByTag as jest.Mock).mockResolvedValue({ data: { body: "Notes" } });
+
+		const body = await generatePRBody(
+			[parent, embedded],
+			mockOctokit,
+			[],
+			["_extensions/atelier/old.scss", "_extensions/atelier/_extensions/mcanouil/gitlink/old.lua"],
+		);
+
+		expect(body).toContain("## 🗑️ Removed Files");
+		expect(body).toContain("- **mcanouil/atelier**: `_extensions/atelier/old.scss`");
+		expect(body).toContain("- **mcanouil/gitlink**: `_extensions/atelier/_extensions/mcanouil/gitlink/old.lua`");
+	});
+
 	it("should handle missing release notes", async () => {
 		const updates: ExtensionUpdate[] = [
 			{

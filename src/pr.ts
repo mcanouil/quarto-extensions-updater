@@ -56,12 +56,15 @@ export function generatePRTitle(updates: ExtensionUpdate[], prefix = "chore(deps
  * Generates a detailed Pull Request body similar to Dependabot
  * @param updates Array of extension updates
  * @param octokit GitHub API client
+ * @param skippedUpdates Updates skipped while applying the group
+ * @param removedFiles Files deleted because the new releases no longer ship them
  * @returns PR body in markdown format
  */
 export async function generatePRBody(
 	updates: ExtensionUpdate[],
 	octokit: OctokitClient,
 	skippedUpdates: SkippedUpdate[] = [],
+	removedFiles: string[] = [],
 ): Promise<string> {
 	const sections: string[] = [];
 
@@ -88,6 +91,17 @@ export async function generatePRBody(
 		sections.push("## 🐛 Patch Updates");
 		sections.push("");
 		sections.push(...formatUpdateList(grouped.patch, updates));
+		sections.push("");
+	}
+
+	if (removedFiles.length > 0) {
+		sections.push("## 🗑️ Removed Files");
+		sections.push("");
+		sections.push("The new releases no longer ship these files, so this pull request deletes them:");
+		sections.push("");
+		for (const file of removedFiles) {
+			sections.push(`- **${ownerOfFile(file, updates)}**: \`${file}\``);
+		}
 		sections.push("");
 	}
 
@@ -176,6 +190,15 @@ export async function generatePRBody(
 	sections.push(PR_FOOTER_TEXT);
 
 	return sections.join("\n");
+}
+
+/**
+ * Names the extension a file belongs to, choosing the innermost folder when one extension embeds another
+ */
+function ownerOfFile(file: string, updates: ExtensionUpdate[]): string {
+	const owners = updates.filter((update) => file.startsWith(`${update.location}/`));
+	owners.sort((a, b) => b.location.length - a.location.length);
+	return owners[0]?.nameWithOwner ?? "unknown extension";
 }
 
 /**
