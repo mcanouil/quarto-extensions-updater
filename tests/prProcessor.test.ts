@@ -169,6 +169,31 @@ describe("processPRForUpdateGroup", () => {
 		);
 	});
 
+	it("should credit a removed file to the embedded extension when both are applied", async () => {
+		const parent = createUpdate("mcanouil/atelier", "1.0.0", "1.1.0");
+		const embedded = {
+			...createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0"),
+			location: "_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink",
+		};
+		mockListBaseFiles.mockResolvedValue([
+			"_extensions/mcanouil/atelier/old.scss",
+			"_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua",
+		]);
+		mockFs.existsSync.mockReturnValue(false);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [embedded, parent], baseConfig);
+
+		expect(mockGeneratePRBody).toHaveBeenCalledWith(
+			expect.any(Array),
+			mockOctokit,
+			expect.any(Array),
+			new Map([
+				["mcanouil/atelier", ["_extensions/mcanouil/atelier/old.scss"]],
+				["mcanouil/gitlink", ["_extensions/mcanouil/atelier/_extensions/mcanouil/gitlink/old.lua"]],
+			]),
+		);
+	});
+
 	it("should not list the base tree when every update was skipped", async () => {
 		const update = createUpdate("owner/ext1", "1.0.0", "1.1.0");
 		mockApplyUpdates.mockReturnValue({
