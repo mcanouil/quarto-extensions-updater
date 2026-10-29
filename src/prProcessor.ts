@@ -52,7 +52,7 @@ async function handleAutoMerge(
 	updateGroup: ExtensionUpdate[],
 	autoMergeConfig: AutoMergeConfig,
 ): Promise<void> {
-	if (!autoMergeConfig.enabled) {
+	if (!autoMergeConfig.enabled || updateGroup.length === 0) {
 		return;
 	}
 

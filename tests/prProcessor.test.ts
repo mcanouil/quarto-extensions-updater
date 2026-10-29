@@ -256,6 +256,23 @@ describe("processPRForUpdateGroup", () => {
 		expect(mockEnableAutoMerge).toHaveBeenCalledWith(mockOctokit, "owner", "repo", 123, "squash");
 	});
 
+	it("should not enable auto-merge when no update was applied", async () => {
+		const update = createUpdate("owner/ext1", "1.0.0", "1.0.1");
+		mockApplyUpdates.mockReturnValue({
+			modifiedFiles: ["/workspace/_extensions/owner/ext1/_extension.yml"],
+			skippedUpdates: [{ update, reason: "Needs a newer Quarto" }],
+		});
+		const config: PRProcessingConfig = {
+			...baseConfig,
+			autoMergeConfig: { enabled: true, strategy: "patch", mergeMethod: "squash" },
+		};
+		mockShouldAutoMerge.mockReturnValue(true);
+
+		await processPRForUpdateGroup(mockOctokit, "owner", "repo", [update], config);
+
+		expect(mockEnableAutoMerge).not.toHaveBeenCalled();
+	});
+
 	it("should name the extension when a PR for its copies already exists", async () => {
 		const topLevel = createUpdate("mcanouil/gitlink", "1.0.0", "1.1.0");
 		const embedded = {

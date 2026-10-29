@@ -142,6 +142,18 @@ describe("generateDryRunMarkdown", () => {
 		expect(markdown).toContain("Would create **1 PR** with 1 extension update\n");
 	});
 
+	it("should mark auto-merge per extension, requiring every copy to qualify", () => {
+		const patchCopy = createUpdate("mcanouil/gitlink", "1.9.0", "1.9.2");
+		const minorCopy = { ...createUpdate("mcanouil/gitlink", "1.8.0", "1.9.2"), location: "_extensions/atelier" };
+		mockShouldAutoMerge.mockImplementation((update) => update.currentVersion === "1.9.0");
+		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };
+		const autoMergeConfig: AutoMergeConfig = { enabled: true, strategy: "patch", mergeMethod: "squash" };
+
+		const markdown = generateDryRunMarkdown([patchCopy, minorCopy], false, "all", filterConfig, autoMergeConfig);
+
+		expect(markdown).not.toContain("✓ Yes");
+	});
+
 	it("should include next steps section", () => {
 		const updates: ExtensionUpdate[] = [createUpdate("owner/ext1", "1.0.0", "1.1.0")];
 		const filterConfig: ExtensionFilterConfig = { include: [], exclude: [] };

@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { shouldAutoMerge } from "./automerge.js";
-import { copyLocation, copyLocationSuffix, extensionNames } from "./updates.js";
+import { copyLocation, copyLocationSuffix, extensionNames, groupCopies } from "./updates.js";
 import type {
 	ExtensionUpdate,
 	AutoMergeConfig,
@@ -69,6 +69,18 @@ function getConfigRows(
 }
 
 /**
+ * Decides auto-merge per extension, as a pull request is merged only when every copy of its extension qualifies
+ */
+function autoMergeByExtension(updates: ExtensionUpdate[], autoMergeConfig: AutoMergeConfig): Map<string, boolean> {
+	return new Map(
+		groupCopies(updates).map((copies) => [
+			copies[0].nameWithOwner,
+			copies.every((copy) => shouldAutoMerge(copy, autoMergeConfig)),
+		]),
+	);
+}
+
+/**
  * Generates markdown content for dry-run summary
  * @param updates Array of extension updates that would be applied
  * @param groupUpdates Whether updates are grouped in a single PR
@@ -116,8 +128,9 @@ export function generateDryRunMarkdown(
 	markdown += "### Available Updates\n\n";
 	markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
 
+	const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
 	for (const update of updates) {
-		const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
+		const wouldAutoMerge = autoMerge.get(update.nameWithOwner);
 		markdown += `| ${update.nameWithOwner}${copyLocationSuffix(update, updates)} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
 	}
 
@@ -242,6 +255,7 @@ export async function generateCompletedSummary(
 	];
 
 	const reportedUpdates = [...updates, ...skippedUpdates.map((skipped) => skipped.update)];
+	const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
 	const describe = (update: ExtensionUpdate): string => {
 		const location = copyLocation(update, reportedUpdates);
 		return location ? `${update.nameWithOwner} in ${location}` : update.nameWithOwner;
@@ -250,7 +264,7 @@ export async function generateCompletedSummary(
 	for (const update of updates) {
 		const pr = updateToPR.get(update.nameWithOwner);
 		const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
-		const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
+		const autoMergeStatus = autoMerge.get(update.nameWithOwner) ? "✓ Yes" : "✗ No";
 
 		updatesTable.push([
 			{ data: describe(update), header: false },

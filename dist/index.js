@@ -108813,6 +108813,15 @@ function getConfigRows(groupUpdates, updateStrategy, filterConfig, autoMergeConf
     return rows;
 }
 /**
+ * Decides auto-merge per extension, as a pull request is merged only when every copy of its extension qualifies
+ */
+function autoMergeByExtension(updates, autoMergeConfig) {
+    return new Map(groupCopies(updates).map((copies) => [
+        copies[0].nameWithOwner,
+        copies.every((copy) => shouldAutoMerge(copy, autoMergeConfig)),
+    ]));
+}
+/**
  * Generates markdown content for dry-run summary
  * @param updates Array of extension updates that would be applied
  * @param groupUpdates Whether updates are grouped in a single PR
@@ -108848,8 +108857,9 @@ function generateDryRunMarkdown(updates, groupUpdates, updateStrategy, filterCon
     // Updates table
     markdown += "### Available Updates\n\n";
     markdown += "| Extension | Current | Latest | Auto-Merge |\n|-----------|---------|--------|------------|\n";
+    const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
     for (const update of updates) {
-        const wouldAutoMerge = shouldAutoMerge(update, autoMergeConfig);
+        const wouldAutoMerge = autoMerge.get(update.nameWithOwner);
         markdown += `| ${update.nameWithOwner}${copyLocationSuffix(update, updates)} | ${update.currentVersion} | ${update.latestVersion} | ${wouldAutoMerge ? "✓ Yes" : "✗ No"} |\n`;
     }
     markdown += "\n";
@@ -108944,6 +108954,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
         ],
     ];
     const reportedUpdates = [...updates, ...skippedUpdates.map((skipped) => skipped.update)];
+    const autoMerge = autoMergeByExtension(updates, autoMergeConfig);
     const describe = (update) => {
         const location = copyLocation(update, reportedUpdates);
         return location ? `${update.nameWithOwner} in ${location}` : update.nameWithOwner;
@@ -108951,7 +108962,7 @@ async function generateCompletedSummary(updates, createdPRs, groupUpdates, updat
     for (const update of updates) {
         const pr = updateToPR.get(update.nameWithOwner);
         const prLink = pr ? `<a href="${pr.url}">#${pr.number}</a>` : "N/A";
-        const autoMergeStatus = shouldAutoMerge(update, autoMergeConfig) ? "✓ Yes" : "✗ No";
+        const autoMergeStatus = autoMerge.get(update.nameWithOwner) ? "✓ Yes" : "✗ No";
         updatesTable.push([
             { data: describe(update), header: false },
             { data: update.currentVersion, header: false },
@@ -109493,7 +109504,7 @@ async function createIssueForUpdates(octokit, owner, repo, updates, groupUpdates
  * Handles auto-merge logic for a PR
  */
 async function handleAutoMerge(octokit, owner, repo, prNumber, updateGroup, autoMergeConfig) {
-    if (!autoMergeConfig.enabled) {
+    if (!autoMergeConfig.enabled || updateGroup.length === 0) {
         return;
     }
     // For single extension updates, every copy of the extension must qualify
