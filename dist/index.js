@@ -109057,7 +109057,7 @@ function deriveQuartoAddCwd(manifestPath) {
  */
 function applyUpdates(updates) {
     const quartoVersion = requireQuartoVersion();
-    const modifiedFiles = [];
+    const updatedDirs = [];
     const skippedUpdates = [];
     for (const update of updates) {
         try {
@@ -109085,10 +109085,7 @@ function applyUpdates(updates) {
                 }
             }
             updateManifestSource(update.manifestPath, source);
-            const extensionDir = external_path_.dirname(update.manifestPath);
-            const extensionFiles = getAllFilesInDirectory(extensionDir);
-            modifiedFiles.push(...extensionFiles);
-            info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+            updatedDirs.push(external_path_.dirname(update.manifestPath));
         }
         catch (error) {
             const reason = `Failed to update: ${extractExecError(error)}`;
@@ -109096,7 +109093,14 @@ function applyUpdates(updates) {
             skippedUpdates.push({ update, reason });
         }
     }
-    return { modifiedFiles, skippedUpdates };
+    // List files only once every update has run, as a later `quarto add` can replace an earlier extension's embedded copy
+    const modifiedFiles = new Set();
+    for (const extensionDir of updatedDirs) {
+        const extensionFiles = getAllFilesInDirectory(extensionDir);
+        extensionFiles.forEach((file) => modifiedFiles.add(file));
+        info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+    }
+    return { modifiedFiles: [...modifiedFiles], skippedUpdates };
 }
 /**
  * Creates a branch name for the update PR
@@ -109528,18 +109532,6 @@ function nestingDepth(update) {
     return update.manifestPath.split(external_path_.sep).filter((part) => part === QUARTO_EXTENSIONS_DIR).length;
 }
 /**
- * Splits updates into one group per extension, keeping every copy of an extension in the same group
- */
-function groupByExtension(updates) {
-    const groups = new Map();
-    for (const update of updates) {
-        const group = groups.get(update.nameWithOwner) ?? [];
-        group.push(update);
-        groups.set(update.nameWithOwner, group);
-    }
-    return [...groups.values()];
-}
-/**
  * Processes all update groups and returns results
  */
 async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config) {
@@ -109548,7 +109540,7 @@ async function processAllPRs(octokit, owner, repo, updates, groupUpdates, config
     // Apply a parent extension before the extensions it embeds, so its `quarto add` cannot overwrite them
     const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
     // Determine whether to create one PR for all updates or one PR per extension
-    const updateGroups = groupUpdates ? [orderedUpdates] : groupByExtension(orderedUpdates);
+    const updateGroups = groupUpdates ? [orderedUpdates] : orderedUpdates.map((u) => [u]);
     for (const updateGroup of updateGroups) {
         const groupDescription = updateGroup.length === 1 ? updateGroup[0].nameWithOwner : `${updateGroup.length} extensions`;
         startGroup(`📝 Processing ${groupDescription}`);

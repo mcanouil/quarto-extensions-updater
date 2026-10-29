@@ -275,6 +275,38 @@ describe("git.ts", () => {
 			expect(core.info).toHaveBeenCalledWith(expect.stringContaining("Tracked 3 file(s)"));
 		});
 
+		it("should list files after every update so an embedded reinstall leaves no stale or duplicate paths", () => {
+			const parent: ExtensionUpdate = { ...createUpdate("atelier"), manifestPath: "/path/to/atelier/_extension.yml" };
+			const embedded: ExtensionUpdate = {
+				...createUpdate("gitlink"),
+				manifestPath: "/path/to/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			};
+			let embeddedReinstalled = false;
+			mockExecSync.mockImplementation((command: string) => {
+				if (command.includes("gitlink@")) {
+					embeddedReinstalled = true;
+				}
+				return "1.4.0\n" as unknown as Buffer;
+			});
+			const file = (name: string): DirEntry => ({ name, isFile: () => true, isDirectory: () => false });
+			const dir = (name: string): DirEntry => ({ name, isFile: () => false, isDirectory: () => true });
+			const tree: Record<string, () => DirEntry[]> = {
+				"/path/to/atelier": () => [file("_extension.yml"), dir("_extensions")],
+				"/path/to/atelier/_extensions": () => [dir("test-owner")],
+				"/path/to/atelier/_extensions/test-owner": () => [dir("gitlink")],
+				"/path/to/atelier/_extensions/test-owner/gitlink": () =>
+					embeddedReinstalled ? [file("_extension.yml")] : [file("_extension.yml"), file("dropped.lua")],
+			};
+			mockFs.readdirSync.mockImplementation(((dirPath: string) => tree[dirPath]()) as unknown as typeof fs.readdirSync);
+
+			const result = applyUpdates([parent, embedded]);
+
+			expect(result.modifiedFiles).toEqual([
+				"/path/to/atelier/_extension.yml",
+				"/path/to/atelier/_extensions/test-owner/gitlink/_extension.yml",
+			]);
+		});
+
 		it("should return empty modified files for non-existent directory", () => {
 			mockFs.existsSync.mockReturnValue(false);
 

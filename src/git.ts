@@ -137,7 +137,7 @@ export function deriveQuartoAddCwd(manifestPath: string): string {
 export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 	const quartoVersion = requireQuartoVersion();
 
-	const modifiedFiles: string[] = [];
+	const updatedDirs: string[] = [];
 	const skippedUpdates: ApplyUpdatesResult["skippedUpdates"] = [];
 
 	for (const update of updates) {
@@ -173,11 +173,7 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 
 			updateManifestSource(update.manifestPath, source);
 
-			const extensionDir = path.dirname(update.manifestPath);
-			const extensionFiles = getAllFilesInDirectory(extensionDir);
-			modifiedFiles.push(...extensionFiles);
-
-			core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+			updatedDirs.push(path.dirname(update.manifestPath));
 		} catch (error) {
 			const reason = `Failed to update: ${extractExecError(error)}`;
 			core.warning(`Skipping ${update.nameWithOwner}: ${reason}`);
@@ -185,7 +181,15 @@ export function applyUpdates(updates: ExtensionUpdate[]): ApplyUpdatesResult {
 		}
 	}
 
-	return { modifiedFiles, skippedUpdates };
+	// List files only once every update has run, as a later `quarto add` can replace an earlier extension's embedded copy
+	const modifiedFiles = new Set<string>();
+	for (const extensionDir of updatedDirs) {
+		const extensionFiles = getAllFilesInDirectory(extensionDir);
+		extensionFiles.forEach((file) => modifiedFiles.add(file));
+		core.info(`Tracked ${extensionFiles.length} file(s) in ${extensionDir}`);
+	}
+
+	return { modifiedFiles: [...modifiedFiles], skippedUpdates };
 }
 
 /**

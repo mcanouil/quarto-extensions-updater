@@ -204,19 +204,6 @@ function nestingDepth(update: ExtensionUpdate): number {
 }
 
 /**
- * Splits updates into one group per extension, keeping every copy of an extension in the same group
- */
-function groupByExtension(updates: ExtensionUpdate[]): ExtensionUpdate[][] {
-	const groups = new Map<string, ExtensionUpdate[]>();
-	for (const update of updates) {
-		const group = groups.get(update.nameWithOwner) ?? [];
-		group.push(update);
-		groups.set(update.nameWithOwner, group);
-	}
-	return [...groups.values()];
-}
-
-/**
  * Processes all update groups and returns results
  */
 export async function processAllPRs(
@@ -234,7 +221,7 @@ export async function processAllPRs(
 	const orderedUpdates = [...updates].sort((a, b) => nestingDepth(a) - nestingDepth(b));
 
 	// Determine whether to create one PR for all updates or one PR per extension
-	const updateGroups = groupUpdates ? [orderedUpdates] : groupByExtension(orderedUpdates);
+	const updateGroups = groupUpdates ? [orderedUpdates] : orderedUpdates.map((u) => [u]);
 
 	for (const updateGroup of updateGroups) {
 		const groupDescription =
